@@ -158,3 +158,72 @@ fn lookup_reads_local_dictionary_tables_and_merges_wordnet_rows() {
     assert_eq!(result.examples, vec!["he won easily".to_string()]);
     assert_eq!(result.synonyms, vec!["well".to_string()]);
 }
+
+#[test]
+fn lookup_decodes_escaped_newlines_from_ecdict_fields() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE ecdict_entries (
+                word TEXT PRIMARY KEY,
+                phonetic TEXT,
+                definition TEXT,
+                translation TEXT,
+                pos TEXT,
+                exchange TEXT,
+                tag TEXT
+            );
+            CREATE TABLE wordnet_synonyms (
+                word TEXT NOT NULL,
+                synonym TEXT NOT NULL,
+                PRIMARY KEY (word, synonym)
+            );
+            CREATE TABLE wordnet_glosses (
+                word TEXT NOT NULL,
+                gloss TEXT NOT NULL,
+                PRIMARY KEY (word, gloss)
+            );
+            CREATE TABLE wordnet_examples (
+                word TEXT NOT NULL,
+                example TEXT NOT NULL,
+                PRIMARY KEY (word, example)
+            );
+            ",
+        )
+        .unwrap();
+
+    connection
+        .execute(
+            "INSERT INTO ecdict_entries (word, phonetic, definition, translation, pos, exchange, tag)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            (
+                "address",
+                "ә'dres",
+                "n. first gloss\\nn. second gloss\\nn. third gloss",
+                "n. 住址, 演说, 举止, 灵巧, 求爱\\nvt. 发表(演说或讲话), 对付, 写地址\\n[计] 地址, 寻址",
+                "",
+                "",
+                "cet4",
+            ),
+        )
+        .unwrap();
+
+    let result = lookup_word_in_connection(&connection, "address")
+        .unwrap()
+        .expect("entry should exist");
+
+    assert_eq!(
+        result.translated_text,
+        "住址, 演说, 举止, 灵巧, 求爱；发表(演说或讲话), 对付, 写地址；[计] 地址, 寻址"
+    );
+    assert_eq!(result.word_type.as_deref(), Some("n. / vt."));
+    assert_eq!(
+        result.explains,
+        vec![
+            "n. first gloss".to_string(),
+            "n. second gloss".to_string(),
+            "n. third gloss".to_string(),
+        ]
+    );
+}

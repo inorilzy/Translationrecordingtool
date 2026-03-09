@@ -189,24 +189,27 @@ fn normalize_word(word: &str) -> String {
 }
 
 fn normalize_translation(translation: Option<&str>, pos: Option<&str>) -> (Option<String>, String) {
-    let mut word_type = pos
+    let mut word_types = Vec::new();
+    if let Some(pos) = pos
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(normalize_word_type);
+        .map(normalize_word_type)
+    {
+        push_unique(&mut word_types, pos);
+    }
 
     let mut translated_parts = Vec::new();
 
     if let Some(translation) = translation {
-        for raw_line in translation.lines() {
+        let normalized_translation = decode_escaped_newlines(translation);
+        for raw_line in normalized_translation.lines() {
             let line = raw_line.trim().trim_matches('/');
             if line.is_empty() {
                 continue;
             }
 
             if let Some((detected_type, text)) = split_tagged_translation(line) {
-                if word_type.is_none() {
-                    word_type = Some(detected_type);
-                }
+                push_unique(&mut word_types, detected_type);
                 translated_parts.push(text);
             } else {
                 translated_parts.push(line.to_string());
@@ -218,6 +221,12 @@ fn normalize_translation(translation: Option<&str>, pos: Option<&str>) -> (Optio
         translation.unwrap_or_default().trim().to_string()
     } else {
         translated_parts.join("；")
+    };
+
+    let word_type = if word_types.is_empty() {
+        None
+    } else {
+        Some(word_types.join(" / "))
     };
 
     (word_type, translated_text)
@@ -247,13 +256,21 @@ fn normalize_word_type(word_type: &str) -> String {
 
 fn split_lines(value: Option<&str>) -> Vec<String> {
     let mut items = Vec::new();
-    for line in value.unwrap_or_default().lines() {
+    let normalized_value = decode_escaped_newlines(value.unwrap_or_default());
+    for line in normalized_value.lines() {
         let trimmed = line.trim();
         if !trimmed.is_empty() {
             push_unique(&mut items, trimmed.to_string());
         }
     }
     items
+}
+
+fn decode_escaped_newlines(value: &str) -> String {
+    value
+        .replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\\r", "\n")
 }
 
 fn query_string_list(

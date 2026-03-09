@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { nextTick, ref, onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type { Translation } from '../stores/translation'
@@ -9,13 +9,99 @@ import { openTranslationsDatabase } from '../lib/database'
 const currentTranslation = ref<Translation | null>(null)
 const loading = ref(true)
 const error = ref('')
+const contentRef = ref<HTMLElement | null>(null)
 const appWindow = getCurrentWebviewWindow()
 
 let db: Database | null = null
 let unlistenTranslationResult: (() => void) | null = null
+let unlistenTranslationUpdate: (() => void) | null = null
+let unlistenTranslationStarted: (() => void) | null = null
 
 function serializeStringList(items?: string[]) {
   return items ? JSON.stringify(items) : null
+}
+
+async function persistTranslation(nextTranslation: Translation, incrementAccessCount: boolean) {
+  if (!db) {
+    return nextTranslation
+  }
+
+  const explainsJson = serializeStringList(nextTranslation.explains)
+  const examplesJson = serializeStringList(nextTranslation.examples)
+  const synonymsJson = serializeStringList(nextTranslation.synonyms)
+  const accessCountClause = incrementAccessCount ? 'access_count = access_count + 1,' : ''
+
+  await db.execute(
+    `INSERT INTO translations (source_text, translated_text, phonetic, us_phonetic, uk_phonetic, audio_url, explains, examples, synonyms, source_lang, target_lang, word_type, created_at, access_count, is_favorite)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0)
+     ON CONFLICT(source_text, source_lang, target_lang)
+     DO UPDATE SET
+       translated_text = $2,
+       phonetic = $3,
+       us_phonetic = $4,
+       uk_phonetic = $5,
+       audio_url = $6,
+       explains = $7,
+       examples = $8,
+       synonyms = $9,
+       word_type = $12,
+       ${accessCountClause}
+       created_at = $13`,
+    [
+      nextTranslation.source_text,
+      nextTranslation.translated_text,
+      nextTranslation.phonetic,
+      nextTranslation.us_phonetic,
+      nextTranslation.uk_phonetic,
+      nextTranslation.audio_url,
+      explainsJson,
+      examplesJson,
+      synonymsJson,
+      nextTranslation.source_lang,
+      nextTranslation.target_lang,
+      nextTranslation.word_type,
+      nextTranslation.created_at,
+      nextTranslation.access_count,
+    ]
+  )
+
+  const results = await db.select<Translation[]>(
+    'SELECT * FROM translations WHERE source_text = $1 AND source_lang = $2 AND target_lang = $3',
+    [
+      nextTranslation.source_text,
+      nextTranslation.source_lang,
+      nextTranslation.target_lang,
+    ]
+  )
+
+  if (results.length > 0) {
+    nextTranslation.id = results[0].id
+    nextTranslation.is_favorite = results[0].is_favorite
+  }
+
+  return nextTranslation
+}
+
+async function applyTranslation(payload: Translation, incrementAccessCount: boolean) {
+  const nextTranslation: Translation = {
+    ...payload
+  }
+
+  try {
+    await persistTranslation(nextTranslation, incrementAccessCount)
+  } catch (e) {
+    console.error('保存翻译失败:', e)
+  }
+
+  currentTranslation.value = nextTranslation
+  loading.value = false
+  error.value = ''
+
+  if (incrementAccessCount) {
+    await nextTick()
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    contentRef.value?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }
 }
 
 onMounted(async () => {
@@ -27,72 +113,18 @@ onMounted(async () => {
   }
 
   // 监听翻译结果
+  unlistenTranslationStarted = await listen('translation-started', () => {
+    loading.value = true
+    error.value = ''
+    currentTranslation.value = null
+  })
+
   unlistenTranslationResult = await listen<Translation>('translation-result', async (event) => {
-    const nextTranslation: Translation = {
-      ...event.payload
-    }
+    await applyTranslation(event.payload, true)
+  })
 
-    // 保存到数据库
-    if (db) {
-      try {
-        const explainsJson = serializeStringList(nextTranslation.explains)
-        const examplesJson = serializeStringList(nextTranslation.examples)
-        const synonymsJson = serializeStringList(nextTranslation.synonyms)
-
-        await db.execute(
-          `INSERT INTO translations (source_text, translated_text, phonetic, us_phonetic, uk_phonetic, audio_url, explains, examples, synonyms, source_lang, target_lang, word_type, created_at, access_count, is_favorite)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0)
-           ON CONFLICT(source_text, source_lang, target_lang)
-           DO UPDATE SET
-             translated_text = $2,
-             phonetic = $3,
-             us_phonetic = $4,
-             uk_phonetic = $5,
-             audio_url = $6,
-             explains = $7,
-             examples = $8,
-             synonyms = $9,
-             word_type = $12,
-             access_count = access_count + 1,
-             created_at = $13`,
-          [
-            nextTranslation.source_text,
-            nextTranslation.translated_text,
-            nextTranslation.phonetic,
-            nextTranslation.us_phonetic,
-            nextTranslation.uk_phonetic,
-            nextTranslation.audio_url,
-            explainsJson,
-            examplesJson,
-            synonymsJson,
-            nextTranslation.source_lang,
-            nextTranslation.target_lang,
-            nextTranslation.word_type,
-            nextTranslation.created_at,
-            nextTranslation.access_count,
-          ]
-        )
-
-        // 查询刚保存的记录，获取 id 和 is_favorite
-        const results = await db.select<Translation[]>(
-          'SELECT * FROM translations WHERE source_text = $1 AND source_lang = $2 AND target_lang = $3',
-          [
-            nextTranslation.source_text,
-            nextTranslation.source_lang,
-            nextTranslation.target_lang,
-          ]
-        )
-        if (results.length > 0) {
-          nextTranslation.id = results[0].id
-          nextTranslation.is_favorite = results[0].is_favorite
-        }
-      } catch (e) {
-        console.error('保存翻译失败:', e)
-      }
-    }
-
-    currentTranslation.value = nextTranslation
-    loading.value = false
+  unlistenTranslationUpdate = await listen<Translation>('translation-update', async (event) => {
+    await applyTranslation(event.payload, false)
   })
 
   // 监听 ESC 键关闭窗口
@@ -104,7 +136,9 @@ onMounted(async () => {
 
 // 清理事件监听
 onUnmounted(() => {
+  unlistenTranslationStarted?.()
   unlistenTranslationResult?.()
+  unlistenTranslationUpdate?.()
   window.removeEventListener('keydown', handleKeyDown)
 })
 
@@ -159,7 +193,7 @@ function playAudio() {
       <span>翻译中...</span>
     </div>
 
-    <div v-else-if="currentTranslation" class="content">
+    <div v-else-if="currentTranslation" ref="contentRef" class="content">
       <!-- 单词/短语 -->
       <div class="word-section">
         <div class="word-header">
@@ -191,7 +225,12 @@ function playAudio() {
       <!-- 中文翻译 -->
       <div class="translation-section">
         <h3 class="section-title">翻译</h3>
-        <p class="translation-text">{{ currentTranslation.translated_text }}</p>
+        <p class="translation-text">
+          <span v-if="currentTranslation.word_type" class="translation-word-type">
+            {{ currentTranslation.word_type }}
+          </span>
+          <span>{{ currentTranslation.translated_text }}</span>
+        </p>
       </div>
 
       <!-- 基本释义 -->
@@ -424,6 +463,13 @@ function playAudio() {
   background: #f8f9fa;
   border-radius: 8px;
   border-left: 3px solid #667eea;
+}
+
+.translation-word-type {
+  display: inline-block;
+  margin-right: 8px;
+  color: #4f5fc7;
+  font-weight: 600;
 }
 
 .loading {

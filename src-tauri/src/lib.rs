@@ -32,6 +32,12 @@ impl Default for TrayBehaviorConfig {
     }
 }
 
+#[derive(Default)]
+struct PopupRuntimeState {
+    ready: bool,
+    active_request_id: u64,
+}
+
 fn is_local_dictionary_candidate(text: &str) -> bool {
     !text.contains(' ')
         && !text.contains(',')
@@ -61,12 +67,11 @@ fn to_translation_content(entry: OfflineDictionaryEntry) -> translator::Translat
     }
 }
 
-fn build_translation(text: String, content: translator::TranslationContent) -> Translation {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-
+fn build_translation_with_timestamp(
+    text: String,
+    content: translator::TranslationContent,
+    created_at: i64,
+) -> Translation {
     Translation {
         id: None,
         source_text: text,
@@ -81,10 +86,79 @@ fn build_translation(text: String, content: translator::TranslationContent) -> T
         source_lang: "en".to_string(),
         target_lang: "zh".to_string(),
         word_type: content.word_type,
-        created_at: now,
+        created_at,
         access_count: 1,
         is_favorite: 0,
     }
+}
+
+fn build_translation(text: String, content: translator::TranslationContent) -> Translation {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    build_translation_with_timestamp(text, content, now)
+}
+
+fn build_translation_from_existing(
+    base: &Translation,
+    content: translator::TranslationContent,
+) -> Translation {
+    Translation {
+        id: base.id,
+        source_text: base.source_text.clone(),
+        translated_text: content.translated_text,
+        phonetic: content.phonetic,
+        us_phonetic: content.us_phonetic,
+        uk_phonetic: content.uk_phonetic,
+        audio_url: content.audio_url,
+        explains: some_if_not_empty(content.explains),
+        examples: some_if_not_empty(content.examples),
+        synonyms: some_if_not_empty(content.synonyms),
+        source_lang: base.source_lang.clone(),
+        target_lang: base.target_lang.clone(),
+        word_type: content.word_type,
+        created_at: base.created_at,
+        access_count: base.access_count,
+        is_favorite: base.is_favorite,
+    }
+}
+
+fn next_popup_request_id(state: &Arc<RwLock<PopupRuntimeState>>) -> u64 {
+    let mut popup_state = state.write().unwrap();
+    popup_state.active_request_id += 1;
+    popup_state.active_request_id
+}
+
+fn is_active_popup_request(state: &Arc<RwLock<PopupRuntimeState>>, request_id: u64) -> bool {
+    state.read().unwrap().active_request_id == request_id
+}
+
+fn is_popup_ready(state: &Arc<RwLock<PopupRuntimeState>>) -> bool {
+    state.read().unwrap().ready
+}
+
+fn mark_popup_ready(state: &Arc<RwLock<PopupRuntimeState>>, ready: bool) {
+    state.write().unwrap().ready = ready;
+}
+
+fn lookup_local_translation(
+    app: &tauri::AppHandle,
+    text: &str,
+) -> Result<Option<(OfflineDictionaryEntry, Translation)>, String> {
+    if !is_local_dictionary_candidate(text) {
+        return Ok(None);
+    }
+
+    let Some(entry) = local_dictionary::lookup_word(app, text)? else {
+        println!("本地词典未命中: {}", text);
+        return Ok(None);
+    };
+
+    println!("本地词典命中: {}", text);
+    let translation = build_translation(text.to_string(), to_translation_content(entry.clone()));
+    Ok(Some((entry, translation)))
 }
 
 async fn resolve_translation(
@@ -93,9 +167,7 @@ async fn resolve_translation(
     app_key: &str,
     app_secret: &str,
 ) -> Result<Translation, String> {
-    if is_local_dictionary_candidate(text) {
-        if let Some(entry) = local_dictionary::lookup_word(app, text)? {
-            println!("本地词典命中: {}", text);
+    if let Some((entry, base_translation)) = lookup_local_translation(app, text)? {
             let supplement = match translator::fetch_free_dictionary_supplement(text).await {
                 Ok(supplement) => supplement,
                 Err(error) => {
@@ -104,10 +176,10 @@ async fn resolve_translation(
                 }
             };
             let merged = local_dictionary::merge_free_dictionary_supplement(entry, supplement);
-            return Ok(build_translation(text.to_string(), to_translation_content(merged)));
-        }
-
-        println!("本地词典未命中: {}", text);
+            return Ok(build_translation_from_existing(
+                &base_translation,
+                to_translation_content(merged),
+            ));
     }
 
     if app_key.is_empty() || app_secret.is_empty() {
@@ -119,20 +191,20 @@ async fn resolve_translation(
 }
 
 // 快捷键处理函数
-fn handle_shortcut(app: tauri::AppHandle, config: Arc<RwLock<AppConfig>>) {
+fn handle_shortcut(
+    app: tauri::AppHandle,
+    config: Arc<RwLock<AppConfig>>,
+    popup_state: Arc<RwLock<PopupRuntimeState>>,
+) {
     tauri::async_runtime::spawn(async move {
         println!("开始执行翻译流程...");
+        let request_id = next_popup_request_id(&popup_state);
 
         // 1. 获取鼠标位置（在复制前获取，避免位置变化）
         let cursor_pos = get_cursor_position();
+        let baseline_clipboard_sequence = clipboard::clipboard_sequence_number();
 
-        // 2. 立即显示加载窗口
-        if let Err(e) = show_loading_popup(&app, cursor_pos) {
-            println!("显示加载窗口失败: {}", e);
-            return;
-        }
-
-        // 3. 模拟 Ctrl+C 复制选中文本
+        // 2. 模拟 Ctrl+C 复制选中文本
         std::thread::sleep(std::time::Duration::from_millis(50));
         println!("正在模拟 Ctrl+C 复制...");
 
@@ -141,37 +213,107 @@ fn handle_shortcut(app: tauri::AppHandle, config: Arc<RwLock<AppConfig>>) {
         enigo.key(Key::Unicode('c'), enigo::Direction::Click).ok();
         enigo.key(Key::Control, enigo::Direction::Release).ok();
 
-        // 等待剪贴板更新
-        std::thread::sleep(std::time::Duration::from_millis(150));
         println!("复制完成，等待剪贴板更新...");
 
-        // 4. 读取剪贴板
-        let text = match clipboard::read_clipboard(&app) {
+        // 3. 读取剪贴板，避免系统尚未完成更新时直接失败
+        let text = match clipboard::read_clipboard_after_update(
+            &app,
+            baseline_clipboard_sequence,
+            6,
+            80,
+        ) {
             Ok(t) => {
-                let trimmed = t.trim().to_string();
-                println!("读取到剪贴板内容: {}", trimmed);
-                trimmed
+                println!("读取到剪贴板内容: {}", t);
+                t
             },
             Err(e) => {
                 println!("读取剪贴板失败: {:?}", e);
-                let _ = close_popup_window(&app);
+                if is_active_popup_request(&popup_state, request_id) {
+                    let _ = close_popup_window(&app);
+                }
                 return;
             },
         };
 
         if text.is_empty() {
             println!("剪贴板内容为空");
-            let _ = close_popup_window(&app);
+            if is_active_popup_request(&popup_state, request_id) {
+                let _ = close_popup_window(&app);
+            }
             return;
         }
 
-        // 5. 获取配置
+        if let Some((local_entry, local_translation)) = match lookup_local_translation(&app, &text) {
+            Ok(result) => result,
+            Err(error) => {
+                println!("本地词典查询失败: {}", error);
+                None
+            }
+        } {
+            if !is_active_popup_request(&popup_state, request_id) {
+                return;
+            }
+
+            let _ = show_popup_translation(
+                &app,
+                &popup_state,
+                request_id,
+                "translation-result",
+                local_translation.clone(),
+                cursor_pos,
+                true,
+            );
+
+            let app_clone = app.clone();
+            let popup_state_clone = popup_state.clone();
+            let text_clone = text.clone();
+            tauri::async_runtime::spawn(async move {
+                let supplement = match translator::fetch_free_dictionary_supplement(&text_clone).await {
+                    Ok(Some(supplement)) => supplement,
+                    Ok(None) => return,
+                    Err(error) => {
+                        println!("Free Dictionary 补全失败: {}", error);
+                        return;
+                    }
+                };
+
+                if !is_active_popup_request(&popup_state_clone, request_id) {
+                    return;
+                }
+
+                let merged = local_dictionary::merge_free_dictionary_supplement(
+                    local_entry,
+                    Some(supplement),
+                );
+                let enriched_translation = build_translation_from_existing(
+                    &local_translation,
+                    to_translation_content(merged),
+                );
+
+                if enriched_translation != local_translation {
+                    let _ = show_popup_translation(
+                        &app_clone,
+                        &popup_state_clone,
+                        request_id,
+                        "translation-update",
+                        enriched_translation,
+                        cursor_pos,
+                        false,
+                    );
+                }
+            });
+
+            return;
+        }
+
+        // 4. 获取配置
         let (app_key, app_secret) = {
             let cfg = config.read().unwrap();
             (cfg.api_key.clone(), cfg.api_secret.clone())
         };
 
         println!("开始调用翻译 API...");
+        let _ = show_loading_popup(&app, &popup_state, request_id, cursor_pos);
 
         let result = match resolve_translation(&app, &text, &app_key, &app_secret).await {
             Ok(translation) => {
@@ -180,13 +322,26 @@ fn handle_shortcut(app: tauri::AppHandle, config: Arc<RwLock<AppConfig>>) {
             }
             Err(error) => {
                 println!("翻译失败: {:?}", error);
-                let _ = close_popup_window(&app);
+                if is_active_popup_request(&popup_state, request_id) {
+                    let _ = close_popup_window(&app);
+                }
                 return;
             }
         };
 
-        // 7. 更新窗口内容
-        let _ = update_popup_window(&app, result);
+        if !is_active_popup_request(&popup_state, request_id) {
+            return;
+        }
+
+        let _ = show_popup_translation(
+            &app,
+            &popup_state,
+            request_id,
+            "translation-result",
+            result,
+            cursor_pos,
+            true,
+        );
     });
 }
 
@@ -221,13 +376,15 @@ fn update_global_shortcut(
 
     let config = app.state::<Arc<RwLock<AppConfig>>>();
     let config_clone = config.inner().clone();
+    let popup_state = app.state::<Arc<RwLock<PopupRuntimeState>>>();
+    let popup_state_clone = popup_state.inner().clone();
 
     app.global_shortcut()
         .on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state() != ShortcutState::Pressed {
                 return;
             }
-            handle_shortcut(app.clone(), config_clone.clone());
+            handle_shortcut(app.clone(), config_clone.clone(), popup_state_clone.clone());
         })
         .map_err(|e| format!("注册快捷键失败: {}", e))?;
 
@@ -310,57 +467,6 @@ fn get_cursor_position() -> (i32, i32) {
     }
 }
 
-// 显示加载窗口
-fn show_loading_popup(
-    app: &tauri::AppHandle,
-    cursor_pos: (i32, i32),
-) -> Result<(), String> {
-    // 检查窗口是否已存在
-    if let Some(window) = app.get_webview_window("popup") {
-        // 更新位置并显示
-        window.set_position(tauri::Position::Physical(
-            tauri::PhysicalPosition { x: cursor_pos.0, y: cursor_pos.1 }
-        )).map_err(|e: tauri::Error| e.to_string())?;
-
-        window.show().map_err(|e: tauri::Error| e.to_string())?;
-        window.set_focus().map_err(|e: tauri::Error| e.to_string())?;
-    } else {
-        // 创建新窗口（先隐藏）
-        let window = tauri::WebviewWindowBuilder::new(
-            app,
-            "popup",
-            tauri::WebviewUrl::App("index.html".into())
-        )
-        .title("翻译")
-        .inner_size(420.0, 380.0)
-        .decorations(true)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .position(cursor_pos.0 as f64, cursor_pos.1 as f64)
-        .visible(false)  // 先隐藏
-        .initialization_script("window.location.hash = '#/popup';")
-        .build()
-        .map_err(|e| e.to_string())?;
-
-        // 等待窗口准备好后再显示
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        window.show().map_err(|e: tauri::Error| e.to_string())?;
-        window.set_focus().map_err(|e: tauri::Error| e.to_string())?;
-    }
-    Ok(())
-}
-
-// 更新窗口内容
-fn update_popup_window(
-    app: &tauri::AppHandle,
-    translation: Translation,
-) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("popup") {
-        window.emit("translation-result", &translation).map_err(|e: tauri::Error| e.to_string())?;
-    }
-    Ok(())
-}
-
 // 关闭弹窗
 fn close_popup_window(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("popup") {
@@ -369,53 +475,127 @@ fn close_popup_window(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-// 显示悬浮窗（保留用于手动翻译）
-fn show_popup_window(
-    app: &tauri::AppHandle,
-    translation: Translation,
+fn set_popup_position(
+    window: &tauri::WebviewWindow,
     cursor_pos: (i32, i32),
 ) -> Result<(), String> {
-    // 检查窗口是否已存在
-    if let Some(window) = app.get_webview_window("popup") {
-        // 更新位置
-        window.set_position(tauri::Position::Physical(
-            tauri::PhysicalPosition { x: cursor_pos.0, y: cursor_pos.1 }
-        )).map_err(|e: tauri::Error| e.to_string())?;
+    window
+        .set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x: cursor_pos.0,
+            y: cursor_pos.1,
+        }))
+        .map_err(|e: tauri::Error| e.to_string())
+}
 
-        // 发送翻译结果
-        window.emit("translation-result", &translation).map_err(|e: tauri::Error| e.to_string())?;
-        window.show().map_err(|e: tauri::Error| e.to_string())?;
-        window.set_focus().map_err(|e: tauri::Error| e.to_string())?;
-    } else {
-        // 创建新窗口
-        let window = tauri::WebviewWindowBuilder::new(
-            app,
-            "popup",
-            tauri::WebviewUrl::App("index.html".into())
-        )
+fn build_popup_window(
+    app: &tauri::AppHandle,
+    popup_state: Arc<RwLock<PopupRuntimeState>>,
+) -> Result<tauri::WebviewWindow, String> {
+    let window = tauri::WebviewWindowBuilder::new(
+        app,
+        "popup",
+        tauri::WebviewUrl::App("index.html".into()),
+    )
         .title("翻译")
         .inner_size(420.0, 380.0)
         .decorations(true)
         .always_on_top(true)
         .skip_taskbar(true)
-        .position(cursor_pos.0 as f64, cursor_pos.1 as f64)
-        .visible(false)  // 先隐藏
+        .visible(false)
         .initialization_script("window.location.hash = '#/popup';")
         .build()
         .map_err(|e| e.to_string())?;
 
-        // 监听前端就绪事件
-        let translation_clone = translation.clone();
-        let window_clone = window.clone();
+    let popup_state_clone = popup_state.clone();
+    window.listen("popup-ready", move |_event| {
+        mark_popup_ready(&popup_state_clone, true);
+    });
 
-        window.once("popup-ready", move |_event| {
-            // 前端已就绪，发送翻译结果
-            let _ = window_clone.emit("translation-result", &translation_clone);
-            let _ = window_clone.show();
-        });
+    Ok(window)
+}
+
+fn ensure_popup_window(
+    app: &tauri::AppHandle,
+    popup_state: &Arc<RwLock<PopupRuntimeState>>,
+) -> Result<tauri::WebviewWindow, String> {
+    if let Some(window) = app.get_webview_window("popup") {
+        return Ok(window);
     }
 
+    mark_popup_ready(popup_state, false);
+    build_popup_window(app, popup_state.clone())
+}
+
+fn with_popup_ready<F>(
+    app: &tauri::AppHandle,
+    popup_state: &Arc<RwLock<PopupRuntimeState>>,
+    request_id: u64,
+    cursor_pos: (i32, i32),
+    action: F,
+) -> Result<(), String>
+where
+    F: Fn(&tauri::WebviewWindow) + Send + Sync + 'static,
+{
+    let window = ensure_popup_window(app, popup_state)?;
+    set_popup_position(&window, cursor_pos)?;
+
+    if is_popup_ready(popup_state) {
+        action(&window);
+        return Ok(());
+    }
+
+    let popup_state_clone = popup_state.clone();
+    let window_clone = window.clone();
+    let action = Arc::new(action);
+    let deferred_action = action.clone();
+
+    window.once("popup-ready", move |_event| {
+        if !is_active_popup_request(&popup_state_clone, request_id) {
+            return;
+        }
+
+        let _ = set_popup_position(&window_clone, cursor_pos);
+        deferred_action(&window_clone);
+    });
+
     Ok(())
+}
+
+fn show_loading_popup(
+    app: &tauri::AppHandle,
+    popup_state: &Arc<RwLock<PopupRuntimeState>>,
+    request_id: u64,
+    cursor_pos: (i32, i32),
+) -> Result<(), String> {
+    if !is_active_popup_request(popup_state, request_id) {
+        return Ok(());
+    }
+
+    with_popup_ready(app, popup_state, request_id, cursor_pos, |window| {
+        let _ = window.emit("translation-started", ());
+        let _ = window.show();
+    })
+}
+
+fn show_popup_translation(
+    app: &tauri::AppHandle,
+    popup_state: &Arc<RwLock<PopupRuntimeState>>,
+    request_id: u64,
+    event_name: &'static str,
+    translation: Translation,
+    cursor_pos: (i32, i32),
+    should_show: bool,
+) -> Result<(), String> {
+    if !is_active_popup_request(popup_state, request_id) {
+        return Ok(());
+    }
+
+    with_popup_ready(app, popup_state, request_id, cursor_pos, move |window| {
+        let _ = window.emit(event_name, &translation);
+        if should_show {
+            let _ = window.show();
+        }
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -433,6 +613,9 @@ pub fn run() {
             let tray_behavior = Arc::new(RwLock::new(TrayBehaviorConfig::default()));
             app.manage(tray_behavior.clone());
 
+            let popup_state = Arc::new(RwLock::new(PopupRuntimeState::default()));
+            app.manage(popup_state.clone());
+
             match local_dictionary::ensure_runtime_dictionary(&app.handle().clone()) {
                 Ok(Some(path)) => {
                     println!("本地词典已就绪: {}", path.display());
@@ -443,6 +626,10 @@ pub fn run() {
                 Err(error) => {
                     println!("初始化本地词典失败: {}", error);
                 }
+            }
+
+            if let Err(error) = ensure_popup_window(&app.handle().clone(), &popup_state) {
+                println!("预热弹窗失败: {}", error);
             }
 
             // 创建托盘菜单
@@ -492,13 +679,14 @@ pub fn run() {
 
             let shortcut: Shortcut = "Ctrl+Q".parse().unwrap();
             let config_clone = config.clone();
+            let popup_state_clone = popup_state.clone();
 
             app.global_shortcut()
                 .on_shortcut(shortcut, move |app, _shortcut, event| {
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
-                    handle_shortcut(app.clone(), config_clone.clone());
+                    handle_shortcut(app.clone(), config_clone.clone(), popup_state_clone.clone());
                 })
                 .map_err(|e| e.to_string())?;
 
