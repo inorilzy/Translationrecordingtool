@@ -1,16 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomePage from '../views/HomePage.vue'
 import PopupWindow from '../views/PopupWindow.vue'
 import HistoryPage from '../views/HistoryPage.vue'
 import FavoritesPage from '../views/FavoritesPage.vue'
 import DetailPage from '../views/DetailPage.vue'
+import LogsPage from '../views/LogsPage.vue'
 import SettingsPage from '../views/SettingsPage.vue'
 
 const routes = [
   {
     path: '/',
-    name: 'Home',
-    component: HomePage
+    redirect: '/history'
   },
   {
     path: '/popup',
@@ -31,6 +30,11 @@ const routes = [
     path: '/detail/:id',
     name: 'Detail',
     component: DetailPage
+  },
+  {
+    path: '/logs',
+    name: 'Logs',
+    component: LogsPage
   },
   {
     path: '/settings',

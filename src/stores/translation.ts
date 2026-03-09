@@ -2,58 +2,17 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import Database from '@tauri-apps/plugin-sql'
-import { openTranslationsDatabase } from '../lib/database'
+import {
+  mergeTranslationIntoHistory,
+  normalizeTranslationRow,
+  openTranslationsDatabase,
+  type TranslationRow,
+  updateHistoryFavoriteState,
+  upsertTranslation,
+  type TranslationRecord as Translation,
+} from '../lib/database'
 
-export interface Translation {
-  id?: number
-  source_text: string
-  translated_text: string
-  phonetic?: string
-  us_phonetic?: string
-  uk_phonetic?: string
-  audio_url?: string
-  explains?: string[]
-  examples?: string[]
-  synonyms?: string[]
-  source_lang: string
-  target_lang: string
-  word_type?: string
-  created_at: number
-  access_count: number
-  is_favorite: number
-}
-
-interface TranslationRow extends Omit<Translation, 'explains' | 'examples' | 'synonyms'> {
-  explains?: string[] | string | null
-  examples?: string[] | string | null
-  synonyms?: string[] | string | null
-}
-
-function parseStringList(value?: string[] | string | null) {
-  if (Array.isArray(value)) {
-    return value
-  }
-
-  if (typeof value !== 'string' || !value.trim()) {
-    return undefined
-  }
-
-  try {
-    const parsed = JSON.parse(value)
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : undefined
-  } catch {
-    return [value]
-  }
-}
-
-function normalizeTranslation(row: TranslationRow): Translation {
-  return {
-    ...row,
-    explains: parseStringList(row.explains),
-    examples: parseStringList(row.examples),
-    synonyms: parseStringList(row.synonyms),
-  }
-}
+export type { Translation }
 
 export const useTranslationStore = defineStore('translation', () => {
   const apiKey = ref(localStorage.getItem('youdao_app_key') || '')
@@ -113,48 +72,12 @@ export const useTranslationStore = defineStore('translation', () => {
         appSecret: apiSecret.value,
       })
 
-      currentTranslation.value = result
-
-      // 保存到数据库
       if (db) {
-        const explainsJson = result.explains ? JSON.stringify(result.explains) : null
-        const examplesJson = result.examples ? JSON.stringify(result.examples) : null
-        const synonymsJson = result.synonyms ? JSON.stringify(result.synonyms) : null
-
-        await db.execute(
-          `INSERT INTO translations (source_text, translated_text, phonetic, us_phonetic, uk_phonetic, audio_url, explains, examples, synonyms, source_lang, target_lang, word_type, created_at, access_count, is_favorite)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0)
-           ON CONFLICT(source_text, source_lang, target_lang)
-           DO UPDATE SET
-             translated_text = $2,
-             phonetic = $3,
-             us_phonetic = $4,
-             uk_phonetic = $5,
-             audio_url = $6,
-             explains = $7,
-             examples = $8,
-             synonyms = $9,
-             word_type = $12,
-             access_count = access_count + 1,
-             created_at = $13`,
-          [
-            result.source_text,
-            result.translated_text,
-            result.phonetic,
-            result.us_phonetic,
-            result.uk_phonetic,
-            result.audio_url,
-            explainsJson,
-            examplesJson,
-            synonymsJson,
-            result.source_lang,
-            result.target_lang,
-            result.word_type,
-            result.created_at,
-            result.access_count,
-          ]
-        )
-        await loadHistory()
+        const persisted = await upsertTranslation(db, result, { incrementAccessCount: true })
+        currentTranslation.value = persisted
+        history.value = mergeTranslationIntoHistory(history.value, persisted)
+      } else {
+        currentTranslation.value = result
       }
     } catch (e) {
       error.value = `翻译失败: ${e}`
@@ -170,7 +93,7 @@ export const useTranslationStore = defineStore('translation', () => {
       const results = await db.select<TranslationRow[]>(
         'SELECT * FROM translations ORDER BY created_at DESC LIMIT 100'
       )
-      history.value = results.map(normalizeTranslation)
+      history.value = results.map(normalizeTranslationRow)
     } catch (e) {
       error.value = `加载历史记录失败: ${e}`
     }
@@ -183,7 +106,7 @@ export const useTranslationStore = defineStore('translation', () => {
       const results = await db.select<TranslationRow[]>(
         'SELECT * FROM translations WHERE is_favorite = 1 ORDER BY created_at DESC'
       )
-      return results.map(normalizeTranslation)
+      return results.map(normalizeTranslationRow)
     } catch (e) {
       error.value = `加载收藏列表失败: ${e}`
       return []
@@ -198,7 +121,7 @@ export const useTranslationStore = defineStore('translation', () => {
         'SELECT * FROM translations WHERE id = $1',
         [id]
       )
-      return results.length > 0 ? normalizeTranslation(results[0]) : null
+      return results.length > 0 ? normalizeTranslationRow(results[0]) : null
     } catch (e) {
       error.value = `查询翻译记录失败: ${e}`
       return null
@@ -213,14 +136,17 @@ export const useTranslationStore = defineStore('translation', () => {
         'UPDATE translations SET is_favorite = $1 WHERE id = $2',
         [isFavorite ? 1 : 0, id]
       )
+
+      history.value = updateHistoryFavoriteState(history.value, id, isFavorite ? 1 : 0)
+      if (currentTranslation.value?.id === id) {
+        currentTranslation.value = {
+          ...currentTranslation.value,
+          is_favorite: isFavorite ? 1 : 0,
+        }
+      }
     } catch (e) {
       error.value = `更新收藏状态失败: ${e}`
     }
-  }
-
-  function saveApiConfig() {
-    localStorage.setItem('youdao_app_key', apiKey.value)
-    localStorage.setItem('youdao_app_secret', apiSecret.value)
   }
 
   async function updateGlobalShortcut(newShortcut: string) {
@@ -235,6 +161,11 @@ export const useTranslationStore = defineStore('translation', () => {
       error.value = `更新快捷键失败: ${e}`
       throw e
     }
+  }
+
+  function saveApiConfig() {
+    localStorage.setItem('youdao_app_key', apiKey.value)
+    localStorage.setItem('youdao_app_secret', apiSecret.value)
   }
 
   async function updateApiConfig(key: string, secret: string) {

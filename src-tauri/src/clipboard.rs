@@ -9,9 +9,7 @@ pub fn read_clipboard(app: &tauri::AppHandle) -> Result<String, String> {
 pub fn clipboard_sequence_number() -> Option<u32> {
     #[cfg(target_os = "windows")]
     {
-        Some(unsafe {
-            windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber()
-        })
+        Some(unsafe { windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber() })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -58,15 +56,15 @@ where
         if !clipboard_updated {
             last_error = "读取剪贴板失败: 剪贴板尚未更新".to_string();
         } else {
-        match read_once() {
-            Ok(text) if !text.trim().is_empty() => return Ok(text.trim().to_string()),
-            Ok(_) => {
-                last_error = "读取剪贴板失败: 剪贴板为空".to_string();
+            match read_once() {
+                Ok(text) if !text.trim().is_empty() => return Ok(text.trim().to_string()),
+                Ok(_) => {
+                    last_error = "读取剪贴板失败: 剪贴板为空".to_string();
+                }
+                Err(error) => {
+                    last_error = error;
+                }
             }
-            Err(error) => {
-                last_error = error;
-            }
-        }
         }
 
         if attempt + 1 < attempts {

@@ -8,16 +8,33 @@
 
     <div class="settings-content">
       <section class="setting-section">
-        <h2>有道智云 API 配置</h2>
-        <p class="section-hint">可选。留空时可使用内置词典查询单个英文单词；句子翻译和未命中的词仍需要在线 API。</p>
+        <h2>有道翻译 API</h2>
+        <p class="section-hint">配置后可翻译句子。单词查询无需配置，使用免费的 Free Dictionary API。</p>
         <div class="form-group">
           <label>App Key</label>
-          <input v-model="config.apiKey" type="text" placeholder="请输入 App Key" class="input" />
+          <input
+            v-model="config.apiKey"
+            @blur="saveApiConfig"
+            type="text"
+            placeholder="请输入有道翻译 App Key"
+            class="input"
+          />
         </div>
         <div class="form-group">
           <label>App Secret</label>
-          <input v-model="config.apiSecret" type="password" placeholder="请输入 App Secret" class="input" />
+          <input
+            v-model="config.apiSecret"
+            @blur="saveApiConfig"
+            type="password"
+            placeholder="请输入有道翻译 App Secret"
+            class="input"
+          />
         </div>
+        <small>
+          <a href="https://ai.youdao.com/console/#/" target="_blank">
+            点击这里获取有道翻译 API 密钥
+          </a>
+        </small>
       </section>
 
       <section class="setting-section">
@@ -39,23 +56,43 @@
       </section>
 
       <section class="setting-section">
+        <h2>外观</h2>
+        <div class="form-group">
+          <label>主题</label>
+          <select v-model="config.theme" @change="changeTheme" class="input theme-select">
+            <option value="light">Light - 浅色</option>
+            <option value="dark">Dark - 深色 (VSCode)</option>
+            <option value="one-dark">One Dark Pro</option>
+            <option value="github-light">GitHub Light</option>
+            <option value="github-dark">GitHub Dark</option>
+          </select>
+          <small>选择你喜欢的主题风格</small>
+        </div>
+      </section>
+
+      <section class="setting-section">
         <h2>窗口行为</h2>
         <div class="form-group">
           <div class="toggle-group">
             <label>关闭主窗口时最小化到托盘</label>
             <label class="toggle-switch">
-              <input type="checkbox" v-model="config.enableTray" />
+              <input type="checkbox" v-model="config.enableTray" @change="saveTrayBehavior" />
               <span class="toggle-slider"></span>
             </label>
           </div>
           <small>开启后点击右上角关闭只会隐藏到托盘；关闭后会直接退出应用。</small>
         </div>
+        <div class="form-group">
+          <div class="toggle-group">
+            <label>开机启动</label>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="config.enableAutostart" :disabled="autostartLoading" @change="saveAutostartBehavior" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <small>开启后应用会在系统登录后自动启动。</small>
+        </div>
       </section>
-
-      <div class="actions">
-        <button @click="saveSettings" class="btn btn-primary">保存设置</button>
-        <button @click="resetDefaults" class="btn btn-secondary">恢复默认</button>
-      </div>
 
       <div v-if="message" :class="['message', messageType === 'success' ? 'success-message' : 'error-message']">
         {{ message }}
@@ -67,6 +104,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { getAllWebviewWindows } from '@tauri-apps/api/webviewWindow'
+import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import { useTranslationStore } from '../stores/translation'
 import NavigationBar from '../components/NavigationBar.vue'
 
@@ -76,18 +115,31 @@ const config = ref({
   apiKey: '',
   apiSecret: '',
   globalShortcut: 'Ctrl+Q',
-  enableTray: true
+  enableTray: true,
+  enableAutostart: false,
+  theme: 'light'
 })
 
 const isCapturing = ref(false)
+const autostartLoading = ref(true)
 const message = ref('')
 const messageType = ref<'success' | 'error'>('success')
 
-onMounted(() => {
+onMounted(async () => {
   config.value.apiKey = store.apiKey
   config.value.apiSecret = store.apiSecret
   config.value.globalShortcut = store.globalShortcut
   config.value.enableTray = localStorage.getItem('enable_tray') !== 'false'
+  config.value.theme = localStorage.getItem('theme') || 'light'
+
+  try {
+    config.value.enableAutostart = await isAutostartEnabled()
+  } catch (e) {
+    console.warn('读取开机启动状态失败（开发模式下正常）:', e)
+    config.value.enableAutostart = false
+  } finally {
+    autostartLoading.value = false
+  }
 })
 
 function captureShortcut(event: KeyboardEvent) {
@@ -104,75 +156,99 @@ function captureShortcut(event: KeyboardEvent) {
   }
 
   if (keys.length >= 2) {
-    config.value.globalShortcut = keys.join('+')
+    const newShortcut = keys.join('+')
+    config.value.globalShortcut = newShortcut
+    saveGlobalShortcut()
   }
 }
 
-async function saveSettings() {
+async function saveApiConfig() {
+  if (config.value.apiKey === store.apiKey && config.value.apiSecret === store.apiSecret) {
+    return // 没有变化，不保存
+  }
+
   try {
-    // 更新 API 配置
     await store.updateApiConfig(config.value.apiKey, config.value.apiSecret)
+    showMessage('API 配置已保存', 'success')
+  } catch (e) {
+    showMessage(`保存 API 配置失败: ${e}`, 'error')
+  }
+}
 
-    // 更新快捷键
-    const oldShortcut = store.globalShortcut
-    if (config.value.globalShortcut !== oldShortcut) {
-      await store.updateGlobalShortcut(config.value.globalShortcut)
-    }
+async function saveGlobalShortcut() {
+  if (config.value.globalShortcut === store.globalShortcut) {
+    return
+  }
 
+  try {
+    await store.updateGlobalShortcut(config.value.globalShortcut)
+    showMessage('快捷键已更新', 'success')
+  } catch (e) {
+    showMessage(`更新快捷键失败: ${e}`, 'error')
+    // 恢复旧值
+    config.value.globalShortcut = store.globalShortcut
+  }
+}
+
+async function saveTrayBehavior() {
+  try {
     localStorage.setItem('enable_tray', config.value.enableTray.toString())
     await invoke('update_tray_behavior', {
       enabled: config.value.enableTray
     })
-
-    message.value = '设置保存成功'
-    messageType.value = 'success'
-
-    // 3秒后自动消失
-    setTimeout(() => {
-      message.value = ''
-    }, 3000)
+    showMessage('托盘行为已更新', 'success')
   } catch (e) {
-    message.value = `保存失败: ${e}`
-    messageType.value = 'error'
-
-    // 5秒后自动消失
-    setTimeout(() => {
-      message.value = ''
-    }, 5000)
+    showMessage(`更新托盘行为失败: ${e}`, 'error')
   }
 }
 
-async function resetDefaults() {
-  config.value.apiKey = ''
-  config.value.apiSecret = ''
-  config.value.globalShortcut = 'Ctrl+Q'
-  config.value.enableTray = true
-
-  // 持久化到 localStorage
-  localStorage.setItem('youdao_app_key', '')
-  localStorage.setItem('youdao_app_secret', '')
-  localStorage.setItem('global_shortcut', 'Ctrl+Q')
-  localStorage.setItem('enable_tray', 'true')
-
-  // 同步到 Rust
+async function saveAutostartBehavior() {
   try {
-    await store.updateApiConfig('', '')
-    await store.updateGlobalShortcut('Ctrl+Q')
-    await invoke('update_tray_behavior', {
-      enabled: true
-    })
-    message.value = '已恢复默认设置'
-    messageType.value = 'success'
-    setTimeout(() => {
-      message.value = ''
-    }, 3000)
+    if (config.value.enableAutostart) {
+      await enableAutostart()
+    } else {
+      await disableAutostart()
+    }
+    showMessage('开机启动已更新', 'success')
   } catch (e) {
-    message.value = `恢复默认设置失败: ${e}`
-    messageType.value = 'error'
-    setTimeout(() => {
-      message.value = ''
-    }, 5000)
+    console.warn('开机启动设置失败（开发模式下正常）:', e)
+    // 开发模式下静默失败
   }
+}
+
+async function changeTheme() {
+  localStorage.setItem('theme', config.value.theme)
+  document.documentElement.setAttribute('data-theme', config.value.theme)
+
+  // 通知弹窗窗口更新主题
+  try {
+    const webviewWindows = await getAllWebviewWindows()
+    webviewWindows.forEach((webviewWindow) => {
+      if (webviewWindow.label === 'popup') {
+        webviewWindow.emit('theme-changed', { theme: config.value.theme })
+      }
+    })
+  } catch (e) {
+    console.warn('通知弹窗更新主题失败:', e)
+  }
+
+  const themeNames: Record<string, string> = {
+    'light': 'Light 浅色',
+    'dark': 'Dark 深色',
+    'one-dark': 'One Dark Pro',
+    'github-light': 'GitHub Light',
+    'github-dark': 'GitHub Dark'
+  }
+
+  showMessage(`已切换到 ${themeNames[config.value.theme]} 主题`, 'success')
+}
+
+function showMessage(msg: string, type: 'success' | 'error') {
+  message.value = msg
+  messageType.value = type
+  setTimeout(() => {
+    message.value = ''
+  }, 3000)
 }
 </script>
 
@@ -238,15 +314,23 @@ async function resetDefaults() {
   font-size: 12px;
 }
 
-.actions {
-  display: flex;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-lg);
-}
-
 .message {
   margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius-sm);
   animation: fadeIn 0.3s ease-in;
+}
+
+.success-message {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+}
+
+.error-message {
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #ef9a9a;
 }
 
 @keyframes fadeIn {
@@ -375,5 +459,10 @@ async function resetDefaults() {
   margin-top: var(--spacing-xs);
   font-size: 12px;
   color: var(--color-text-tertiary);
+}
+
+.theme-select {
+  width: 100%;
+  cursor: pointer;
 }
 </style>

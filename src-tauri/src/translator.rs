@@ -1,7 +1,11 @@
 use crate::local_dictionary::FreeDictionarySupplement;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::OnceLock,
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tracing::{debug, error, info};
 
 #[derive(Debug, Clone, Default)]
 pub struct TranslationContent {
@@ -23,69 +27,12 @@ pub struct YoudaoResponse {
     pub error_code: String,
     pub translation: Option<Vec<String>>,
     pub basic: Option<YoudaoBasic>,
-    pub web: Option<Vec<WebTranslation>>,
-}
-
-// 有道词典 API 响应
-#[derive(Debug, Serialize, Deserialize)]
-pub struct YoudaoDictResponse {
-    #[serde(rename = "errorCode")]
-    pub error_code: String,
-    pub result: Option<DictResult>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DictResult {
-    pub ec: Option<DictContent>,
-    pub ce: Option<DictContent>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DictContent {
-    pub basic: Option<DictBasic>,
-    pub web: Option<Vec<DictWebItem>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DictBasic {
-    pub phonetic: Option<String>,
-    #[serde(rename = "us-phonetic")]
-    pub us_phonetic: Option<String>,
-    #[serde(rename = "uk-phonetic")]
-    pub uk_phonetic: Option<String>,
-    #[serde(rename = "uk-speech")]
-    pub uk_speech: Option<String>,
-    #[serde(rename = "us-speech")]
-    pub us_speech: Option<String>,
-    pub explains: Option<Vec<DictExplain>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DictExplain {
-    pub pos: Option<String>,
-    pub trans: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DictWebItem {
-    pub key: Option<String>,
-    pub value: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct YoudaoBasic {
     pub phonetic: Option<String>,
-    #[serde(rename = "us-phonetic")]
-    pub us_phonetic: Option<String>,
-    #[serde(rename = "uk-phonetic")]
-    pub uk_phonetic: Option<String>,
     pub explains: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct WebTranslation {
-    pub key: Option<String>,
-    pub value: Option<Vec<String>>,
 }
 
 // Free Dictionary API 响应
@@ -119,6 +66,11 @@ pub struct Definition {
     pub antonyms: Option<Vec<String>>,
 }
 
+fn http_client() -> &'static reqwest::Client {
+    static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    HTTP_CLIENT.get_or_init(reqwest::Client::new)
+}
+
 pub async fn translate_text(
     text: &str,
     app_key: &str,
@@ -146,171 +98,103 @@ pub async fn translate_text(
     hasher.update(sign_str.as_bytes());
     let sign = format!("{:x}", hasher.finalize());
 
-    let client = reqwest::Client::new();
+    let form_data = format!(
+        "q={}&from=auto&to=zh-CHS&appKey={}&salt={}&sign={}&signType=v3&curtime={}",
+        urlencoding::encode(text),
+        urlencoding::encode(app_key),
+        urlencoding::encode(&salt),
+        urlencoding::encode(&sign),
+        urlencoding::encode(&timestamp)
+    );
 
-    let is_single_word =
-        !text.contains(' ') && !text.contains(',') && !text.contains('.') && text.chars().all(|c| c.is_alphabetic());
+    info!("调用有道翻译 API");
 
-    println!("翻译文本: {}, 是否为单词: {}", text, is_single_word);
+    let response = http_client()
+        .post("https://openapi.youdao.com/api")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(form_data)
+        .send()
+        .await
+        .map_err(|e| {
+            let err_msg = format!("有道翻译 API 请求失败: {}", e);
+            error!("{}", err_msg);
+            err_msg
+        })?;
 
-    if is_single_word {
-        println!("使用有道词典 API");
+    let result: YoudaoResponse = response.json().await.map_err(|e| {
+        let err_msg = format!("有道翻译 API 解析响应失败: {}", e);
+        error!("{}", err_msg);
+        err_msg
+    })?;
 
-        let dict_type = if text.chars().all(|c| c.is_ascii_alphabetic()) {
-            "ec"
-        } else {
-            "ce"
-        };
+    debug!("有道翻译 API 响应: {:?}", result);
 
-        let form_data = format!(
-            "q={}&langType=auto&appKey={}&dicts={}&salt={}&sign={}&signType=v3&curtime={}&docType=json",
-            urlencoding::encode(text),
-            urlencoding::encode(app_key),
-            dict_type,
-            urlencoding::encode(&salt),
-            urlencoding::encode(&sign),
-            urlencoding::encode(&timestamp)
-        );
+    if result.error_code != "0" {
+        let err_msg = format!("翻译失败，错误码: {}", result.error_code);
+        error!("{}", err_msg);
+        return Err(err_msg);
+    }
 
-        let response = client
-            .post("https://openapi.youdao.com/v2/dict")
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(form_data)
-            .send()
-            .await
-            .map_err(|e| format!("请求失败: {}", e))?;
+    let translated_text = result
+        .translation
+        .and_then(|items| items.first().cloned())
+        .ok_or("未获取到翻译结果".to_string())?;
 
-        let result: YoudaoDictResponse = response
-            .json()
-            .await
-            .map_err(|e| format!("解析响应失败: {}", e))?;
+    let mut explains = Vec::new();
+    let mut phonetic = None;
 
-        println!("有道词典 API 响应: {:?}", result);
-
-        if result.error_code == "0" {
-            let dict_content = result.result.as_ref().and_then(|r| r.ec.as_ref().or(r.ce.as_ref()));
-
-            if let Some(content) = dict_content {
-                let basic = content.basic.as_ref();
-
-                let us_phonetic = basic.and_then(|b| b.us_phonetic.clone());
-                let uk_phonetic = basic.and_then(|b| b.uk_phonetic.clone());
-                let phonetic = basic.and_then(|b| b.phonetic.clone());
-                let audio_url = basic.and_then(|b| b.us_speech.clone().or(b.uk_speech.clone()));
-
-                let explains = basic
-                    .and_then(|b| b.explains.as_ref())
-                    .map(|items| {
-                        items
-                            .iter()
-                            .filter_map(|item| match (&item.pos, &item.trans) {
-                                (Some(pos), Some(trans)) => Some(format!("{}. {}", pos, trans)),
-                                (None, Some(trans)) => Some(trans.clone()),
-                                _ => None,
-                            })
-                            .collect::<Vec<String>>()
-                    })
-                    .unwrap_or_default();
-
-                let translated_text = explains
-                    .first()
-                    .map(|item| strip_part_of_speech(item))
-                    .unwrap_or_else(|| text.to_string());
-
-                println!(
-                    "词典解析结果 - 美式音标: {:?}, 英式音标: {:?}, 音频: {:?}, 释义: {:?}",
-                    us_phonetic, uk_phonetic, audio_url, explains
-                );
-
-                if us_phonetic.is_some() || !explains.is_empty() {
-                    return Ok(TranslationContent {
-                        translated_text,
-                        phonetic,
-                        us_phonetic,
-                        uk_phonetic,
-                        audio_url,
-                        word_type: infer_word_type(&explains),
-                        explains,
-                        examples: Vec::new(),
-                        synonyms: Vec::new(),
-                    });
-                }
-            }
-        }
-
-        println!("有道词典 API 无结果，尝试 Free Dictionary API");
-
-        match fetch_free_dictionary_supplement(text).await {
-            Ok(Some(supplement)) => {
-                println!(
-                    "Free Dictionary 返回 - 音标: {:?}, 音频: {:?}, 释义数量: {}, 例句数量: {}, 近义词数量: {}",
-                    supplement.phonetic,
-                    supplement.audio_url,
-                    supplement.explains.len(),
-                    supplement.examples.len(),
-                    supplement.synonyms.len()
-                );
-
-                println!("调用翻译 API 获取中文翻译");
-                let translated_text = match get_youdao_translation(text, app_key, app_secret).await {
-                    Ok(translated_text) => translated_text,
-                    Err(_) => text.to_string(),
-                };
-
-                return Ok(TranslationContent {
-                    translated_text,
-                    phonetic: supplement.phonetic.clone(),
-                    us_phonetic: supplement.phonetic.clone(),
-                    uk_phonetic: None,
-                    audio_url: supplement.audio_url,
-                    word_type: infer_word_type(&supplement.explains),
-                    explains: supplement.explains,
-                    examples: supplement.examples,
-                    synonyms: supplement.synonyms,
-                });
-            }
-            Ok(None) => {}
-            Err(e) => {
-                println!("Free Dictionary API 失败: {}", e);
-            }
+    if let Some(basic) = result.basic {
+        phonetic = basic.phonetic;
+        if let Some(items) = basic.explains {
+            explains = items;
         }
     }
 
-    println!("使用有道翻译 API");
-    match get_youdao_translation(text, app_key, app_secret).await {
-        Ok(translated_text) => Ok(TranslationContent {
-            translated_text,
-            ..TranslationContent::default()
-        }),
-        Err(e) => Err(e),
-    }
+    Ok(TranslationContent {
+        translated_text,
+        phonetic,
+        us_phonetic: None,
+        uk_phonetic: None,
+        audio_url: None,
+        explains,
+        examples: Vec::new(),
+        synonyms: Vec::new(),
+        word_type: None,
+    })
 }
 
 pub async fn fetch_free_dictionary_supplement(
     word: &str,
 ) -> Result<Option<FreeDictionarySupplement>, String> {
-    let client = reqwest::Client::new();
     let url = format!("https://api.dictionaryapi.dev/api/v2/entries/en/{}", word);
 
-    println!("查询 Free Dictionary API: {}", url);
+    debug!("查询 Free Dictionary API: {}", url);
 
-    let response = client
+    let response = http_client()
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("请求失败: {}", e))?;
+        .map_err(|e| {
+            let err_msg = format!("Free Dictionary API 请求失败: {}", e);
+            error!("{}", err_msg);
+            err_msg
+        })?;
 
     if !response.status().is_success() {
-        println!("Free Dictionary API 未找到该单词");
+        debug!("Free Dictionary API 未找到该单词");
         return Ok(None);
     }
 
     let results: Vec<FreeDictionaryResponse> = response
         .json()
         .await
-        .map_err(|e| format!("解析响应失败: {}", e))?;
+        .map_err(|e| {
+            let err_msg = format!("Free Dictionary API 解析响应失败: {}", e);
+            error!("{}", err_msg);
+            err_msg
+        })?;
 
-    println!("Free Dictionary API 响应: {:?}", results);
+    debug!("Free Dictionary API 响应: {:?}", results);
 
     let Some(first) = results.first() else {
         return Ok(None);
@@ -368,7 +252,7 @@ pub async fn fetch_free_dictionary_supplement(
         }
     }
 
-    println!(
+    debug!(
         "解析词典信息 - 音标: {:?}, 音频: {:?}, 释义数量: {}, 例句数量: {}, 近义词数量: {}",
         phonetic,
         audio_url,
@@ -384,85 +268,6 @@ pub async fn fetch_free_dictionary_supplement(
         examples,
         synonyms,
     }))
-}
-
-async fn get_youdao_translation(text: &str, app_key: &str, app_secret: &str) -> Result<String, String> {
-    let salt = uuid::Uuid::new_v4().to_string();
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        .to_string();
-
-    let input = if text.len() > 20 {
-        let chars: Vec<char> = text.chars().collect();
-        let len = chars.len();
-        let start: String = chars.iter().take(10).collect();
-        let end: String = chars.iter().skip(len - 10).collect();
-        format!("{}{}{}", start, len, end)
-    } else {
-        text.to_string()
-    };
-
-    let sign_str = format!("{}{}{}{}{}", app_key, input, salt, timestamp, app_secret);
-    let mut hasher = Sha256::new();
-    hasher.update(sign_str.as_bytes());
-    let sign = format!("{:x}", hasher.finalize());
-
-    let client = reqwest::Client::new();
-    let form_data = format!(
-        "q={}&from=auto&to=zh-CHS&appKey={}&salt={}&sign={}&signType=v3&curtime={}",
-        urlencoding::encode(text),
-        urlencoding::encode(app_key),
-        urlencoding::encode(&salt),
-        urlencoding::encode(&sign),
-        urlencoding::encode(&timestamp)
-    );
-
-    let response = client
-        .post("https://openapi.youdao.com/api")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(form_data)
-        .send()
-        .await
-        .map_err(|e| format!("请求失败: {}", e))?;
-
-    let result: YoudaoResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("解析响应失败: {}", e))?;
-
-    println!("有道翻译 API 响应: {:?}", result);
-
-    if result.error_code != "0" {
-        return Err(format!("翻译失败，错误码: {}", result.error_code));
-    }
-
-    result
-        .translation
-        .and_then(|items| items.first().cloned())
-        .ok_or("未获取到翻译结果".to_string())
-}
-
-fn infer_word_type(explains: &[String]) -> Option<String> {
-    explains.first().and_then(|item| {
-        let (prefix, _) = item.split_once(". ")?;
-        if prefix.chars().all(|ch| ch.is_ascii_alphabetic() || ch == '/') {
-            Some(format!("{}.", prefix))
-        } else {
-            None
-        }
-    })
-}
-
-fn strip_part_of_speech(text: &str) -> String {
-    if let Some((prefix, rest)) = text.split_once(". ") {
-        if prefix.chars().all(|ch| ch.is_ascii_alphabetic() || ch == '/') {
-            return rest.trim().to_string();
-        }
-    }
-
-    text.trim().to_string()
 }
 
 fn push_unique(items: &mut Vec<String>, value: String) {

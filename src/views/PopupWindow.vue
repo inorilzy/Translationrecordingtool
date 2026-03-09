@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type { Translation } from '../stores/translation'
 import type Database from '@tauri-apps/plugin-sql'
-import { openTranslationsDatabase } from '../lib/database'
+import { openTranslationsDatabase, upsertTranslation } from '../lib/database'
 
 const currentTranslation = ref<Translation | null>(null)
 const loading = ref(true)
@@ -16,79 +16,32 @@ let db: Database | null = null
 let unlistenTranslationResult: (() => void) | null = null
 let unlistenTranslationUpdate: (() => void) | null = null
 let unlistenTranslationStarted: (() => void) | null = null
+let unlistenTheme: (() => void) | null = null
 
-function serializeStringList(items?: string[]) {
-  return items ? JSON.stringify(items) : null
+function applyTheme(theme = localStorage.getItem('theme') || 'light') {
+  document.documentElement.setAttribute('data-theme', theme)
+}
+
+function handleStorageChange(event: StorageEvent) {
+  if (event.key === 'theme') {
+    applyTheme(event.newValue || 'light')
+  }
 }
 
 async function persistTranslation(nextTranslation: Translation, incrementAccessCount: boolean) {
   if (!db) {
     return nextTranslation
   }
-
-  const explainsJson = serializeStringList(nextTranslation.explains)
-  const examplesJson = serializeStringList(nextTranslation.examples)
-  const synonymsJson = serializeStringList(nextTranslation.synonyms)
-  const accessCountClause = incrementAccessCount ? 'access_count = access_count + 1,' : ''
-
-  await db.execute(
-    `INSERT INTO translations (source_text, translated_text, phonetic, us_phonetic, uk_phonetic, audio_url, explains, examples, synonyms, source_lang, target_lang, word_type, created_at, access_count, is_favorite)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 0)
-     ON CONFLICT(source_text, source_lang, target_lang)
-     DO UPDATE SET
-       translated_text = $2,
-       phonetic = $3,
-       us_phonetic = $4,
-       uk_phonetic = $5,
-       audio_url = $6,
-       explains = $7,
-       examples = $8,
-       synonyms = $9,
-       word_type = $12,
-       ${accessCountClause}
-       created_at = $13`,
-    [
-      nextTranslation.source_text,
-      nextTranslation.translated_text,
-      nextTranslation.phonetic,
-      nextTranslation.us_phonetic,
-      nextTranslation.uk_phonetic,
-      nextTranslation.audio_url,
-      explainsJson,
-      examplesJson,
-      synonymsJson,
-      nextTranslation.source_lang,
-      nextTranslation.target_lang,
-      nextTranslation.word_type,
-      nextTranslation.created_at,
-      nextTranslation.access_count,
-    ]
-  )
-
-  const results = await db.select<Translation[]>(
-    'SELECT * FROM translations WHERE source_text = $1 AND source_lang = $2 AND target_lang = $3',
-    [
-      nextTranslation.source_text,
-      nextTranslation.source_lang,
-      nextTranslation.target_lang,
-    ]
-  )
-
-  if (results.length > 0) {
-    nextTranslation.id = results[0].id
-    nextTranslation.is_favorite = results[0].is_favorite
-  }
-
-  return nextTranslation
+  return upsertTranslation(db, nextTranslation, { incrementAccessCount })
 }
 
 async function applyTranslation(payload: Translation, incrementAccessCount: boolean) {
-  const nextTranslation: Translation = {
+  let nextTranslation: Translation = {
     ...payload
   }
 
   try {
-    await persistTranslation(nextTranslation, incrementAccessCount)
+    nextTranslation = await persistTranslation(nextTranslation, incrementAccessCount)
   } catch (e) {
     console.error('保存翻译失败:', e)
   }
@@ -105,6 +58,15 @@ async function applyTranslation(payload: Translation, incrementAccessCount: bool
 }
 
 onMounted(async () => {
+  applyTheme()
+
+  // 监听主题变化事件
+  unlistenTheme = await listen<{ theme: string }>('theme-changed', (event) => {
+    applyTheme(event.payload.theme)
+  })
+
+  window.addEventListener('storage', handleStorageChange)
+
   // 初始化数据库
   try {
     db = await openTranslationsDatabase()
@@ -114,16 +76,19 @@ onMounted(async () => {
 
   // 监听翻译结果
   unlistenTranslationStarted = await listen('translation-started', () => {
+    applyTheme()
     loading.value = true
     error.value = ''
     currentTranslation.value = null
   })
 
   unlistenTranslationResult = await listen<Translation>('translation-result', async (event) => {
+    applyTheme()
     await applyTranslation(event.payload, true)
   })
 
   unlistenTranslationUpdate = await listen<Translation>('translation-update', async (event) => {
+    applyTheme()
     await applyTranslation(event.payload, false)
   })
 
@@ -139,6 +104,8 @@ onUnmounted(() => {
   unlistenTranslationStarted?.()
   unlistenTranslationResult?.()
   unlistenTranslationUpdate?.()
+  unlistenTheme?.()
+  window.removeEventListener('storage', handleStorageChange)
   window.removeEventListener('keydown', handleKeyDown)
 })
 
@@ -298,7 +265,7 @@ function playAudio() {
 .popup-container {
   width: 100%;
   height: 100%;
-  background: white;
+  background: var(--color-bg-primary);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -308,13 +275,13 @@ function playAudio() {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
-  background: white;
+  background: var(--color-bg-primary);
 }
 
 .word-section {
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 2px solid var(--color-border);
 }
 
 .word-header {
@@ -327,14 +294,14 @@ function playAudio() {
 .word {
   font-size: 24px;
   font-weight: 600;
-  color: #333;
+  color: var(--color-text-primary);
   margin: 0;
   word-break: break-word;
   flex: 1;
 }
 
 .audio-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--color-primary);
   border: none;
   border-radius: 50%;
   width: 36px;
@@ -345,12 +312,13 @@ function playAudio() {
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  box-shadow: var(--shadow-sm);
 }
 
 .audio-btn:hover {
   transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+  background: var(--color-primary-hover);
+  box-shadow: var(--shadow-md);
 }
 
 .audio-btn:active {
@@ -361,19 +329,20 @@ function playAudio() {
   width: 100%;
   padding: 10px;
   margin-bottom: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 8px;
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  box-shadow: var(--shadow-sm);
 }
 
 .favorite-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+  background: var(--color-primary-hover);
+  box-shadow: var(--shadow-md);
 }
 
 .favorite-btn:active {
@@ -388,13 +357,13 @@ function playAudio() {
 
 .phonetic {
   font-size: 14px;
-  color: #666;
+  color: var(--color-text-secondary);
   font-family: 'Courier New', monospace;
 }
 
 .phonetic .label {
   display: inline-block;
-  background: #667eea;
+  background: var(--color-primary);
   color: white;
   padding: 2px 6px;
   border-radius: 3px;
@@ -406,7 +375,7 @@ function playAudio() {
 .section-title {
   font-size: 14px;
   font-weight: 600;
-  color: #666;
+  color: var(--color-text-secondary);
   margin: 0 0 12px 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -425,12 +394,12 @@ function playAudio() {
 .explains-list li {
   padding: 8px 12px;
   margin-bottom: 6px;
-  background: #f8f9fa;
+  background: var(--color-bg-secondary);
   border-radius: 6px;
   font-size: 14px;
-  color: #333;
+  color: var(--color-text-primary);
   line-height: 1.6;
-  border-left: 3px solid #667eea;
+  border-left: 3px solid var(--color-primary);
 }
 
 .chips {
@@ -443,10 +412,10 @@ function playAudio() {
   display: inline-flex;
   align-items: center;
   padding: 6px 10px;
-  background: rgba(102, 126, 234, 0.12);
-  border: 1px solid rgba(102, 126, 234, 0.2);
+  background: var(--color-primary-light);
+  border: 1px solid var(--color-border);
   border-radius: 999px;
-  color: #4f5fc7;
+  color: var(--color-primary);
   font-size: 13px;
 }
 
@@ -456,19 +425,19 @@ function playAudio() {
 
 .translation-text {
   font-size: 16px;
-  color: #333;
+  color: var(--color-text-primary);
   line-height: 1.8;
   margin: 0;
   padding: 12px;
-  background: #f8f9fa;
+  background: var(--color-bg-secondary);
   border-radius: 8px;
-  border-left: 3px solid #667eea;
+  border-left: 3px solid var(--color-primary);
 }
 
 .translation-word-type {
   display: inline-block;
   margin-right: 8px;
-  color: #4f5fc7;
+  color: var(--color-primary);
   font-weight: 600;
 }
 
@@ -479,15 +448,15 @@ function playAudio() {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: white;
+  color: var(--color-text-primary);
   font-size: 14px;
 }
 
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -503,7 +472,7 @@ function playAudio() {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: white;
+  color: var(--color-error);
   padding: 20px;
   text-align: center;
   font-size: 14px;

@@ -16,12 +16,6 @@ function navigate(path: string) {
 <template>
   <nav class="navigation-bar">
     <button
-      @click="navigate('/')"
-      :class="['nav-item', { active: isActive('/') }]"
-    >
-      主页
-    </button>
-    <button
       @click="navigate('/history')"
       :class="['nav-item', { active: isActive('/history') }]"
     >
@@ -32,6 +26,12 @@ function navigate(path: string) {
       :class="['nav-item', { active: isActive('/favorites') }]"
     >
       收藏
+    </button>
+    <button
+      @click="navigate('/logs')"
+      :class="['nav-item', { active: isActive('/logs') }]"
+    >
+      日志
     </button>
     <button
       @click="navigate('/settings')"

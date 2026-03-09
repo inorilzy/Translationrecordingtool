@@ -64,7 +64,8 @@ pub fn lookup_word(app: &AppHandle, word: &str) -> Result<Option<OfflineDictiona
         return Ok(None);
     };
 
-    let connection = Connection::open(runtime_path).map_err(|e| format!("打开本地词典失败: {}", e))?;
+    let connection =
+        Connection::open(runtime_path).map_err(|e| format!("打开本地词典失败: {}", e))?;
     lookup_word_in_connection(&connection, word)
 }
 
@@ -98,7 +99,8 @@ pub fn lookup_word_in_connection(
         return Ok(None);
     };
 
-    let (word_type, translated_text) = normalize_translation(translation.as_deref(), pos.as_deref());
+    let (word_type, translated_text) =
+        normalize_translation(translation.as_deref(), pos.as_deref());
 
     let mut explains = split_lines(definition.as_deref());
     for gloss in query_string_list(
@@ -169,14 +171,17 @@ pub fn merge_free_dictionary_supplement(
 fn candidate_resource_paths(app: &AppHandle) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
-    if let Ok(path) = app.path().resolve(DICTIONARY_FILE_NAME, BaseDirectory::Resource) {
+    if let Ok(path) = app
+        .path()
+        .resolve(DICTIONARY_FILE_NAME, BaseDirectory::Resource)
+    {
         paths.push(path);
     }
 
-    if let Ok(path) = app
-        .path()
-        .resolve(&format!("resources/{}", DICTIONARY_FILE_NAME), BaseDirectory::Resource)
-    {
+    if let Ok(path) = app.path().resolve(
+        &format!("resources/{}", DICTIONARY_FILE_NAME),
+        BaseDirectory::Resource,
+    ) {
         paths.push(path);
     }
 
@@ -278,11 +283,18 @@ fn query_string_list(
     sql: &str,
     word: &str,
 ) -> Result<Vec<String>, String> {
-    let mut statement = connection.prepare(sql).map_err(|e| format!("准备查询失败: {}", e))?;
-    let mut rows = statement.query([word]).map_err(|e| format!("执行查询失败: {}", e))?;
+    let mut statement = connection
+        .prepare(sql)
+        .map_err(|e| format!("准备查询失败: {}", e))?;
+    let mut rows = statement
+        .query([word])
+        .map_err(|e| format!("执行查询失败: {}", e))?;
     let mut items = Vec::new();
 
-    while let Some(row) = rows.next().map_err(|e| format!("读取查询结果失败: {}", e))? {
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| format!("读取查询结果失败: {}", e))?
+    {
         let value = row
             .get::<_, String>(0)
             .map_err(|e| format!("解析查询结果失败: {}", e))?;

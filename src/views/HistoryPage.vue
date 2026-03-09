@@ -31,7 +31,7 @@ onMounted(() => {
     </div>
 
     <!-- 搜索框 -->
-    <div class="search-box">
+    <div v-if="store.history.length > 0" class="search-box">
       <input
         v-model="searchQuery"
         class="input search-input"
@@ -51,7 +51,7 @@ onMounted(() => {
 
     <EmptyState
       v-else
-      message="暂无历史记录"
+      message="暂无历史记录，使用快捷键或弹窗查词后会出现在这里"
       icon="📝"
     />
   </div>

@@ -1,16 +1,29 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-mod database;
-mod translator;
 mod clipboard;
+mod database;
 pub mod local_dictionary;
+mod logger;
+mod translator;
 
 use database::{Translation, INIT_SQL};
-use local_dictionary::OfflineDictionaryEntry;
-use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{Manager, Emitter, Listener, menu::{Menu, MenuItem}, tray::TrayIconBuilder};
-use mouse_position::mouse_position::Mouse;
 use enigo::{Enigo, Key, Keyboard, Settings};
+use local_dictionary::OfflineDictionaryEntry;
+use mouse_position::mouse_position::Mouse;
+use std::{
+    fs,
+    path::Path,
+    sync::{Arc, RwLock},
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+    Emitter, Listener, Manager,
+};
+use tracing::{error, info, warn};
+
+const LEGACY_APP_DATA_DIR_NAME: &str = "com.zhiyu_liu.translation-tool";
+const RUNTIME_DATA_FILES: &[&str] = &["translations.db", "dictionary.db"];
 
 // 配置结构
 #[derive(Clone, Default)]
@@ -26,9 +39,7 @@ struct TrayBehaviorConfig {
 
 impl Default for TrayBehaviorConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-        }
+        Self { enabled: true }
     }
 }
 
@@ -125,6 +136,62 @@ fn build_translation_from_existing(
     }
 }
 
+fn read_current_clipboard_text(app: &tauri::AppHandle) -> Result<String, String> {
+    let text = clipboard::read_clipboard(app)?;
+    let trimmed = text.trim();
+
+    if trimmed.is_empty() {
+        return Err("剪贴板为空".to_string());
+    }
+
+    Ok(trimmed.to_string())
+}
+
+fn migrate_legacy_app_data(app: &tauri::AppHandle) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    migrate_legacy_app_data_dir(&app_data_dir, LEGACY_APP_DATA_DIR_NAME, RUNTIME_DATA_FILES)
+}
+
+fn migrate_legacy_app_data_dir(
+    app_data_dir: &Path,
+    legacy_dir_name: &str,
+    file_names: &[&str],
+) -> Result<(), String> {
+    fs::create_dir_all(app_data_dir).map_err(|e| e.to_string())?;
+
+    let Some(parent_dir) = app_data_dir.parent() else {
+        return Ok(());
+    };
+
+    let legacy_dir = parent_dir.join(legacy_dir_name);
+    if !legacy_dir.exists() || legacy_dir == app_data_dir {
+        return Ok(());
+    }
+
+    for file_name in file_names {
+        let target_path = app_data_dir.join(file_name);
+        if target_path.exists() {
+            continue;
+        }
+
+        let legacy_path = legacy_dir.join(file_name);
+        if !legacy_path.exists() {
+            continue;
+        }
+
+        fs::copy(&legacy_path, &target_path).map_err(|e| {
+            format!(
+                "迁移历史数据失败: {} -> {} ({})",
+                legacy_path.display(),
+                target_path.display(),
+                e
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
 fn next_popup_request_id(state: &Arc<RwLock<PopupRuntimeState>>) -> u64 {
     let mut popup_state = state.write().unwrap();
     popup_state.active_request_id += 1;
@@ -152,13 +219,31 @@ fn lookup_local_translation(
     }
 
     let Some(entry) = local_dictionary::lookup_word(app, text)? else {
-        println!("本地词典未命中: {}", text);
+        info!("本地词典未命中: {}", text);
         return Ok(None);
     };
 
-    println!("本地词典命中: {}", text);
+    info!("本地词典命中: {}", text);
     let translation = build_translation(text.to_string(), to_translation_content(entry.clone()));
     Ok(Some((entry, translation)))
+}
+
+fn is_single_word(text: &str) -> bool {
+    let trimmed = text.trim();
+
+    // 包含空格、逗号、句号等标点符号，判定为句子
+    if trimmed.contains(' ') || trimmed.contains(',') || trimmed.contains('.') || trimmed.contains('!') || trimmed.contains('?') {
+        return false;
+    }
+
+    // 包含驼峰命名（如 localStorage, getElementById），判定为代码/术语，不是普通单词
+    let has_internal_uppercase = trimmed.chars().skip(1).any(|c| c.is_uppercase());
+    if has_internal_uppercase {
+        return false;
+    }
+
+    // 只包含字母（允许撇号，如 "don't"）和连字符（如 "well-known"）
+    trimmed.chars().all(|c| c.is_alphabetic() || c == '\'' || c == '-')
 }
 
 async fn resolve_translation(
@@ -167,11 +252,17 @@ async fn resolve_translation(
     app_key: &str,
     app_secret: &str,
 ) -> Result<Translation, String> {
-    if let Some((entry, base_translation)) = lookup_local_translation(app, text)? {
+    let is_word = is_single_word(text);
+    info!("翻译文本: {}, 类型: {}", text, if is_word { "单词" } else { "句子" });
+
+    // 如果是单词，只使用本地词典和 Free Dictionary
+    if is_word {
+        // 1. 先查本地词典
+        if let Some((entry, base_translation)) = lookup_local_translation(app, text)? {
             let supplement = match translator::fetch_free_dictionary_supplement(text).await {
                 Ok(supplement) => supplement,
                 Err(error) => {
-                    println!("Free Dictionary 补全失败: {}", error);
+                    warn!("Free Dictionary 补全失败: {}", error);
                     None
                 }
             };
@@ -180,14 +271,101 @@ async fn resolve_translation(
                 &base_translation,
                 to_translation_content(merged),
             ));
+        }
+
+        // 2. 本地词典未命中，尝试 Free Dictionary
+        info!("本地词典未命中，尝试 Free Dictionary");
+        match translator::fetch_free_dictionary_supplement(text).await {
+            Ok(Some(supplement)) => {
+                info!("Free Dictionary 查询成功");
+                let content = translator::TranslationContent {
+                    translated_text: supplement.explains.first()
+                        .and_then(|s| s.split(". ").nth(1))
+                        .unwrap_or(text)
+                        .to_string(),
+                    phonetic: supplement.phonetic.clone(),
+                    us_phonetic: supplement.phonetic.clone(),
+                    uk_phonetic: None,
+                    audio_url: supplement.audio_url,
+                    explains: supplement.explains,
+                    examples: supplement.examples,
+                    synonyms: supplement.synonyms,
+                    word_type: None,
+                };
+                return Ok(build_translation(text.to_string(), content));
+            }
+            Ok(None) => {
+                warn!("Free Dictionary 未找到单词: {}", text);
+                return Err(format!("未找到单词 \"{}\" 的释义", text));
+            }
+            Err(e) => {
+                error!("Free Dictionary 查询失败: {}", e);
+                return Err(format!("查询单词失败: {}", e));
+            }
+        }
     }
 
+    // 句子使用有道翻译 API
+    resolve_youdao_translation(text, app_key, app_secret).await
+}
+
+async fn resolve_youdao_translation(
+    text: &str,
+    app_key: &str,
+    app_secret: &str,
+) -> Result<Translation, String> {
     if app_key.is_empty() || app_secret.is_empty() {
-        return Err("未命中本地词典，且未配置翻译 API".to_string());
+        return Err("翻译句子需要配置有道翻译 API，请在设置中配置".to_string());
     }
 
+    info!("使用有道翻译 API");
     let content = translator::translate_text(text, app_key, app_secret).await?;
     Ok(build_translation(text.to_string(), content))
+}
+
+async fn resolve_remote_translation(
+    text: &str,
+    app_key: &str,
+    app_secret: &str,
+) -> Result<Translation, String> {
+    let is_word = is_single_word(text);
+    info!("翻译文本: {}, 类型: {}", text, if is_word { "单词" } else { "句子" });
+
+    // 如果是单词，只使用 Free Dictionary
+    if is_word {
+        info!("尝试 Free Dictionary");
+        match translator::fetch_free_dictionary_supplement(text).await {
+            Ok(Some(supplement)) => {
+                info!("Free Dictionary 查询成功");
+                let content = translator::TranslationContent {
+                    translated_text: supplement.explains.first()
+                        .and_then(|s| s.split(". ").nth(1))
+                        .unwrap_or(text)
+                        .to_string(),
+                    phonetic: supplement.phonetic.clone(),
+                    us_phonetic: supplement.phonetic.clone(),
+                    uk_phonetic: None,
+                    audio_url: supplement.audio_url,
+                    explains: supplement.explains,
+                    examples: supplement.examples,
+                    synonyms: supplement.synonyms,
+                    word_type: None,
+                };
+                return Ok(build_translation(text.to_string(), content));
+            }
+            Ok(None) => {
+                warn!("Free Dictionary 未找到单词: {}", text);
+                return Err(format!("未找到单词 \"{}\" 的释义", text));
+            }
+            Err(e) => {
+                error!("Free Dictionary 查询失败: {}", e);
+                return Err(format!("查询单词失败: {}", e));
+            }
+        }
+    }
+
+    // 句子使用有道翻译 API
+    resolve_youdao_translation(text, app_key, app_secret).await
 }
 
 // 快捷键处理函数
@@ -197,7 +375,7 @@ fn handle_shortcut(
     popup_state: Arc<RwLock<PopupRuntimeState>>,
 ) {
     tauri::async_runtime::spawn(async move {
-        println!("开始执行翻译流程...");
+        info!("开始执行翻译流程");
         let request_id = next_popup_request_id(&popup_state);
 
         // 1. 获取鼠标位置（在复制前获取，避免位置变化）
@@ -206,14 +384,14 @@ fn handle_shortcut(
 
         // 2. 模拟 Ctrl+C 复制选中文本
         std::thread::sleep(std::time::Duration::from_millis(50));
-        println!("正在模拟 Ctrl+C 复制...");
+        info!("正在模拟 Ctrl+C 复制");
 
         let mut enigo = Enigo::new(&Settings::default()).unwrap();
         enigo.key(Key::Control, enigo::Direction::Press).ok();
         enigo.key(Key::Unicode('c'), enigo::Direction::Click).ok();
         enigo.key(Key::Control, enigo::Direction::Release).ok();
 
-        println!("复制完成，等待剪贴板更新...");
+        info!("复制完成，等待剪贴板更新");
 
         // 3. 读取剪贴板，避免系统尚未完成更新时直接失败
         let text = match clipboard::read_clipboard_after_update(
@@ -223,30 +401,31 @@ fn handle_shortcut(
             80,
         ) {
             Ok(t) => {
-                println!("读取到剪贴板内容: {}", t);
+                info!("读取到剪贴板内容: {}", t);
                 t
-            },
+            }
             Err(e) => {
-                println!("读取剪贴板失败: {:?}", e);
+                error!("读取剪贴板失败: {:?}", e);
                 if is_active_popup_request(&popup_state, request_id) {
                     let _ = close_popup_window(&app);
                 }
                 return;
-            },
+            }
         };
 
         if text.is_empty() {
-            println!("剪贴板内容为空");
+            warn!("剪贴板内容为空");
             if is_active_popup_request(&popup_state, request_id) {
                 let _ = close_popup_window(&app);
             }
             return;
         }
 
-        if let Some((local_entry, local_translation)) = match lookup_local_translation(&app, &text) {
+        if let Some((local_entry, local_translation)) = match lookup_local_translation(&app, &text)
+        {
             Ok(result) => result,
             Err(error) => {
-                println!("本地词典查询失败: {}", error);
+                error!("本地词典查询失败: {}", error);
                 None
             }
         } {
@@ -268,14 +447,15 @@ fn handle_shortcut(
             let popup_state_clone = popup_state.clone();
             let text_clone = text.clone();
             tauri::async_runtime::spawn(async move {
-                let supplement = match translator::fetch_free_dictionary_supplement(&text_clone).await {
-                    Ok(Some(supplement)) => supplement,
-                    Ok(None) => return,
-                    Err(error) => {
-                        println!("Free Dictionary 补全失败: {}", error);
-                        return;
-                    }
-                };
+                let supplement =
+                    match translator::fetch_free_dictionary_supplement(&text_clone).await {
+                        Ok(Some(supplement)) => supplement,
+                        Ok(None) => return,
+                        Err(error) => {
+                            warn!("Free Dictionary 补全失败: {}", error);
+                            return;
+                        }
+                    };
 
                 if !is_active_popup_request(&popup_state_clone, request_id) {
                     return;
@@ -312,16 +492,16 @@ fn handle_shortcut(
             (cfg.api_key.clone(), cfg.api_secret.clone())
         };
 
-        println!("开始调用翻译 API...");
+        info!("开始查询翻译");
         let _ = show_loading_popup(&app, &popup_state, request_id, cursor_pos);
 
-        let result = match resolve_translation(&app, &text, &app_key, &app_secret).await {
+        let result = match resolve_remote_translation(&text, &app_key, &app_secret).await {
             Ok(translation) => {
-                println!("翻译成功: {} -> {}", text, translation.translated_text);
+                info!("翻译成功: {} -> {}", text, translation.translated_text);
                 translation
             }
             Err(error) => {
-                println!("翻译失败: {:?}", error);
+                error!("翻译失败: {:?}", error);
                 if is_active_popup_request(&popup_state, request_id) {
                     let _ = close_popup_window(&app);
                 }
@@ -371,7 +551,8 @@ fn update_global_shortcut(
     }
 
     // 注册新快捷键
-    let shortcut: Shortcut = new_shortcut.parse()
+    let shortcut: Shortcut = new_shortcut
+        .parse()
         .map_err(|e| format!("无效的快捷键格式: {}", e))?;
 
     let config = app.state::<Arc<RwLock<AppConfig>>>();
@@ -407,14 +588,8 @@ async fn translate_from_clipboard(
     app_key: String,
     app_secret: String,
 ) -> Result<Translation, String> {
-    // 读取剪贴板
-    let text = clipboard::read_clipboard(&app)?;
-
-    if text.trim().is_empty() {
-        return Err("剪贴板为空".to_string());
-    }
-
-    resolve_translation(&app, &text.trim(), &app_key, &app_secret).await
+    let text = read_current_clipboard_text(&app)?;
+    resolve_translation(&app, &text, &app_key, &app_secret).await
 }
 
 #[tauri::command]
@@ -475,15 +650,72 @@ fn close_popup_window(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn set_popup_position(
-    window: &tauri::WebviewWindow,
-    cursor_pos: (i32, i32),
-) -> Result<(), String> {
+fn set_popup_position(window: &tauri::WebviewWindow, cursor_pos: (i32, i32)) -> Result<(), String> {
+    const POPUP_WIDTH: i32 = 420;
+    const POPUP_HEIGHT: i32 = 380;
+    const OFFSET: i32 = 15; // 鼠标偏移量
+    const MARGIN: i32 = 20; // 屏幕边缘留白
+
+    let mut x = cursor_pos.0 + OFFSET;
+    let mut y = cursor_pos.1 + OFFSET;
+
+    // 获取主显示器信息进行边界检测
+    match window.current_monitor() {
+        Ok(Some(monitor)) => {
+            let screen_size = monitor.size();
+            let screen_position = monitor.position();
+
+            let screen_width = screen_size.width as i32;
+            let screen_height = screen_size.height as i32;
+            let screen_x = screen_position.x;
+            let screen_y = screen_position.y;
+
+            // 计算可用区域（减去边距）
+            let usable_right = screen_x + screen_width - MARGIN;
+            let usable_bottom = screen_y + screen_height - MARGIN;
+            let usable_left = screen_x + MARGIN;
+            let usable_top = screen_y + MARGIN;
+
+            // X 轴调整：优先右侧，不够则左侧
+            if x + POPUP_WIDTH > usable_right {
+                // 尝试放在鼠标左侧
+                let left_x = cursor_pos.0 - POPUP_WIDTH - OFFSET;
+                if left_x >= usable_left {
+                    x = left_x;
+                } else {
+                    // 左右都放不下，贴右边界
+                    x = usable_right - POPUP_WIDTH;
+                }
+            }
+
+            // Y 轴调整：优先下方，不够则上方
+            if y + POPUP_HEIGHT > usable_bottom {
+                // 尝试放在鼠标上方
+                let top_y = cursor_pos.1 - POPUP_HEIGHT - OFFSET;
+                if top_y >= usable_top {
+                    y = top_y;
+                } else {
+                    // 上下都放不下，贴下边界
+                    y = usable_bottom - POPUP_HEIGHT;
+                }
+            }
+
+            // 最终边界保护
+            x = x.max(usable_left).min(usable_right - POPUP_WIDTH);
+            y = y.max(usable_top).min(usable_bottom - POPUP_HEIGHT);
+
+            info!("弹窗位置: 鼠标({}, {}) -> 窗口({}, {})", cursor_pos.0, cursor_pos.1, x, y);
+        }
+        Ok(None) => {
+            warn!("无法获取显示器信息，使用默认偏移");
+        }
+        Err(e) => {
+            warn!("获取显示器信息失败: {}, 使用默认偏移", e);
+        }
+    }
+
     window
-        .set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-            x: cursor_pos.0,
-            y: cursor_pos.1,
-        }))
+        .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
         .map_err(|e: tauri::Error| e.to_string())
 }
 
@@ -491,20 +723,17 @@ fn build_popup_window(
     app: &tauri::AppHandle,
     popup_state: Arc<RwLock<PopupRuntimeState>>,
 ) -> Result<tauri::WebviewWindow, String> {
-    let window = tauri::WebviewWindowBuilder::new(
-        app,
-        "popup",
-        tauri::WebviewUrl::App("index.html".into()),
-    )
-        .title("翻译")
-        .inner_size(420.0, 380.0)
-        .decorations(true)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .visible(false)
-        .initialization_script("window.location.hash = '#/popup';")
-        .build()
-        .map_err(|e| e.to_string())?;
+    let window =
+        tauri::WebviewWindowBuilder::new(app, "popup", tauri::WebviewUrl::App("index.html".into()))
+            .title("翻译")
+            .inner_size(420.0, 380.0)
+            .decorations(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .visible(false)
+            .initialization_script("window.location.hash = '#/popup';")
+            .build()
+            .map_err(|e| e.to_string())?;
 
     let popup_state_clone = popup_state.clone();
     window.listen("popup-ready", move |_event| {
@@ -601,11 +830,32 @@ fn show_popup_translation(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
+            // 设置 Ctrl+C 信号处理
+            let app_handle = app.handle().clone();
+            ctrlc::set_handler(move || {
+                info!("收到 Ctrl+C 信号，正在退出...");
+                app_handle.exit(0);
+            })
+            .expect("设置 Ctrl+C 处理器失败");
+
+            // 初始化日志系统
+            let log_dir = app.path().app_log_dir().expect("无法获取日志目录");
+            match logger::init_logger(log_dir) {
+                Ok(guard) => {
+                    app.manage(guard); // 保持 guard 生命周期
+                    info!("应用启动");
+                }
+                Err(e) => {
+                    eprintln!("初始化日志系统失败: {}", e);
+                }
+            }
+
             // 初始化配置状态
             let config = Arc::new(RwLock::new(AppConfig::default()));
             app.manage(config.clone());
@@ -616,20 +866,24 @@ pub fn run() {
             let popup_state = Arc::new(RwLock::new(PopupRuntimeState::default()));
             app.manage(popup_state.clone());
 
+            if let Err(error) = migrate_legacy_app_data(&app.handle().clone()) {
+                error!("迁移旧版应用数据失败: {}", error);
+            }
+
             match local_dictionary::ensure_runtime_dictionary(&app.handle().clone()) {
                 Ok(Some(path)) => {
-                    println!("本地词典已就绪: {}", path.display());
+                    info!("本地词典已就绪: {}", path.display());
                 }
                 Ok(None) => {
-                    println!("未找到内置词典资源，单词查询将回退到在线链路");
+                    warn!("未找到内置词典资源，单词查询将使用 Free Dictionary");
                 }
                 Err(error) => {
-                    println!("初始化本地词典失败: {}", error);
+                    error!("初始化本地词典失败: {}", error);
                 }
             }
 
             if let Err(error) = ensure_popup_window(&app.handle().clone(), &popup_state) {
-                println!("预热弹窗失败: {}", error);
+                error!("预热弹窗失败: {}", error);
             }
 
             // 创建托盘菜单
@@ -641,18 +895,31 @@ pub fn run() {
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .on_menu_event(|app, event| {
-                    match event.id.as_ref() {
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+                .show_menu_on_left_click(false) // 左键不显示菜单
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
-                        "quit" => {
-                            app.exit(0);
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        ..
+                    } = event
+                    {
+                        // 左键点击显示主窗口
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
-                        _ => {}
                     }
                 })
                 .build(app)?;
@@ -702,8 +969,93 @@ pub fn run() {
             get_translation_by_id,
             update_api_config,
             update_global_shortcut,
-            update_tray_behavior
+            update_tray_behavior,
+            logger::get_log_files,
+            logger::read_log_file,
+            logger::get_log_dir_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod lib_tests {
+    use super::migrate_legacy_app_data_dir;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
+
+    struct TempDirGuard {
+        path: PathBuf,
+    }
+
+    impl TempDirGuard {
+        fn new(prefix: &str) -> Self {
+            let path = std::env::temp_dir().join(format!("{}-{}", prefix, uuid::Uuid::new_v4()));
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn migrates_missing_runtime_files_from_legacy_directory() {
+        let temp_dir = TempDirGuard::new("translation-tool-migrate");
+        let current_dir = temp_dir.path().join("com.zhiyu-liu.translation-tool");
+        let legacy_dir = temp_dir.path().join("com.zhiyu_liu.translation-tool");
+
+        fs::create_dir_all(&legacy_dir).unwrap();
+        fs::write(legacy_dir.join("translations.db"), b"history").unwrap();
+        fs::write(legacy_dir.join("dictionary.db"), b"dictionary").unwrap();
+
+        migrate_legacy_app_data_dir(
+            &current_dir,
+            "com.zhiyu_liu.translation-tool",
+            &["translations.db", "dictionary.db"],
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(current_dir.join("translations.db")).unwrap(),
+            b"history"
+        );
+        assert_eq!(
+            fs::read(current_dir.join("dictionary.db")).unwrap(),
+            b"dictionary"
+        );
+    }
+
+    #[test]
+    fn migration_does_not_overwrite_existing_runtime_files() {
+        let temp_dir = TempDirGuard::new("translation-tool-migrate-existing");
+        let current_dir = temp_dir.path().join("com.zhiyu-liu.translation-tool");
+        let legacy_dir = temp_dir.path().join("com.zhiyu_liu.translation-tool");
+
+        fs::create_dir_all(&current_dir).unwrap();
+        fs::create_dir_all(&legacy_dir).unwrap();
+        fs::write(current_dir.join("translations.db"), b"new-history").unwrap();
+        fs::write(legacy_dir.join("translations.db"), b"old-history").unwrap();
+
+        migrate_legacy_app_data_dir(
+            &current_dir,
+            "com.zhiyu_liu.translation-tool",
+            &["translations.db"],
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(current_dir.join("translations.db")).unwrap(),
+            b"new-history"
+        );
+    }
 }
