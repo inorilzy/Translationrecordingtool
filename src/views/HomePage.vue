@@ -117,12 +117,12 @@ async function handleTranslate() {
   padding: var(--spacing-md);
   font-size: var(--font-size-md);
   background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
   color: var(--color-text-primary);
   resize: vertical;
   font-family: inherit;
-  transition: border-color 0.2s;
+  transition: border-color var(--transition-fast);
 }
 
 .translate-input:focus {
@@ -142,13 +142,13 @@ async function handleTranslate() {
 }
 
 .translate-btn {
-  padding: 12px 32px;
+  padding: var(--spacing-sm) var(--spacing-xl);
   font-size: var(--font-size-md);
   min-width: 120px;
 }
 
 .clipboard-btn {
-  padding: 12px 24px;
+  padding: var(--spacing-sm) var(--spacing-lg);
   font-size: var(--font-size-sm);
 }
 
@@ -189,7 +189,7 @@ async function handleTranslate() {
   border: none;
   color: var(--color-primary);
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color var(--transition-fast);
 }
 
 .view-all-btn:hover {

@@ -151,7 +151,7 @@ async function copyTranslation() {
 
 .detail-card {
   background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--spacing-xl);
 }
@@ -173,15 +173,15 @@ async function copyTranslation() {
 }
 
 .source-text {
-  font-size: 20px;
-  font-weight: 500;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
   line-height: 1.6;
   margin: 0;
 }
 
 .translated-text {
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   color: var(--color-primary);
   line-height: 1.6;
   margin: 0;
@@ -202,7 +202,7 @@ async function copyTranslation() {
 
 .detail-list {
   margin: 0;
-  padding-left: 20px;
+  padding-left: var(--spacing-md);
   color: var(--color-text-secondary);
   line-height: 1.7;
 }
@@ -221,9 +221,9 @@ async function copyTranslation() {
   display: inline-flex;
   align-items: center;
   padding: 6px 10px;
-  background: rgba(102, 126, 234, 0.12);
-  border: 1px solid rgba(102, 126, 234, 0.2);
-  border-radius: 999px;
+  background: var(--color-chip-bg);
+  border: var(--border-width) solid var(--color-chip-border);
+  border-radius: var(--radius-pill);
   color: var(--color-primary);
   font-size: var(--font-size-sm);
 }
@@ -246,21 +246,21 @@ async function copyTranslation() {
 .actions {
   margin-top: var(--spacing-xl);
   padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--color-border);
+  border-top: var(--border-width) solid var(--color-border);
   display: flex;
   gap: var(--spacing-md);
 }
 
 .favorite-btn {
-  background: white;
-  border: 2px solid var(--color-primary);
+  background: var(--color-bg-primary);
+  border: var(--border-width-active) solid var(--color-primary);
   color: var(--color-primary);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .favorite-btn:hover {
   background: var(--color-primary);
-  color: white;
+  color: var(--color-text-on-primary);
 }
 
 .copy-btn {

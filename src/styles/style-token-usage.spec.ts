@@ -147,17 +147,37 @@ function gatherSharedFiles(): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// Content-surface file list
 // ---------------------------------------------------------------------------
 
-describe('style-token-usage: shared surfaces', () => {
-  const files = gatherSharedFiles()
+const CONTENT_SURFACES = [
+  'components/TranslationCard.vue',
+  'views/HomePage.vue',
+  'views/HistoryPage.vue',
+  'views/FavoritesPage.vue',
+  'views/DetailPage.vue',
+]
 
-  it('has shared surface files to scan', () => {
-    expect(files.length).toBeGreaterThanOrEqual(3)
-  })
+function gatherContentFiles(): string[] {
+  const found: string[] = []
+  for (const rel of CONTENT_SURFACES) {
+    try {
+      readSrc(rel)
+      found.push(rel)
+    } catch {
+      // file may not exist yet; skip gracefully
+    }
+  }
+  return found
+}
 
-  describe('no raw hex colors outside design-tokens.css', () => {
+// ---------------------------------------------------------------------------
+// Reusable violation check runner
+// ---------------------------------------------------------------------------
+
+/** Run all violation detectors against a list of files and produce named tests. */
+function assertNoViolations(files: string[], suiteLabel: string) {
+  describe(`no raw hex colors outside design-tokens.css (${suiteLabel})`, () => {
     for (const rel of files) {
       it(`${rel} contains no raw hex colors`, () => {
         const source = readSrc(rel)
@@ -170,7 +190,7 @@ describe('style-token-usage: shared surfaces', () => {
     }
   })
 
-  describe('no raw rgba/rgb outside design-tokens.css', () => {
+  describe(`no raw rgba/rgb outside design-tokens.css (${suiteLabel})`, () => {
     for (const rel of files) {
       it(`${rel} contains no raw rgba/rgb`, () => {
         const source = readSrc(rel)
@@ -183,7 +203,7 @@ describe('style-token-usage: shared surfaces', () => {
     }
   })
 
-  describe('all var() references resolve to defined tokens', () => {
+  describe(`all var() references resolve to defined tokens (${suiteLabel})`, () => {
     for (const rel of files) {
       it(`${rel} has no unknown token references`, () => {
         const source = readSrc(rel)
@@ -196,7 +216,7 @@ describe('style-token-usage: shared surfaces', () => {
     }
   })
 
-  describe('no inline style="" in Vue templates', () => {
+  describe(`no inline style="" in Vue templates (${suiteLabel})`, () => {
     for (const rel of files.filter((f) => f.endsWith('.vue'))) {
       it(`${rel} has no inline styles in template`, () => {
         const source = readSrc(rel)
@@ -208,6 +228,30 @@ describe('style-token-usage: shared surfaces', () => {
       })
     }
   })
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('style-token-usage: shared surfaces', () => {
+  const files = gatherSharedFiles()
+
+  it('has shared surface files to scan', () => {
+    expect(files.length).toBeGreaterThanOrEqual(3)
+  })
+
+  assertNoViolations(files, 'shared surfaces')
+})
+
+describe('style-token-usage: content surfaces', () => {
+  const files = gatherContentFiles()
+
+  it('has content surface files to scan', () => {
+    expect(files.length).toBeGreaterThanOrEqual(5)
+  })
+
+  assertNoViolations(files, 'content surfaces')
 })
 
 describe('style-token-usage: design-tokens integrity', () => {
@@ -218,6 +262,8 @@ describe('style-token-usage: design-tokens integrity', () => {
       'color-text-on-primary',
       'color-error-bg',
       'color-success-bg',
+      'color-chip-bg',
+      'color-chip-border',
       'radius-sm',
       'radius-md',
       'font-size-icon',

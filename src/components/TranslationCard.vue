@@ -60,11 +60,11 @@ function goToDetail() {
 <style scoped>
 .translation-card {
   background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--spacing-md);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-fast);
   margin-bottom: var(--spacing-md);
 }
 
@@ -84,7 +84,7 @@ function goToDetail() {
 }
 
 .source-text {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
   font-size: var(--font-size-md);
 }
@@ -112,7 +112,7 @@ function goToDetail() {
 .card-footer {
   display: flex;
   gap: var(--spacing-md);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-tertiary);
   align-items: center;
 }
@@ -123,10 +123,10 @@ function goToDetail() {
 
 .access-count {
   color: var(--color-warning);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .favorite-badge {
-  font-size: 14px;
+  font-size: var(--font-size-md);
 }
 </style>

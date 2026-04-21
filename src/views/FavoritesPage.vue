@@ -96,11 +96,11 @@ async function removeFavorite(id: number | undefined, event: Event) {
 
 .favorite-card {
   background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--spacing-lg);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-fast);
   position: relative;
 }
 
@@ -115,7 +115,7 @@ async function removeFavorite(id: number | undefined, event: Event) {
 
 .source {
   font-size: var(--font-size-md);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   margin-bottom: var(--spacing-sm);
   color: var(--color-text-primary);
 }
@@ -127,7 +127,7 @@ async function removeFavorite(id: number | undefined, event: Event) {
 }
 
 .meta {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-tertiary);
   display: flex;
   gap: var(--spacing-sm);
@@ -144,14 +144,15 @@ async function removeFavorite(id: number | undefined, event: Event) {
   right: var(--spacing-sm);
   background: none;
   border: none;
-  font-size: 20px;
+  font-size: var(--font-size-lg);
   color: var(--color-warning);
   cursor: pointer;
   padding: var(--spacing-xs);
-  transition: color 0.2s;
+  transition: color var(--transition-fast);
 }
 
 .remove-btn:hover {
-  color: #f57c00;
+  color: var(--color-warning);
+  opacity: 0.8;
 }
 </style>

@@ -69,6 +69,10 @@
   --scrollbar-thumb: rgba(0, 0, 0, 0.2);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.35);
   --scrollbar-track: transparent;
+
+  /* 芯片标签 */
+  --color-chip-bg: rgba(102, 126, 234, 0.12);
+  --color-chip-border: rgba(102, 126, 234, 0.2);
 }
 
 /* 深色主题 - Dark (VSCode Dark+) */
