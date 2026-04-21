@@ -105,11 +105,10 @@
 import { ref, onMounted } from 'vue'
 import { getAllWebviewWindows } from '@tauri-apps/api/webviewWindow'
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
-import { useTranslationStore } from '../stores/translation'
-import { applyTheme } from '../lib/settings'
+import { useSettingsStore } from '../stores/settings'
 import NavigationBar from '../components/NavigationBar.vue'
 
-const store = useTranslationStore()
+const store = useSettingsStore()
 
 const config = ref({
   apiKey: '',
@@ -217,7 +216,6 @@ async function saveAutostartBehavior() {
 async function changeTheme() {
   try {
     await store.updateTheme(config.value.theme)
-    applyTheme(config.value.theme)
   } catch (e) {
     showMessage(`切换主题失败: ${e}`, 'error')
     config.value.theme = store.theme

@@ -2,13 +2,16 @@
 import { onMounted } from 'vue'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useTranslationStore } from './stores/translation'
+import { useSettingsStore } from './stores/settings'
 
-const store = useTranslationStore()
+const translationStore = useTranslationStore()
+const settingsStore = useSettingsStore()
 const windowLabel = getCurrentWebviewWindow().label
 
-onMounted(() => {
+onMounted(async () => {
   if (windowLabel === 'main') {
-    store.initDatabase()
+    await settingsStore.loadSettings()
+    await translationStore.loadHistory()
   }
 })
 </script>

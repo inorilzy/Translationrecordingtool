@@ -2,11 +2,13 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTranslationStore } from '../stores/translation'
+import { useSettingsStore } from '../stores/settings'
 import NavigationBar from '../components/NavigationBar.vue'
 import TranslationCard from '../components/TranslationCard.vue'
 
 const router = useRouter()
 const store = useTranslationStore()
+const settings = useSettingsStore()
 const inputText = ref('')
 
 const recentItems = computed(() => store.history.slice(0, 5))
@@ -54,7 +56,7 @@ async function handleTranslate() {
             :disabled="store.loading"
             class="btn btn-secondary clipboard-btn"
           >
-            {{ store.loading ? '翻译中...' : `剪贴板翻译 (${store.globalShortcut})` }}
+            {{ store.loading ? '翻译中...' : `剪贴板翻译 (${settings.globalShortcut})` }}
           </button>
         </div>
       </div>
