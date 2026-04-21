@@ -1,0 +1,26 @@
+- generic [ref=e4]:
+  - generic [ref=e8]:
+    - alert [ref=e12]:
+      - generic [ref=e13]
+      - generic [ref=e20]
+    - link "跳转至主内容" [ref=e24] [cursor=pointer]:
+      - /url: javascript:void(0)
+    - banner [ref=e25]:
+      - generic [ref=e27]
+  - main [ref=e60]:
+    - generic [ref=e63]:
+      - generic [ref=e74]
+      - generic [ref=e85]
+      - generic [ref=e842]
+  - contentinfo [ref=e856]:
+    - navigation "页脚资源链接" [ref=e857]:
+      - generic [ref=e858]
+      - generic [ref=e904]
+    - generic [ref=e950]:
+      - link "内容语言选择器。当前设置为 中文(中国)" [ref=e951] [cursor=pointer]:
+        - /url: https://azure.microsoft.com/zh-cn/locale
+      - link "你的隐私选择选择退出图标 你的隐私选择" [ref=e952] [cursor=pointer]:
+        - /url: https://aka.ms/yourcaliforniaprivacychoices
+      - link "消费者健康隐私" [ref=e959] [cursor=pointer]:
+        - /url: https://go.microsoft.com/fwlink/?linkid=2259814
+      - navigation "Microsoft 企业链接" [ref=e961]

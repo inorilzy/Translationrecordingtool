@@ -26,10 +26,6 @@
           "windows": ["main"],
           "permissions": [
             "core:default",
-            "sql:default",
-            "sql:allow-load",
-            "sql:allow-execute",
-            "sql:allow-select",
             "autostart:default",
             "autostart:allow-is-enabled",
             "autostart:allow-enable",
@@ -46,11 +42,7 @@
             "core:window:allow-hide",
             "core:window:allow-close",
             "core:window:allow-show",
-            "core:window:allow-start-dragging",
-            "sql:default",
-            "sql:allow-load",
-            "sql:allow-execute",
-            "sql:allow-select"
+            "core:window:allow-start-dragging"
           ]
         }
       ]

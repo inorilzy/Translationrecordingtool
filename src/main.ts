@@ -1,17 +1,12 @@
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { bootstrapTheme } from './lib/theme-bootstrap'
 import router from "./router";
 import App from "./App.vue";
 
-// 初始化主题
-function initTheme() {
-  const savedTheme = localStorage.getItem('theme') || 'light'
-  document.documentElement.setAttribute('data-theme', savedTheme)
-}
-
 async function bootstrap() {
-  initTheme()
+  await bootstrapTheme()
 
   const pinia = createPinia();
   const app = createApp(App);

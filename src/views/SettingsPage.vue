@@ -103,10 +103,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import { getAllWebviewWindows } from '@tauri-apps/api/webviewWindow'
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import { useTranslationStore } from '../stores/translation'
+import { applyTheme } from '../lib/settings'
 import NavigationBar from '../components/NavigationBar.vue'
 
 const store = useTranslationStore()
@@ -126,11 +126,12 @@ const message = ref('')
 const messageType = ref<'success' | 'error'>('success')
 
 onMounted(async () => {
+  await store.loadSettings()
   config.value.apiKey = store.apiKey
   config.value.apiSecret = store.apiSecret
   config.value.globalShortcut = store.globalShortcut
-  config.value.enableTray = localStorage.getItem('enable_tray') !== 'false'
-  config.value.theme = localStorage.getItem('theme') || 'light'
+  config.value.enableTray = store.enableTray
+  config.value.theme = store.theme
 
   try {
     config.value.enableAutostart = await isAutostartEnabled()
@@ -192,10 +193,7 @@ async function saveGlobalShortcut() {
 
 async function saveTrayBehavior() {
   try {
-    localStorage.setItem('enable_tray', config.value.enableTray.toString())
-    await invoke('update_tray_behavior', {
-      enabled: config.value.enableTray
-    })
+    await store.updateTrayBehavior(config.value.enableTray)
     showMessage('托盘行为已更新', 'success')
   } catch (e) {
     showMessage(`更新托盘行为失败: ${e}`, 'error')
@@ -217,8 +215,14 @@ async function saveAutostartBehavior() {
 }
 
 async function changeTheme() {
-  localStorage.setItem('theme', config.value.theme)
-  document.documentElement.setAttribute('data-theme', config.value.theme)
+  try {
+    await store.updateTheme(config.value.theme)
+    applyTheme(config.value.theme)
+  } catch (e) {
+    showMessage(`切换主题失败: ${e}`, 'error')
+    config.value.theme = store.theme
+    return
+  }
 
   // 通知弹窗窗口更新主题
   try {

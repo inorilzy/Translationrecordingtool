@@ -1,38 +1,35 @@
 <script setup lang="ts">
 import { nextTick, ref, onMounted, onUnmounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type { Translation } from '../stores/translation'
-import type Database from '@tauri-apps/plugin-sql'
-import { openTranslationsDatabase, upsertTranslation } from '../lib/database'
+import { applyTheme as applyDocumentTheme, defaultSettings, getSettingsSnapshot } from '../lib/settings'
 
 const currentTranslation = ref<Translation | null>(null)
 const loading = ref(true)
 const error = ref('')
 const contentRef = ref<HTMLElement | null>(null)
 const appWindow = getCurrentWebviewWindow()
-
-let db: Database | null = null
 let unlistenTranslationResult: (() => void) | null = null
 let unlistenTranslationUpdate: (() => void) | null = null
 let unlistenTranslationStarted: (() => void) | null = null
 let unlistenTheme: (() => void) | null = null
 
-function applyTheme(theme = localStorage.getItem('theme') || 'light') {
-  document.documentElement.setAttribute('data-theme', theme)
+function currentThemeFallback() {
+  return document.documentElement.getAttribute('data-theme')
+    || defaultSettings.theme
 }
 
-function handleStorageChange(event: StorageEvent) {
-  if (event.key === 'theme') {
-    applyTheme(event.newValue || 'light')
-  }
+function applyTheme(theme = currentThemeFallback()) {
+  applyDocumentTheme(theme)
 }
 
 async function persistTranslation(nextTranslation: Translation, incrementAccessCount: boolean) {
-  if (!db) {
-    return nextTranslation
-  }
-  return upsertTranslation(db, nextTranslation, { incrementAccessCount })
+  return invoke<Translation>('save_translation', {
+    translation: nextTranslation,
+    incrementAccessCount,
+  })
 }
 
 async function applyTranslation(payload: Translation, incrementAccessCount: boolean) {
@@ -58,21 +55,18 @@ async function applyTranslation(payload: Translation, incrementAccessCount: bool
 }
 
 onMounted(async () => {
-  applyTheme()
+  try {
+    const settings = await getSettingsSnapshot()
+    applyTheme(settings.theme)
+  } catch (e) {
+    console.error('加载弹窗主题失败，回退到默认主题:', e)
+    applyTheme()
+  }
 
   // 监听主题变化事件
   unlistenTheme = await listen<{ theme: string }>('theme-changed', (event) => {
     applyTheme(event.payload.theme)
   })
-
-  window.addEventListener('storage', handleStorageChange)
-
-  // 初始化数据库
-  try {
-    db = await openTranslationsDatabase()
-  } catch (e) {
-    console.error('数据库初始化失败:', e)
-  }
 
   // 监听翻译结果
   unlistenTranslationStarted = await listen('translation-started', () => {
@@ -105,7 +99,6 @@ onUnmounted(() => {
   unlistenTranslationResult?.()
   unlistenTranslationUpdate?.()
   unlistenTheme?.()
-  window.removeEventListener('storage', handleStorageChange)
   window.removeEventListener('keydown', handleKeyDown)
 })
 
@@ -120,22 +113,17 @@ function close() {
 }
 
 async function toggleFavorite() {
-  if (!db || !currentTranslation.value) {
+  if (!currentTranslation.value?.id) {
     return
   }
 
   const newState = currentTranslation.value.is_favorite ? 0 : 1
 
   try {
-    await db.execute(
-      'UPDATE translations SET is_favorite = $1 WHERE source_text = $2 AND source_lang = $3 AND target_lang = $4',
-      [
-        newState,
-        currentTranslation.value.source_text,
-        currentTranslation.value.source_lang,
-        currentTranslation.value.target_lang,
-      ]
-    )
+    await invoke('toggle_favorite', {
+      id: currentTranslation.value.id,
+      isFavorite: newState === 1,
+    })
     currentTranslation.value.is_favorite = newState
   } catch (e) {
     console.error('更新收藏状态失败:', e)

@@ -1,0 +1,57 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e8]:
+      - alert [ref=e12]:
+        - generic [ref=e13]:
+          - img [ref=e15]
+          - paragraph [ref=e17]
+        - generic [ref=e20]:
+          - button "接受" [ref=e21] [cursor=pointer]
+          - button "拒绝" [ref=e22] [cursor=pointer]
+          - button "管理 Cookie" [ref=e23] [cursor=pointer]
+      - link "跳转至主内容" [ref=e24] [cursor=pointer]:
+        - /url: javascript:void(0)
+      - banner [ref=e25]:
+        - generic [ref=e27]:
+          - text:  
+          - link "Microsoft" [ref=e28] [cursor=pointer]:
+            - /url: https://www.microsoft.com
+          - text:  
+          - link "Azure" [ref=e32] [cursor=pointer]:
+            - /url: https://azure.microsoft.com/zh-cn
+          - navigation "上下文菜单" [ref=e34]
+          - generic [ref=e53]
+    - main [ref=e60]:
+      - generic [ref=e63]:
+        - generic [ref=e79]:
+          - img "Azure 帐户的主图图像" [ref=e83]
+          - generic [ref=e90]
+        - generic [ref=e101]:
+          - navigation "页内快速链接" [ref=e103]
+          - generic [ref=e127]
+        - generic:
+          - generic: 
+    - contentinfo [ref=e1324]:
+      - navigation "页脚资源链接" [ref=e1325]:
+        - generic [ref=e1326]:
+          - generic [ref=e1327]
+          - generic [ref=e1344]
+          - generic [ref=e1359]
+        - generic [ref=e1372]:
+          - generic [ref=e1373]
+          - generic [ref=e1382]
+          - generic [ref=e1399]
+      - generic [ref=e1418]:
+        - link "内容语言选择器。当前设置为 中文(中国)" [ref=e1419] [cursor=pointer]:
+          - /url: https://azure.microsoft.com/zh-cn/locale
+          - text:  中文(中国)
+        - link "你的隐私选择选择退出图标 你的隐私选择" [ref=e1420] [cursor=pointer]:
+          - /url: https://aka.ms/yourcaliforniaprivacychoices
+          - img "你的隐私选择选择退出图标" [ref=e1421]
+          - generic [ref=e1426]: 你的隐私选择
+        - link "消费者健康隐私" [ref=e1427] [cursor=pointer]:
+          - /url: https://go.microsoft.com/fwlink/?linkid=2259814
+          - generic [ref=e1428]: 消费者健康隐私
+        - navigation "Microsoft 企业链接" [ref=e1429]:
+          - list [ref=e1430]
+  - generic: 

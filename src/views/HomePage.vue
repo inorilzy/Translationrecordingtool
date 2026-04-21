@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTranslationStore } from '../stores/translation'
 import NavigationBar from '../components/NavigationBar.vue'
@@ -7,11 +7,18 @@ import TranslationCard from '../components/TranslationCard.vue'
 
 const router = useRouter()
 const store = useTranslationStore()
+const inputText = ref('')
 
 const recentItems = computed(() => store.history.slice(0, 5))
 
 function goToHistory() {
   router.push('/history')
+}
+
+async function handleTranslate() {
+  const text = inputText.value.trim()
+  if (!text) return
+  await store.translateText(text)
 }
 </script>
 
@@ -23,16 +30,34 @@ function goToHistory() {
       <h1>选词翻译工具</h1>
     </div>
 
-    <!-- 翻译按钮 -->
+    <!-- 翻译输入区 -->
     <div class="translate-section">
-      <button
-        @click="store.translateFromClipboard"
-        :disabled="store.loading"
-        class="btn btn-primary translate-btn"
-      >
-        {{ store.loading ? '翻译中...' : `翻译剪贴板内容 (${store.globalShortcut})` }}
-      </button>
-      <p class="hint">先复制要翻译的文本，然后点击按钮或按快捷键</p>
+      <div class="input-group">
+        <textarea
+          v-model="inputText"
+          @keydown.ctrl.enter="handleTranslate"
+          placeholder="输入要翻译的文本，支持 Ctrl+Enter 快速翻译"
+          class="translate-input"
+          rows="3"
+        />
+        <div class="input-actions">
+          <button
+            @click="handleTranslate"
+            :disabled="store.loading || !inputText.trim()"
+            class="btn btn-primary translate-btn"
+          >
+            {{ store.loading ? '翻译中...' : '翻译' }}
+          </button>
+          <span class="divider">或</span>
+          <button
+            @click="store.translateFromClipboard"
+            :disabled="store.loading"
+            class="btn btn-secondary clipboard-btn"
+          >
+            {{ store.loading ? '翻译中...' : `剪贴板翻译 (${store.globalShortcut})` }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- 错误提示 -->
@@ -74,19 +99,58 @@ function goToHistory() {
 }
 
 .translate-section {
-  text-align: center;
   margin: var(--spacing-xl) 0;
 }
 
-.translate-btn {
-  width: 100%;
-  max-width: 400px;
-  padding: 16px 24px;
-  font-size: var(--font-size-md);
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  max-width: 600px;
+  margin: 0 auto;
 }
 
-.hint {
-  margin-top: var(--spacing-sm);
+.translate-input {
+  width: 100%;
+  padding: var(--spacing-md);
+  font-size: var(--font-size-md);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.translate-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.translate-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.input-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  justify-content: center;
+}
+
+.translate-btn {
+  padding: 12px 32px;
+  font-size: var(--font-size-md);
+  min-width: 120px;
+}
+
+.clipboard-btn {
+  padding: 12px 24px;
+  font-size: var(--font-size-sm);
+}
+
+.divider {
   color: var(--color-text-tertiary);
   font-size: var(--font-size-sm);
 }

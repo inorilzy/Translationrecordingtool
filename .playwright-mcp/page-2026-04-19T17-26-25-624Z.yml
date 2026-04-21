@@ -1,0 +1,967 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e8]:
+      - alert [ref=e12]:
+        - generic [ref=e13]:
+          - img [ref=e15]
+          - paragraph [ref=e17]:
+            - text: 我们使用可选的 Cookie，通过社交媒体连接等方式改善你在我们网站上的体验，并且根据你的在线活动投放个性化的广告。 如果你拒绝可选 Cookie，则我们将仅使用为你提供服务所必须的 Cookie。 你可以单击页面底部的“管理 Cookie”更改你的选择。
+            - link "隐私声明" [ref=e18] [cursor=pointer]:
+              - /url: https://go.microsoft.com/fwlink/?LinkId=521839
+            - link "第三方 Cookie" [ref=e19] [cursor=pointer]:
+              - /url: https://aka.ms/3rdpartycookies
+        - generic [ref=e20]:
+          - button "接受" [ref=e21] [cursor=pointer]
+          - button "拒绝" [ref=e22] [cursor=pointer]
+          - button "管理 Cookie" [ref=e23] [cursor=pointer]
+      - link "跳转至主内容" [ref=e24] [cursor=pointer]:
+        - /url: javascript:void(0)
+      - banner [ref=e25]:
+        - generic [ref=e27]:
+          - text:  
+          - link "Microsoft" [ref=e28] [cursor=pointer]:
+            - /url: https://www.microsoft.com
+            - img [ref=e29]
+            - generic [ref=e30]: Microsoft
+          - text:  
+          - link "Azure" [ref=e32] [cursor=pointer]:
+            - /url: https://azure.microsoft.com/zh-cn
+            - generic [ref=e33]: Azure
+          - navigation "上下文菜单" [ref=e34]:
+            - list [ref=e35]:
+              - listitem [ref=e36]:
+                - link "浏览" [ref=e37] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/explore/
+              - listitem [ref=e38]:
+                - button "产品 " [ref=e40] [cursor=pointer]
+              - listitem [ref=e41]:
+                - button "解决方案 " [ref=e43] [cursor=pointer]
+              - listitem [ref=e44]:
+                - button "价格 " [ref=e46] [cursor=pointer]
+              - listitem [ref=e47]:
+                - button "合作伙伴 " [ref=e49] [cursor=pointer]
+              - listitem [ref=e50]:
+                - button "资源 " [ref=e52] [cursor=pointer]
+              - text: 
+          - generic [ref=e53]:
+            - navigation "所有 Microsoft 菜单" [ref=e55]:
+              - list:  
+            - search [ref=e56]:
+              - button "" [ref=e58] [cursor=pointer]
+    - main [ref=e60]:
+      - generic [ref=e63]:
+        - generic [ref=e79]:
+          - img "Azure 帐户的主图图像" [ref=e83]
+          - generic [ref=e90]:
+            - heading "使用 Azure 帐户在云中构建" [level=1] [ref=e93]: 使用 Azure 帐户在云中构建
+            - generic [ref=e94]: 通过可缩放且经济高效的 Azure 服务，开始跨多个云在本地和边缘创建、部署和管理应用程序。
+            - generic [ref=e96]:
+              - link "免费试用 Azure - 登录到你的帐户" [ref=e97] [cursor=pointer]:
+                - /url: https://go.microsoft.com/fwlink/?linkid=2227353&clcid=0x804&l=zh-cn&icid=azure-ai-translator&ref=azure.microsoft.com&hasfullconsent=false
+                - generic [ref=e98]: 免费试用 Azure
+              - link "即付即用：注册" [ref=e99] [cursor=pointer]:
+                - /url: https://go.microsoft.com/fwlink/?linkid=2234155&clcid=0x804&l=zh-cn&icid=azure-ai-translator&ref=azure.microsoft.com&hasfullconsent=false
+                - generic [ref=e100]: 即付即用
+        - generic [ref=e101]:
+          - navigation "页内快速链接" [ref=e103]:
+            - generic [ref=e104]:
+              - text: 
+              - generic "比较帐户类型 " [ref=e105]:
+                - generic [ref=e106]:
+                  - list [ref=e108]:
+                    - listitem [ref=e109]:
+                      - link "比较帐户类型" [ref=e110] [cursor=pointer]:
+                        - /url: "#Compare-account-types"
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic: 比较帐户类型
+                    - listitem [ref=e112]:
+                      - link "免费服务" [ref=e113] [cursor=pointer]:
+                        - /url: "#freeservices"
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic: 免费服务
+                    - listitem [ref=e115]:
+                      - link "资源" [ref=e116] [cursor=pointer]:
+                        - /url: "#Resources"
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic: 资源
+                    - listitem [ref=e118]:
+                      - link "后续步骤" [ref=e119] [cursor=pointer]:
+                        - /url: "#Next-steps"
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic: 后续步骤
+                    - listitem [ref=e121]:
+                      - link "常见问题解答" [ref=e122] [cursor=pointer]:
+                        - /url: "#FAQ"
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic: 常见问题解答
+                    - listitem [ref=e124]:
+                      - link "位置" [ref=e125] [cursor=pointer]:
+                        - /url: "#Locations"
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic: 位置
+                  - text:  
+          - generic [ref=e127]:
+            - generic [ref=e144]:
+              - generic [ref=e150]:
+                - heading "选择适合你的 Azure 帐户" [level=2] [ref=e153]
+                - generic [ref=e154]: 即付即用或免费试用 Azure 最多 30 天。无前期承诺使用量（可随时取消）。
+              - generic [ref=e156]:
+                - generic [ref=e157]:
+                  - generic [ref=e160]:
+                    - generic [ref=e162]:
+                      - heading "Azure 免费帐户" [level=3] [ref=e166]
+                      - generic [ref=e167]: 最适用于概念证明和探索功能
+                      - list [ref=e170]:
+                        - listitem [ref=e171]:
+                          - generic [ref=e173]:
+                            - img [ref=e177]
+                            - heading "仅适用于新的 Azure 客户" [level=6] [ref=e182]
+                        - listitem [ref=e183]:
+                          - generic [ref=e185]:
+                            - img [ref=e189]
+                            - heading "12 个月内每月免费使用超过 20 项热门服务（仅限新 Azure 客户）" [level=6] [ref=e194]
+                        - listitem [ref=e195]:
+                          - generic [ref=e197]:
+                            - img [ref=e201]
+                            - heading "每月免费提供超过 65 项永久免费服务" [level=6] [ref=e206]
+                        - listitem [ref=e207]:
+                          - generic [ref=e209]:
+                            - img [ref=e213]
+                            - heading "可免费使用全部服务直至额度上限，并享有 200 美元额度" [level=6] [ref=e218]
+                        - listitem [ref=e219]:
+                          - generic [ref=e221]:
+                            - img [ref=e225]
+                            - heading "支出保护 - 不会从信用卡扣费文件链接" [level=6] [ref=e230]:
+                              - text: 支出保护 - 不会从信用卡扣费
+                              - superscript [ref=e231]:
+                                - link "文件链接" [ref=e232] [cursor=pointer]:
+                                  - /url: "#note1"
+                                  - text: "*"
+                        - listitem [ref=e233]:
+                          - generic [ref=e235]:
+                            - img [ref=e239]
+                            - heading "无前期承诺使用量（可随时取消）" [level=6] [ref=e244]
+                        - listitem [ref=e245]:
+                          - generic [ref=e247]:
+                            - img [ref=e251]
+                            - heading "转到即用即付定价，可在超过 30 天或额度用尽后继续使用" [level=6] [ref=e256]
+                    - generic [ref=e258]:
+                      - heading "200 美元额度" [level=1] [ref=e263]
+                      - generic [ref=e264]:
+                        - heading "可在 30 天内用于 Azure 服务" [level=6] [ref=e267]
+                        - link "注册 Azure 免费帐户" [ref=e271] [cursor=pointer]:
+                          - /url: https://go.microsoft.com/fwlink/?linkid=2227353&clcid=0x804&l=zh-cn&ref=azure.microsoft.com&hasfullconsent=false
+                          - generic [ref=e272]: 免费试用 Azure
+                  - generic [ref=e275]:
+                    - generic [ref=e277]:
+                      - heading "即付即用" [level=3] [ref=e281]
+                      - generic [ref=e282]: 最适合已准备好开始生成工作负载的客户。
+                      - list [ref=e285]:
+                        - listitem [ref=e286]:
+                          - generic [ref=e288]:
+                            - img [ref=e292]
+                            - heading "12 个月内每月免费使用超过 20 项热门服务（仅限新 Azure 客户）" [level=6] [ref=e297]
+                        - listitem [ref=e298]:
+                          - generic [ref=e300]:
+                            - img [ref=e304]
+                            - heading "每月免费提供超过 65 项永久免费服务" [level=6] [ref=e309]
+                        - listitem [ref=e310]:
+                          - generic [ref=e312]:
+                            - img [ref=e316]
+                            - heading "可无限量使用全部服务" [level=6] [ref=e321]
+                        - listitem [ref=e322]:
+                          - generic [ref=e324]:
+                            - img [ref=e328]
+                            - heading "技术支持选项可用" [level=6] [ref=e333]
+                        - listitem [ref=e334]:
+                          - generic [ref=e336]:
+                            - img [ref=e340]
+                            - heading "无前期承诺使用量（可随时取消）" [level=6] [ref=e345]
+                        - listitem [ref=e346]:
+                          - generic [ref=e348]:
+                            - img [ref=e352]
+                            - heading "超过 30 天后，无需执行任何操作即可继续使用" [level=6] [ref=e357]
+                    - generic [ref=e359]:
+                      - heading "只为自己使用的资源付费" [level=1] [ref=e364]
+                      - generic [ref=e365]:
+                        - heading "超出每月免费使用量" [level=6] [ref=e368]
+                        - link "注册即付即用" [ref=e372] [cursor=pointer]:
+                          - /url: https://go.microsoft.com/fwlink/?linkid=2234155&clcid=0x804&l=zh-cn&ref=azure.microsoft.com&hasfullconsent=false
+                          - generic [ref=e373]: 注册
+                - generic [ref=e377]:
+                  - paragraph [ref=e378]:
+                    - text: "["
+                    - link "*" [ref=e379] [cursor=pointer]:
+                      - /url: "#footnote-protection"
+                    - text: "]"
+                  - paragraph [ref=e380]: 在注册验证过程中，你的卡可能被临时授予 1 美元的授权，验证后将会撤销。
+            - generic [ref=e384]:
+              - generic [ref=e390]:
+                - generic [ref=e391]: 免费服务
+                - heading "利用免费产品" [level=2] [ref=e394]
+                - generic [ref=e395]: 这些产品在指定的每月金额以下免费。一些产品对所有 Azure 客户始终免费，一些产品则仅供新客户免费使用 12 个月。
+              - generic [ref=e397]:
+                - generic [ref=e399]:
+                  - generic [ref=e401]:
+                    - tablist "免费服务" [ref=e404]:
+                      - tab "常用" [selected] [ref=e405] [cursor=pointer]
+                      - tab "AI + 机器学习" [ref=e406] [cursor=pointer]
+                      - tab "混合 + 多云" [ref=e407] [cursor=pointer]
+                      - tab "计算" [ref=e408] [cursor=pointer]
+                      - tab "容器" [ref=e409] [cursor=pointer]
+                      - tab "数据库" [ref=e410] [cursor=pointer]
+                      - tab "IoT" [ref=e411] [cursor=pointer]
+                      - tab "管理和治理" [ref=e412] [cursor=pointer]
+                    - text:  
+                  - generic [ref=e415]:
+                    - tabpanel [ref=e416]:
+                      - generic [ref=e420]:
+                        - generic [ref=e423]:
+                          - generic [ref=e428]:
+                            - generic [ref=e429]:
+                              - generic [ref=e430]: 始终
+                              - heading "Azure DevOps" [level=3] [ref=e433]:
+                                - generic [ref=e434]: Azure DevOps
+                            - generic [ref=e435]: 5 位用户具有无限制的专用 Git 存储库
+                          - link "探索产品 - Azure DevOps：规划方式更智能，协作方式更好，并使用一组新式开发服务来加快交付速度。" [ref=e438] [cursor=pointer]:
+                            - /url: https://azure.microsoft.com/zh-cn/products/devops/
+                            - generic [ref=e439]: 浏览产品
+                        - generic [ref=e442]:
+                          - generic [ref=e447]:
+                            - generic [ref=e448]:
+                              - generic [ref=e449]: 始终
+                              - heading "Foundry Tools 中的 Azure 语音" [level=3] [ref=e452]:
+                                - generic [ref=e453]: Foundry Tools 中的 Azure 语音
+                            - generic [ref=e454]: 每月 50 万个神经网络字符
+                          - link "探索产品 - Azure AI 语音：使用预生成或可自定义语音模型更快地构建多模态多语言 AI 应用。" [ref=e457] [cursor=pointer]:
+                            - /url: https://azure.microsoft.com/zh-cn/products/ai-services/ai-speech/
+                            - generic [ref=e458]: 浏览产品
+                        - generic [ref=e461]:
+                          - generic [ref=e466]:
+                            - generic [ref=e467]:
+                              - generic [ref=e468]: 12 个月
+                              - heading "Azure 容器注册表" [level=3] [ref=e471]:
+                                - generic [ref=e472]: Azure 容器注册表
+                            - generic [ref=e473]: 1 个具有 100 GB 存储的标准层注册表和 10 个 Webhook
+                          - link "探索产品 - Azure 容器注册表：Docker 和开放容器计划 (OCI) 映像的注册表，支持所有 OCI 项目。" [ref=e476] [cursor=pointer]:
+                            - /url: https://azure.microsoft.com/zh-cn/products/container-registry/
+                            - generic [ref=e477]: 浏览产品
+                        - generic [ref=e480]:
+                          - generic [ref=e485]:
+                            - generic [ref=e486]:
+                              - generic [ref=e487]: 12 个月
+                              - heading "适用于 Linux 或 Windows 的 Azure 虚拟机" [level=3] [ref=e490]:
+                                - generic [ref=e491]: 适用于 Linux 或 Windows 的 Azure 虚拟机
+                            - generic [ref=e492]: B1、B2pts v2（基于 Arm）和 B2ats v2（基于 AMD）可突发 VM 各 750 小时
+                          - link "探索产品 - Azure 虚拟机：几秒钟内即可创建 Linux 和 Windows 虚拟机 (VM)，并且节省成本" [ref=e495] [cursor=pointer]:
+                            - /url: https://azure.microsoft.com/zh-cn/products/virtual-machines/
+                            - generic [ref=e496]: 浏览产品
+                        - generic [ref=e499]:
+                          - generic [ref=e504]:
+                            - generic [ref=e505]:
+                              - generic [ref=e506]: 始终
+                              - heading "Azure 数据目录" [level=3] [ref=e509]:
+                                - generic [ref=e510]: Azure 数据目录
+                            - generic [ref=e511]: 无限制用户
+                          - link "探索产品 - Azure 数据目录：从企业数据资产获取更多价值。" [ref=e514] [cursor=pointer]:
+                            - /url: https://azure.microsoft.com/zh-cn/products/data-catalog/
+                            - generic [ref=e515]: 浏览产品
+                        - generic [ref=e518]:
+                          - generic [ref=e523]:
+                            - generic [ref=e524]:
+                              - generic [ref=e525]: 始终
+                              - heading "Azure 数据工厂" [level=3] [ref=e528]:
+                                - generic [ref=e529]: Azure 数据工厂
+                            - generic [ref=e530]: 5 个低频率活动
+                          - link "探索产品 - Azure 数据工厂：简化企业级混合数据集成。" [ref=e533] [cursor=pointer]:
+                            - /url: https://azure.microsoft.com/zh-cn/products/data-factory/
+                            - generic [ref=e534]: 浏览产品
+                        - generic [ref=e537]:
+                          - generic [ref=e542]:
+                            - generic [ref=e543]:
+                              - generic [ref=e544]: 始终
+                              - heading "Azure SQL 数据库" [level=3] [ref=e547]:
+                                - generic [ref=e548]: Azure SQL 数据库
+                            - generic [ref=e549]: 每月 100,000 vCore 秒的 SQL 数据库无服务器使用量，并提供 32 GB 的存储空间
+                          - link "探索产品 - Azure SQL 数据库：在完全托管的 SQL 数据库上构建不受限制且受信任的 AI 就绪应用" [ref=e552] [cursor=pointer]:
+                            - /url: https://azure.microsoft.com/zh-cn/products/azure-sql/database/
+                            - generic [ref=e553]: 浏览产品
+                        - generic [ref=e556]:
+                          - generic [ref=e561]:
+                            - generic [ref=e562]:
+                              - generic [ref=e563]: 始终
+                              - heading "Azure 文档智能" [level=3] [ref=e566]:
+                                - generic [ref=e567]: Azure 文档智能
+                            - generic [ref=e568]: 500 页 S0 层级
+                          - link "探索产品 - Foundry Tools 中的 Azure 文档智能。" [ref=e571] [cursor=pointer]:
+                            - /url: https://azure.microsoft.com/zh-cn/products/ai-services/ai-document-intelligence/
+                            - generic [ref=e572]: 探索产品
+                    - link "返回标签页" [ref=e573] [cursor=pointer]:
+                      - /url: "#tabs-pill-bar-ocea03_tab0-tab"
+                - link "查看所有免费服务：探索免费 Azure 服务" [ref=e575] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/pricing/free-services/
+                  - generic [ref=e577]: 
+                  - generic [ref=e578]: 查看所有免费服务
+            - generic [ref=e579]:
+              - generic [ref=e586]:
+                - generic [ref=e587]: 资源
+                - heading "详细了解 Azure" [level=2] [ref=e590]
+              - generic [ref=e594]:
+                - generic [ref=e596]:
+                  - tablist [ref=e599]:
+                    - tab "全部" [selected] [ref=e600] [cursor=pointer]
+                    - tab "视频" [ref=e601] [cursor=pointer]
+                    - tab "文档" [ref=e602] [cursor=pointer]
+                    - tab "工具" [ref=e603] [cursor=pointer]
+                    - tab "专家帮助" [ref=e604] [cursor=pointer]
+                  - text:  
+                - generic [ref=e607]:
+                  - tabpanel [ref=e608]:
+                    - region "资源旋转木马" [ref=e612]:
+                      - generic [ref=e613]: 下一张幻灯片
+                      - generic [ref=e614]:
+                        - button "上一张幻灯片" [disabled] [ref=e615]:
+                          - generic [ref=e616]: 上一张幻灯片
+                          - generic [ref=e617]: 
+                        - button "下一张幻灯片" [ref=e618] [cursor=pointer]:
+                          - generic [ref=e619]: 下一张幻灯片
+                          - generic [ref=e620]: 
+                      - generic [ref=e622]:
+                        - group "1 of 8" [ref=e623]:
+                          - generic [ref=e624]:
+                            - generic [ref=e626]:
+                              - generic:
+                                - img "Microsoft Azure 虚拟机的流程图"
+                            - generic [ref=e627]:
+                              - generic [ref=e628]:
+                                - generic [ref=e630]:
+                                  - generic [ref=e632]: 文档
+                                  - heading "了解如何开始使用" [level=3] [ref=e635]:
+                                    - generic [ref=e636]: 了解如何开始使用
+                                - generic [ref=e638]: 按照此开发人员指南操作，了解如何开始在 Azure 中生成或迁移应用程序。
+                              - link "详细阅读：面向 Azure 开发人员的入门指南" [ref=e641] [cursor=pointer]:
+                                - /url: https://go.microsoft.com/fwlink/?linkid=2256722&clcid=0x804
+                                - generic [ref=e643]: 
+                                - generic [ref=e644]: 阅读更多内容
+                        - group "2 of 8" [ref=e645]:
+                          - generic [ref=e646]:
+                            - generic [ref=e648]:
+                              - generic:
+                                - img "一位穿橙色衬衫的男士正在使用笔记本电脑。"
+                            - generic [ref=e649]:
+                              - generic [ref=e650]:
+                                - generic [ref=e652]:
+                                  - generic [ref=e654]: 工具
+                                  - heading "计算成本" [level=3] [ref=e657]:
+                                    - generic [ref=e658]: 计算成本
+                                - generic [ref=e660]: 使用定价计算器估算使用任何 Azure 产品组合的每月成本。
+                              - link "使用 Microsoft Azure 上的定价计算器获取 Azure 产品和功能成本的估算值" [ref=e663] [cursor=pointer]:
+                                - /url: https://azure.microsoft.com/zh-cn/pricing/calculator/
+                                - generic [ref=e665]: 
+                                - generic [ref=e666]: 获得估价
+                        - group [ref=e667]:
+                          - generic [ref=e671]:
+                            - generic [ref=e672]:
+                              - generic [ref=e674]:
+                                - generic [ref=e676]: 视频
+                                - heading [level=3] [ref=e679]:
+                                  - generic [ref=e680]: 更充分地利用 Azure 免费帐户
+                              - generic [ref=e682]: 了解 Azure 免费帐户的工作原理，以及如何从免费帐户中获得最大好处。
+                            - button [ref=e685] [cursor=pointer]:
+                              - generic [ref=e687]: 
+                              - generic [ref=e688]: 立即观看
+                        - group [ref=e689]:
+                          - generic [ref=e693]:
+                            - generic [ref=e694]:
+                              - generic [ref=e696]:
+                                - generic [ref=e698]: 视频
+                                - heading [level=3] [ref=e701]:
+                                  - generic [ref=e702]: 管理成本并避免超支
+                              - generic [ref=e704]: 通过了解如何可视化和报告支出来避免意外费用。
+                            - button [ref=e707] [cursor=pointer]:
+                              - generic [ref=e709]: 
+                              - generic [ref=e710]: 立即观看
+                        - group [ref=e711]:
+                          - generic [ref=e715]:
+                            - generic [ref=e716]:
+                              - generic [ref=e718]:
+                                - generic [ref=e720]: 工具
+                                - heading [level=3] [ref=e723]:
+                                  - generic [ref=e724]: 比较支持计划
+                              - generic [ref=e726]: 浏览可用的支持选项，并查找最能满足业务和预算需求的计划。
+                            - link [ref=e729] [cursor=pointer]:
+                              - /url: https://azure.microsoft.com/zh-cn/support/plans/
+                              - generic [ref=e731]: 
+                              - generic [ref=e732]: 比较计划
+                        - group [ref=e733]:
+                          - generic [ref=e737]:
+                            - generic [ref=e738]:
+                              - generic [ref=e740]:
+                                - generic [ref=e742]: 工具
+                                - heading [level=3] [ref=e745]:
+                                  - generic [ref=e746]: 估计 Microsoft 商业市场销售额
+                              - generic [ref=e748]: 了解通过 Microsoft 商业市场销售你的 Azure 应用能够如何促进业务增长。
+                            - link [ref=e751] [cursor=pointer]:
+                              - /url: https://www.microsoft.com/zh-cn/software-development-companies/grow-sales/marketplace/value-calculator?ocid=cmm8mke01ln
+                              - generic [ref=e753]: 
+                              - generic [ref=e754]: 使用我们的计算器
+                        - group [ref=e755]:
+                          - generic [ref=e759]:
+                            - generic [ref=e760]:
+                              - generic [ref=e762]:
+                                - generic [ref=e764]: 专家帮助
+                                - heading [level=3] [ref=e767]:
+                                  - generic [ref=e768]: 与销售专家联系
+                              - generic [ref=e770]: 与销售专家聊天或通话以获取个性化指导。
+                            - link [ref=e773] [cursor=pointer]:
+                              - /url: https://azure.microsoft.com/zh-cn/contact/#contact-sales
+                              - generic [ref=e775]: 
+                              - generic [ref=e776]: 取得联系
+                        - group [ref=e777]:
+                          - generic [ref=e781]:
+                            - generic [ref=e782]:
+                              - generic [ref=e784]:
+                                - generic [ref=e786]: 专家帮助
+                                - heading [level=3] [ref=e789]:
+                                  - generic [ref=e790]: Microsoft 商业市场对软件开发公司的支持
+                              - generic [ref=e792]: 加入 ISV 成功，获取通过商业市场构建和销售应用的免费资源，包括 Azure 额度和 1:1 技术咨询。
+                            - link [ref=e795] [cursor=pointer]:
+                              - /url: https://www.microsoft.com/zh-cn/software-development-companies/offers-benefits/isv-success?ocid=cmm8mke01ln
+                              - generic [ref=e797]: 
+                              - generic [ref=e798]: 探索 ISV 成功
+                      - link "返回旋转木马导航控件" [ref=e800] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                  - text:        
+                  - link "返回标签页" [ref=e801] [cursor=pointer]:
+                    - /url: "#tabs-pill-bar-ocd24a_tab0-tab"
+            - generic:
+              - generic: 
+            - generic:
+              - generic: 
+            - generic [ref=e821]:
+              - heading "迈出下一步" [level=3] [ref=e830]
+              - generic [ref=e835]:
+                - generic [ref=e839]:
+                  - heading "开始在 Azure 上免费构建" [level=3] [ref=e844]
+                  - generic [ref=e845]:
+                    - generic [ref=e846]: 获取免费服务和 200 美元额度（支持在最长 30 天内探索 Azure）。
+                    - link "免费试用 Azure - 登录到你的帐户" [ref=e850] [cursor=pointer]:
+                      - /url: https://go.microsoft.com/fwlink/?linkid=2227353&clcid=0x804&l=zh-cn&icid=azure-ai-translator&ref=azure.microsoft.com&hasfullconsent=false
+                      - generic [ref=e851]: 免费试用 Azure
+                - generic [ref=e855]:
+                  - heading "以即付即用开始使用" [level=3] [ref=e860]
+                  - generic [ref=e861]:
+                    - generic [ref=e862]: 仅为超出免费服务用量的部分付费。
+                    - link "注册：即付即用" [ref=e866] [cursor=pointer]:
+                      - /url: https://go.microsoft.com/fwlink/?linkid=2234155&clcid=0x804&l=zh-cn&icid=azure-ai-translator&ref=azure.microsoft.com&hasfullconsent=false
+                      - generic [ref=e867]: 注册
+            - generic [ref=e872]:
+              - generic [ref=e873]:
+                - heading "常见问题解答" [level=2] [ref=e875]
+                - group [ref=e876]:
+                  - generic [ref=e877]:
+                    - button "全部展开" [ref=e878] [cursor=pointer]:
+                      - generic [ref=e880]: 全部展开
+                    - button "全部折叠" [disabled] [pressed] [ref=e881]:
+                      - generic [ref=e883]: 全部折叠
+              - list [ref=e884]:
+                - listitem [ref=e885]:
+                  - button "01/ 在哪里可以阅读 Azure 免费帐户和即用即付定价的详细信息？ " [ref=e888] [cursor=pointer]:
+                    - generic [ref=e890]: 01/
+                    - heading "在哪里可以阅读 Azure 免费帐户和即用即付定价的详细信息？" [level=3] [ref=e894]:
+                      - generic [ref=e895]: 在哪里可以阅读 Azure 免费帐户和即用即付定价的详细信息？
+                    - text: 
+                - listitem [ref=e896]:
+                  - button "02/ 启动成本是多少？ " [ref=e899] [cursor=pointer]:
+                    - generic [ref=e901]: 02/
+                    - heading "启动成本是多少？" [level=3] [ref=e905]:
+                      - generic [ref=e906]: 启动成本是多少？
+                    - text: 
+                - listitem [ref=e907]:
+                  - button "03/ 如何获取免费服务？ " [ref=e910] [cursor=pointer]:
+                    - generic [ref=e912]: 03/
+                    - heading "如何获取免费服务？" [level=3] [ref=e916]:
+                      - generic [ref=e917]: 如何获取免费服务？
+                    - text: 
+                - listitem [ref=e918]:
+                  - button "04/ 免费服务如何与即用即付定价结合使用？ " [ref=e921] [cursor=pointer]:
+                    - generic [ref=e923]: 04/
+                    - heading "免费服务如何与即用即付定价结合使用？" [level=3] [ref=e927]:
+                      - generic [ref=e928]: 免费服务如何与即用即付定价结合使用？
+                    - text: 
+                - listitem [ref=e929]:
+                  - button "05/ Azure 免费帐户可否用于生产，或是只能用于开发？ " [ref=e932] [cursor=pointer]:
+                    - generic [ref=e934]: 05/
+                    - heading "Azure 免费帐户可否用于生产，或是只能用于开发？" [level=3] [ref=e938]:
+                      - generic [ref=e939]: Azure 免费帐户可否用于生产，或是只能用于开发？
+                    - text: 
+                - listitem [ref=e940]:
+                  - button "06/ 如果我的 Azure 免费帐户可以免费使用服务，我可以使用 200 美元的额度做什么？ " [ref=e943] [cursor=pointer]:
+                    - generic [ref=e945]: 06/
+                    - heading "如果我的 Azure 免费帐户可以免费使用服务，我可以使用 200 美元的额度做什么？" [level=3] [ref=e949]:
+                      - generic [ref=e950]: 如果我的 Azure 免费帐户可以免费使用服务，我可以使用 200 美元的额度做什么？
+                    - text: 
+                - listitem [ref=e951]:
+                  - button "07/ 如何知道 200 美元的额度剩余多少？ " [ref=e954] [cursor=pointer]:
+                    - generic [ref=e956]: 07/
+                    - heading "如何知道 200 美元的额度剩余多少？" [level=3] [ref=e960]:
+                      - generic [ref=e961]: 如何知道 200 美元的额度剩余多少？
+                    - text: 
+                - listitem [ref=e962]:
+                  - button "08/ 如何确保不会向我收取 Azure 免费帐户的费用？ " [ref=e965] [cursor=pointer]:
+                    - generic [ref=e967]: 08/
+                    - heading "如何确保不会向我收取 Azure 免费帐户的费用？" [level=3] [ref=e971]:
+                      - generic [ref=e972]: 如何确保不会向我收取 Azure 免费帐户的费用？
+                    - text: 
+                - listitem [ref=e973]:
+                  - button "09/ 使用 Azure 免费帐户 200 美元额度或 30 天结束时会发生什么情况？ " [ref=e976] [cursor=pointer]:
+                    - generic [ref=e978]: 09/
+                    - heading "使用 Azure 免费帐户 200 美元额度或 30 天结束时会发生什么情况？" [level=3] [ref=e982]:
+                      - generic [ref=e983]: 使用 Azure 免费帐户 200 美元额度或 30 天结束时会发生什么情况？
+                    - text: 
+                - listitem [ref=e984]:
+                  - button "10/ 如果我在 30 天结束前转到即用即付，未使用的额度会发生什么情况？ " [ref=e987] [cursor=pointer]:
+                    - generic [ref=e989]: 10/
+                    - heading "如果我在 30 天结束前转到即用即付，未使用的额度会发生什么情况？" [level=3] [ref=e993]:
+                      - generic [ref=e994]: 如果我在 30 天结束前转到即用即付，未使用的额度会发生什么情况？
+                    - text: 
+                - listitem [ref=e995]:
+                  - button "11/ 注册 Azure 帐户需要提供什么？ " [ref=e998] [cursor=pointer]:
+                    - generic [ref=e1000]: 11/
+                    - heading "注册 Azure 帐户需要提供什么？" [level=3] [ref=e1004]:
+                      - generic [ref=e1005]: 注册 Azure 帐户需要提供什么？
+                    - text: 
+                - listitem [ref=e1006]:
+                  - button "12/ 为什么需要提供信用卡或借记卡和电话号码？ " [ref=e1009] [cursor=pointer]:
+                    - generic [ref=e1011]: 12/
+                    - heading "为什么需要提供信用卡或借记卡和电话号码？" [level=3] [ref=e1015]:
+                      - generic [ref=e1016]: 为什么需要提供信用卡或借记卡和电话号码？
+                    - text: 
+                - listitem [ref=e1017]:
+                  - button "13/ 是否必须拥有 Microsoft 帐户才能注册 Azure？ " [ref=e1020] [cursor=pointer]:
+                    - generic [ref=e1022]: 13/
+                    - heading "是否必须拥有 Microsoft 帐户才能注册 Azure？" [level=3] [ref=e1026]:
+                      - generic [ref=e1027]: 是否必须拥有 Microsoft 帐户才能注册 Azure？
+                    - text: 
+                - listitem [ref=e1028]:
+                  - button "14/ 如何使用 GitHub 进行注册？ " [ref=e1031] [cursor=pointer]:
+                    - generic [ref=e1033]: 14/
+                    - heading "如何使用 GitHub 进行注册？" [level=3] [ref=e1037]:
+                      - generic [ref=e1038]: 如何使用 GitHub 进行注册？
+                    - text: 
+                - listitem [ref=e1039]:
+                  - button "15/ 将与 Microsoft 共享哪些 GitHub 信息？ " [ref=e1042] [cursor=pointer]:
+                    - generic [ref=e1044]: 15/
+                    - heading "将与 Microsoft 共享哪些 GitHub 信息？" [level=3] [ref=e1048]:
+                      - generic [ref=e1049]: 将与 Microsoft 共享哪些 GitHub 信息？
+                    - text: 
+                - listitem [ref=e1050]:
+                  - button "16/ 是否可以使用 Azure 免费帐户购买产品或将 200 美元的额度中的任何部分应用于 Azure 市场套餐？ " [ref=e1053] [cursor=pointer]:
+                    - generic [ref=e1055]: 16/
+                    - heading "是否可以使用 Azure 免费帐户购买产品或将 200 美元的额度中的任何部分应用于 Azure 市场套餐？" [level=3] [ref=e1059]:
+                      - generic [ref=e1060]: 是否可以使用 Azure 免费帐户购买产品或将 200 美元的额度中的任何部分应用于 Azure 市场套餐？
+                    - text: 
+                - listitem [ref=e1061]:
+                  - button "17/ 我可以注册多少个免费 Azure 帐户套餐？ " [ref=e1064] [cursor=pointer]:
+                    - generic [ref=e1066]: 17/
+                    - heading "我可以注册多少个免费 Azure 帐户套餐？" [level=3] [ref=e1070]:
+                      - generic [ref=e1071]: 我可以注册多少个免费 Azure 帐户套餐？
+                    - text: 
+                - listitem [ref=e1072]:
+                  - button "18/ 能否在 Azure 免费帐户内使用 Azure 混合权益？ " [ref=e1075] [cursor=pointer]:
+                    - generic [ref=e1077]: 18/
+                    - heading "能否在 Azure 免费帐户内使用 Azure 混合权益？" [level=3] [ref=e1081]:
+                      - generic [ref=e1082]: 能否在 Azure 免费帐户内使用 Azure 混合权益？
+                    - text: 
+                - listitem [ref=e1083]:
+                  - button "19/ 是否可以使用 Azure 免费帐户额度购买 Azure 现成虚拟机？ " [ref=e1086] [cursor=pointer]:
+                    - generic [ref=e1088]: 19/
+                    - heading "是否可以使用 Azure 免费帐户额度购买 Azure 现成虚拟机？" [level=3] [ref=e1092]:
+                      - generic [ref=e1093]: 是否可以使用 Azure 免费帐户额度购买 Azure 现成虚拟机？
+                    - text: 
+                - listitem [ref=e1094]:
+                  - button "20/ 如果仍有问题，该怎么办？ " [ref=e1097] [cursor=pointer]:
+                    - generic [ref=e1099]: 20/
+                    - heading "如果仍有问题，该怎么办？" [level=3] [ref=e1103]:
+                      - generic [ref=e1104]: 如果仍有问题，该怎么办？
+                    - text: 
+            - generic [ref=e1115]:
+              - heading "Azure 是否在我的位置可用？" [level=2] [ref=e1118]
+              - generic [ref=e1119]: Azure 已在 140 个国家/地区提供商业服务，其中包括以下列出的国家和地区。Azure 免费帐户、免费服务和 200 美元额度不包括美国政府、Azure 中国和 Azure 德国区域中的主权云产品。
+            - generic [ref=e1126]:
+              - list [ref=e1139]:
+                - listitem [ref=e1140]: 阿富汗
+                - listitem [ref=e1141]: 阿尔巴尼亚
+                - listitem [ref=e1142]: 阿尔及利亚
+                - listitem [ref=e1143]: 安哥拉
+                - listitem [ref=e1144]: 阿根廷
+                - listitem [ref=e1145]: 亚美尼亚
+                - listitem [ref=e1146]: 澳大利亚
+                - listitem [ref=e1147]: 奥地利
+                - listitem [ref=e1148]: 阿塞拜疆
+                - listitem [ref=e1149]: 巴哈马
+                - listitem [ref=e1150]: 巴林
+                - listitem [ref=e1151]: 孟加拉
+                - listitem [ref=e1152]: 巴巴多斯
+                - listitem [ref=e1153]: 比利时
+                - listitem [ref=e1154]: 伯利兹
+                - listitem [ref=e1155]: 百慕大
+                - listitem [ref=e1156]: 玻利维亚
+                - listitem [ref=e1157]: 波斯尼亚和黑塞哥维那
+                - listitem [ref=e1158]: 博茨瓦纳
+                - listitem [ref=e1159]: 巴西
+                - listitem [ref=e1160]: 文莱
+                - listitem [ref=e1161]: 保加利亚
+                - listitem [ref=e1162]: 喀麦隆
+                - listitem [ref=e1163]: 加拿大
+                - listitem [ref=e1164]: 开曼群岛
+                - listitem [ref=e1165]: 智利
+                - listitem [ref=e1166]: 中国
+                - listitem [ref=e1167]: 哥伦比亚
+                - listitem [ref=e1168]: 哥斯达黎加
+                - listitem [ref=e1169]: 科特迪瓦
+                - listitem [ref=e1170]: 克罗地亚
+                - listitem [ref=e1171]: 库拉索
+                - listitem [ref=e1172]: 塞浦路斯
+                - listitem [ref=e1173]: 捷克共和国
+                - listitem [ref=e1174]: 丹麦
+              - generic [ref=e1186]:
+                - list [ref=e1187]:
+                  - listitem [ref=e1188]:
+                    - generic [ref=e1189]: 多米尼加共和国
+                  - listitem [ref=e1190]: 厄瓜多尔
+                  - listitem [ref=e1191]: 埃及
+                  - listitem [ref=e1192]: 萨尔瓦多
+                  - listitem [ref=e1193]: 爱沙尼亚
+                  - listitem [ref=e1194]: 埃塞俄比亚
+                  - listitem [ref=e1195]: 法罗群岛
+                  - listitem [ref=e1196]: 斐济
+                  - listitem [ref=e1197]: 芬兰
+                  - listitem [ref=e1198]: 法国
+                  - listitem [ref=e1199]: 格鲁吉亚
+                  - listitem [ref=e1200]: 德国
+                  - listitem [ref=e1201]: 加纳
+                  - listitem [ref=e1202]: 希腊
+                  - listitem [ref=e1203]: 危地马拉
+                  - listitem [ref=e1204]: 洪都拉斯
+                  - listitem [ref=e1205]: 香港
+                  - listitem [ref=e1206]: 匈牙利
+                  - listitem [ref=e1207]: 冰岛
+                  - listitem [ref=e1208]: 印度
+                  - listitem [ref=e1209]: 印度尼西亚
+                  - listitem [ref=e1210]: 伊拉克
+                  - listitem [ref=e1211]: 爱尔兰
+                  - listitem [ref=e1212]: 以色列
+                  - listitem [ref=e1213]: 意大利
+                  - listitem [ref=e1214]: 牙买加
+                  - listitem [ref=e1215]: 日本
+                  - listitem [ref=e1216]: 约旦
+                  - listitem [ref=e1217]: 哈萨克斯坦
+                  - listitem [ref=e1218]: 肯尼亚
+                  - listitem [ref=e1219]: 韩国
+                  - listitem [ref=e1220]: 科威特
+                  - listitem [ref=e1221]: 拉脱维亚
+                  - listitem [ref=e1222]: 黎巴嫩
+                  - listitem [ref=e1223]: 利比亚
+                - paragraph [ref=e1224]
+              - list [ref=e1237]:
+                - listitem [ref=e1238]: 列支敦士登
+                - listitem [ref=e1239]: 立陶宛
+                - listitem [ref=e1240]: 卢森堡
+                - listitem [ref=e1241]: 澳门
+                - listitem [ref=e1242]: 马其顿共和国 (FYRO)
+                - listitem [ref=e1243]: 马来西亚
+                - listitem [ref=e1244]: 马耳他
+                - listitem [ref=e1245]: 毛里求斯
+                - listitem [ref=e1246]: 墨西哥
+                - listitem [ref=e1247]: 摩尔多瓦
+                - listitem [ref=e1248]: 摩纳哥
+                - listitem [ref=e1249]: 蒙古
+                - listitem [ref=e1250]: 黑山
+                - listitem [ref=e1251]: 摩洛哥
+                - listitem [ref=e1252]: 纳米比亚
+                - listitem [ref=e1253]: 尼泊尔
+                - listitem [ref=e1254]: 荷兰
+                - listitem [ref=e1255]: 新西兰
+                - listitem [ref=e1256]: 尼加拉瓜
+                - listitem [ref=e1257]: 尼日利亚
+                - listitem [ref=e1258]: 挪威
+                - listitem [ref=e1259]: 阿曼
+                - listitem [ref=e1260]: 巴基斯坦
+                - listitem [ref=e1261]: 巴勒斯坦权力机构
+                - listitem [ref=e1262]: 巴拿马
+                - listitem [ref=e1263]: 巴拉圭
+                - listitem [ref=e1264]: 秘鲁
+                - listitem [ref=e1265]: 菲律宾
+                - listitem [ref=e1266]: 波兰
+                - listitem [ref=e1267]: 葡萄牙
+                - listitem [ref=e1268]: 波多黎各
+                - listitem [ref=e1269]: 卡塔尔
+                - listitem [ref=e1270]: 佛得角共和国
+                - listitem [ref=e1271]: 刚果共和国
+                - listitem [ref=e1272]: 罗马尼亚
+              - list [ref=e1285]:
+                - listitem [ref=e1286]: 卢旺达
+                - listitem [ref=e1287]: 圣基茨和尼维斯
+                - listitem [ref=e1288]: 沙特阿拉伯
+                - listitem [ref=e1289]: 塞内加尔
+                - listitem [ref=e1290]: 塞尔维亚
+                - listitem [ref=e1291]: 新加坡
+                - listitem [ref=e1292]: 斯洛伐克
+                - listitem [ref=e1293]: 斯洛文尼亚
+                - listitem [ref=e1294]: 南非
+                - listitem [ref=e1295]: 西班牙
+                - listitem [ref=e1296]: 斯里兰卡
+                - listitem [ref=e1297]: 瑞典
+                - listitem [ref=e1298]: 瑞士
+                - listitem [ref=e1299]: 台湾
+                - listitem [ref=e1300]: 塔吉克斯坦
+                - listitem [ref=e1301]: 坦桑尼亚
+                - listitem [ref=e1302]: 泰国
+                - listitem [ref=e1303]: 特立尼达和多巴哥
+                - listitem [ref=e1304]: 突尼斯
+                - listitem [ref=e1305]: 土耳其
+                - listitem [ref=e1306]: 土库曼斯坦
+                - listitem [ref=e1307]: 乌干达
+                - listitem [ref=e1308]: 乌克兰
+                - listitem [ref=e1309]: 阿拉伯联合酋长国
+                - listitem [ref=e1310]: 英国
+                - listitem [ref=e1311]: 美国
+                - listitem [ref=e1312]: 乌拉圭
+                - listitem [ref=e1313]: 乌兹别克斯坦
+                - listitem [ref=e1314]: 委内瑞拉
+                - listitem [ref=e1315]: 越南
+                - listitem [ref=e1316]: 美属维尔京群岛
+                - listitem [ref=e1317]: 也门
+                - listitem [ref=e1318]: 赞比亚
+                - listitem [ref=e1319]: 津巴布韦
+            - generic:
+              - generic: 
+        - generic:
+          - generic: 
+    - contentinfo [ref=e1324]:
+      - navigation "页脚资源链接" [ref=e1325]:
+        - generic [ref=e1326]:
+          - generic [ref=e1327]:
+            - heading "了解 Azure" [level=2] [ref=e1328]
+            - list [ref=e1329]:
+              - listitem [ref=e1330]:
+                - link "什么是 Azure？ 了解 Azure" [ref=e1331] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/cloud-computing-dictionary/what-is-azure/
+                  - text: 什么是 Azure？
+              - listitem [ref=e1332]:
+                - link "开始使用 Azure 了解 Azure" [ref=e1333] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/get-started/
+                  - text: 开始使用 Azure
+              - listitem [ref=e1334]:
+                - link "全球基础结构 了解 Azure" [ref=e1335] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/explore/global-infrastructure/
+                  - text: 全球基础结构
+              - listitem [ref=e1336]:
+                - link "数据中心区域 了解 Azure" [ref=e1337] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/explore/global-infrastructure/geographies/
+                  - text: 数据中心区域
+              - listitem [ref=e1338]:
+                - link "信任云 了解 Azure" [ref=e1339] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/explore/trusted-cloud/
+                  - text: 信任云
+              - listitem [ref=e1340]:
+                - link "Azure Essentials 了解 Azure" [ref=e1341] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/solutions/azure-essentials
+                  - text: Azure Essentials
+              - listitem [ref=e1342]:
+                - link "客户案例 了解 Azure" [ref=e1343] [cursor=pointer]:
+                  - /url: https://www.microsoft.com/zh-cn/customers/search?filters=product%3Aazure
+                  - text: 客户案例
+          - generic [ref=e1344]:
+            - heading "产品和定价" [level=2] [ref=e1345]
+            - list [ref=e1346]:
+              - listitem [ref=e1347]:
+                - link "产品 产品和定价" [ref=e1348] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/products/
+                  - text: 产品
+              - listitem [ref=e1349]:
+                - link "Azure 定价 产品和定价" [ref=e1350] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/pricing/
+                  - text: Azure 定价
+              - listitem [ref=e1351]:
+                - link "免费 Azure 服务 产品和定价" [ref=e1352] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/pricing/free-services/
+                  - text: 免费 Azure 服务
+              - listitem [ref=e1353]:
+                - link "灵活的购买选项 产品和定价" [ref=e1354] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/pricing/purchase-options/
+                  - text: 灵活的购买选项
+              - listitem [ref=e1355]:
+                - link "Azure 上的 FinOps 产品和定价" [ref=e1356] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/solutions/finops/
+                  - text: Azure 上的 FinOps
+              - listitem [ref=e1357]:
+                - link "最大限度地提高 AI 的 ROI 产品和定价" [ref=e1358] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/solutions/maximize-roi-from-ai
+                  - text: 最大限度地提高 AI 的 ROI
+          - generic [ref=e1359]:
+            - heading "解决方案和支持" [level=2] [ref=e1360]
+            - list [ref=e1361]:
+              - listitem [ref=e1362]:
+                - link "解决方案 解决方案和支持" [ref=e1363] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/solutions/
+                  - text: 解决方案
+              - listitem [ref=e1364]:
+                - link "用于加速增长的资源 解决方案和支持" [ref=e1365] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/solutions/turn-your-vision-into-impact-with-azure/
+                  - text: 用于加速增长的资源
+              - listitem [ref=e1366]:
+                - link "解决方案体系结构 解决方案和支持" [ref=e1367] [cursor=pointer]:
+                  - /url: https://learn.microsoft.com/zh-cn/azure/architecture/browse/
+                  - text: 解决方案体系结构
+              - listitem [ref=e1368]:
+                - link "支援 解决方案和支持" [ref=e1369] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/support/
+                  - text: 支援
+              - listitem [ref=e1370]:
+                - link "Azure 演示和实时问答 解决方案和支持" [ref=e1371] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/get-started/welcome-to-azure/
+                  - text: Azure 演示和实时问答
+        - generic [ref=e1372]:
+          - generic [ref=e1373]:
+            - heading "合作伙伴" [level=2] [ref=e1374]
+            - list [ref=e1375]:
+              - listitem [ref=e1376]:
+                - link "软件开发公司 合作伙伴" [ref=e1377] [cursor=pointer]:
+                  - /url: https://www.microsoft.com/zh-cn/software-development-companies
+                  - text: 软件开发公司
+              - listitem [ref=e1378]:
+                - link "Microsoft 市场 合作伙伴" [ref=e1379] [cursor=pointer]:
+                  - /url: https://marketplace.microsoft.com/zh-cn/
+                  - text: Microsoft 市场
+              - listitem [ref=e1380]:
+                - link "寻找合作伙伴 合作伙伴" [ref=e1381] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/partners/
+                  - text: 寻找合作伙伴
+          - generic [ref=e1382]:
+            - heading "资源" [level=2] [ref=e1383]
+            - list [ref=e1384]:
+              - listitem [ref=e1385]:
+                - link "文件 资源" [ref=e1386] [cursor=pointer]:
+                  - /url: https://learn.microsoft.com/zh-cn/azure/
+                  - text: 文件
+              - listitem [ref=e1387]:
+                - link "部落格 资源" [ref=e1388] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/blog/
+                  - text: 部落格
+              - listitem [ref=e1389]:
+                - link "开发人员资源 资源" [ref=e1390] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/developers/
+                  - text: 开发人员资源
+              - listitem [ref=e1391]:
+                - link "学生 资源" [ref=e1392] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/students/
+                  - text: 学生
+              - listitem [ref=e1393]:
+                - link "活动与网络研讨会 资源" [ref=e1394] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/events/
+                  - text: 活动与网络研讨会
+              - listitem [ref=e1395]:
+                - link "分析师报告、白皮书和电子书 资源" [ref=e1396] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/research/
+                  - text: 分析师报告、白皮书和电子书
+              - listitem [ref=e1397]:
+                - link "视频 资源" [ref=e1398] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/videos
+                  - text: 视频
+          - generic [ref=e1399]:
+            - heading "云计算" [level=2] [ref=e1400]
+            - list [ref=e1401]:
+              - listitem [ref=e1402]:
+                - link "什么是云计算？ 云计算" [ref=e1403] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/cloud-computing-dictionary/what-is-cloud-computing/
+                  - text: 什么是云计算？
+              - listitem [ref=e1404]:
+                - link "什么是多云？ 云计算" [ref=e1405] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/cloud-computing-dictionary/what-is-multi-cloud
+                  - text: 什么是多云？
+              - listitem [ref=e1406]:
+                - link "什么是机器学习？ 云计算" [ref=e1407] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/cloud-computing-dictionary/what-is-machine-learning-platform
+                  - text: 什么是机器学习？
+              - listitem [ref=e1408]:
+                - link "什么是深度学习？ 云计算" [ref=e1409] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/cloud-computing-dictionary/what-is-deep-learning
+                  - text: 什么是深度学习？
+              - listitem [ref=e1410]:
+                - link "什么是 AIaaS？ 云计算" [ref=e1411] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/cloud-computing-dictionary/what-is-aiaas
+                  - text: 什么是 AIaaS？
+              - listitem [ref=e1412]:
+                - link "什么是 LLM？ 云计算" [ref=e1413] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/cloud-computing-dictionary/what-are-large-language-models-llms
+                  - text: 什么是 LLM？
+              - listitem [ref=e1414]:
+                - link "什么是容器？ 云计算" [ref=e1415] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/cloud-computing-dictionary/what-is-a-container
+                  - text: 什么是容器？
+              - listitem [ref=e1416]:
+                - link "什么是 RAG？ 云计算" [ref=e1417] [cursor=pointer]:
+                  - /url: https://azure.microsoft.com/zh-cn/resources/cloud-computing-dictionary/what-is-retrieval-augmented-generation-rag
+                  - text: 什么是 RAG？
+      - generic [ref=e1418]:
+        - link "内容语言选择器。当前设置为 中文(中国)" [ref=e1419] [cursor=pointer]:
+          - /url: https://azure.microsoft.com/zh-cn/locale
+          - text:  中文(中国)
+        - link "你的隐私选择选择退出图标 你的隐私选择" [ref=e1420] [cursor=pointer]:
+          - /url: https://aka.ms/yourcaliforniaprivacychoices
+          - img "你的隐私选择选择退出图标" [ref=e1421]
+          - generic [ref=e1426]: 你的隐私选择
+        - link "消费者健康隐私" [ref=e1427] [cursor=pointer]:
+          - /url: https://go.microsoft.com/fwlink/?linkid=2259814
+          - generic [ref=e1428]: 消费者健康隐私
+        - navigation "Microsoft 企业链接" [ref=e1429]:
+          - list [ref=e1430]:
+            - listitem [ref=e1431]:
+              - link "与 Microsoft 联系" [ref=e1432] [cursor=pointer]:
+                - /url: https://support.microsoft.com/contactus
+            - listitem [ref=e1433]:
+              - link "隐私" [ref=e1434] [cursor=pointer]:
+                - /url: https://go.microsoft.com/fwlink/?LinkId=521839
+            - listitem [ref=e1435]:
+              - link "管理 Cookie" [ref=e1436] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=e1437]:
+              - link "使用条款" [ref=e1438] [cursor=pointer]:
+                - /url: https://go.microsoft.com/fwlink/?LinkID=206977
+            - listitem [ref=e1439]:
+              - link "商标" [ref=e1440] [cursor=pointer]:
+                - /url: https://go.microsoft.com/fwlink/?linkid=2196228
+            - listitem [ref=e1441]:
+              - link "关于我们的广告" [ref=e1442] [cursor=pointer]:
+                - /url: https://choice.microsoft.com/
+            - listitem [ref=e1443]:
+              - link "京ICP备09042378号-6" [ref=e1444] [cursor=pointer]:
+                - /url: https://beian.miit.gov.cn/#/Integrated/index
+            - listitem [ref=e1445]: © Microsoft 2026
+  - generic: 

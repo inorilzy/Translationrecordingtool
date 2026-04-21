@@ -1,0 +1,193 @@
+- generic [ref=e4]:
+  - generic [ref=e8]:
+    - alert [ref=e12]:
+      - generic [ref=e13]:
+        - img [ref=e15]
+        - paragraph [ref=e17]:
+          - text: 我们使用可选的 Cookie，通过社交媒体连接等方式改善你在我们网站上的体验，并且根据你的在线活动投放个性化的广告。 如果你拒绝可选 Cookie，则我们将仅使用为你提供服务所必须的 Cookie。 你可以单击页面底部的“管理 Cookie”更改你的选择。
+          - link "隐私声明" [ref=e18] [cursor=pointer]:
+            - /url: https://go.microsoft.com/fwlink/?LinkId=521839
+          - link "第三方 Cookie" [ref=e19] [cursor=pointer]:
+            - /url: https://aka.ms/3rdpartycookies
+      - generic [ref=e20]:
+        - button "接受" [ref=e21] [cursor=pointer]
+        - button "拒绝" [ref=e22] [cursor=pointer]
+        - button "管理 Cookie" [ref=e23] [cursor=pointer]
+    - link "跳转至主内容" [ref=e24] [cursor=pointer]:
+      - /url: javascript:void(0)
+    - banner [ref=e25]:
+      - generic [ref=e27]:
+        - text:  
+        - link "Microsoft" [ref=e28] [cursor=pointer]:
+          - /url: https://www.microsoft.com
+          - img [ref=e29]
+          - generic [ref=e30]: Microsoft
+        - text:  
+        - link "Azure" [ref=e32] [cursor=pointer]:
+          - /url: https://azure.microsoft.com/zh-cn
+          - generic [ref=e33]: Azure
+        - navigation "上下文菜单" [ref=e34]:
+          - list [ref=e35]:
+            - listitem [ref=e36]
+            - listitem [ref=e38]
+            - listitem [ref=e41]
+            - listitem [ref=e44]
+            - listitem [ref=e47]
+            - listitem [ref=e50]
+            - text: 
+        - generic [ref=e53]:
+          - search [ref=e54]:
+            - button "搜索 Azure" [ref=e56] [cursor=pointer]: 
+          - navigation "所有 Microsoft 菜单" [ref=e58]:
+            - list:  
+  - main [ref=e60]:
+    - generic [ref=e63]:
+      - generic [ref=e74]:
+        - heading "Foundry Tools 中的 Azure 翻译" [level=1] [ref=e77]
+        - generic [ref=e78]: 通过即时、AI 支持的翻译来打破语言障碍
+        - generic [ref=e80]:
+          - link "开始使用 Azure：让 AI 为你工作 - 使用 Azure 帐户免费开始" [ref=e81] [cursor=pointer]:
+            - /url: https://azure.microsoft.com/zh-cn/pricing/purchase-options/azure-account?icid=azure-ai-translator&hasfullconsent=false
+            - generic [ref=e82]: 开始使用 Azure
+          - link "使用 Microsoft Foundry 创建：使用 Azure AI Foundry 创建更智能的智能体" [ref=e83] [cursor=pointer]:
+            - /url: https://go.microsoft.com/fwlink/?linkid=2280853&clcid=0x804
+            - generic [ref=e84]: 使用 Microsoft Foundry 创建
+      - generic [ref=e85]:
+        - navigation "页内快速链接" [ref=e87]:
+          - generic [ref=e88]:
+            - text: 
+            - generic "概述 " [ref=e89]
+          - link "Azure 入门：使用 Azure 帐户创建由 AI 支持的自定义搜索" [ref=e119] [cursor=pointer]:
+            - /url: https://azure.microsoft.com/zh-cn/pricing/purchase-options/azure-account?icid=ai-translator
+            - generic [ref=e120]: 开始使用 Azure
+        - generic [ref=e121]:
+          - generic [ref=e125]:
+            - generic [ref=e131]
+            - list [ref=e142]
+          - generic [ref=e183]:
+            - generic [ref=e189]
+            - generic [ref=e196]
+          - generic [ref=e256]:
+            - generic [ref=e262]
+            - generic [ref=e268]
+          - generic [ref=e333]:
+            - img "一个人在使用电脑。" [ref=e337]
+            - generic [ref=e338]
+          - generic [ref=e357]:
+            - generic [ref=e366]
+            - region "“相关产品”部分" [ref=e376]
+          - generic [ref=e513]:
+            - generic [ref=e519]
+            - generic [ref=e534]
+          - generic [ref=e577]:
+            - generic [ref=e586]
+            - region "资源部分" [ref=e595]
+          - generic [ref=e669]:
+            - generic [ref=e676]: 常见问题解答
+            - generic [ref=e679]
+          - generic [ref=e751]:
+            - generic [ref=e757]
+            - generic [ref=e782]
+      - generic [ref=e842]:
+        - generic [ref=e844]:
+          - link "获取 Azure 移动应用" [ref=e847] [cursor=pointer]:
+            - /url: https://azure.microsoft.com/zh-cn/get-started/azure-portal/mobile-app
+            - img "获取 Azure 移动应用" [ref=e849]
+            - text: 获取 Azure 移动应用
+          - region "可关注的社交媒体":
+            - list
+        - region "可关注的社交媒体" [ref=e851]:
+          - list
+  - contentinfo [ref=e856]:
+    - navigation "页脚资源链接" [ref=e857]:
+      - generic [ref=e858]:
+        - generic [ref=e859]:
+          - heading "了解 Azure" [level=2] [ref=e860]
+          - list [ref=e861]:
+            - listitem [ref=e862]
+            - listitem [ref=e864]
+            - listitem [ref=e866]
+            - listitem [ref=e868]
+            - listitem [ref=e870]
+            - listitem [ref=e872]
+            - listitem [ref=e874]
+        - generic [ref=e876]:
+          - heading "产品和定价" [level=2] [ref=e877]
+          - list [ref=e878]:
+            - listitem [ref=e879]
+            - listitem [ref=e881]
+            - listitem [ref=e883]
+            - listitem [ref=e885]
+            - listitem [ref=e887]
+            - listitem [ref=e889]
+        - generic [ref=e891]:
+          - heading "解决方案和支持" [level=2] [ref=e892]
+          - list [ref=e893]:
+            - listitem [ref=e894]
+            - listitem [ref=e896]
+            - listitem [ref=e898]
+            - listitem [ref=e900]
+            - listitem [ref=e902]
+      - generic [ref=e904]:
+        - generic [ref=e905]:
+          - heading "合作伙伴" [level=2] [ref=e906]
+          - list [ref=e907]:
+            - listitem [ref=e908]
+            - listitem [ref=e910]
+            - listitem [ref=e912]
+        - generic [ref=e914]:
+          - heading "资源" [level=2] [ref=e915]
+          - list [ref=e916]:
+            - listitem [ref=e917]
+            - listitem [ref=e919]
+            - listitem [ref=e921]
+            - listitem [ref=e923]
+            - listitem [ref=e925]
+            - listitem [ref=e927]
+            - listitem [ref=e929]
+        - generic [ref=e931]:
+          - heading "云计算" [level=2] [ref=e932]
+          - list [ref=e933]:
+            - listitem [ref=e934]
+            - listitem [ref=e936]
+            - listitem [ref=e938]
+            - listitem [ref=e940]
+            - listitem [ref=e942]
+            - listitem [ref=e944]
+            - listitem [ref=e946]
+            - listitem [ref=e948]
+    - generic [ref=e950]:
+      - link "内容语言选择器。当前设置为 中文(中国)" [ref=e951] [cursor=pointer]:
+        - /url: https://azure.microsoft.com/zh-cn/locale
+        - text:  中文(中国)
+      - link "你的隐私选择选择退出图标 你的隐私选择" [ref=e952] [cursor=pointer]:
+        - /url: https://aka.ms/yourcaliforniaprivacychoices
+        - img "你的隐私选择选择退出图标" [ref=e953]
+        - generic [ref=e958]: 你的隐私选择
+      - link "消费者健康隐私" [ref=e959] [cursor=pointer]:
+        - /url: https://go.microsoft.com/fwlink/?linkid=2259814
+        - generic [ref=e960]: 消费者健康隐私
+      - navigation "Microsoft 企业链接" [ref=e961]:
+        - list [ref=e962]:
+          - listitem [ref=e963]:
+            - link "与 Microsoft 联系" [ref=e964] [cursor=pointer]:
+              - /url: https://support.microsoft.com/contactus
+          - listitem [ref=e965]:
+            - link "隐私" [ref=e966] [cursor=pointer]:
+              - /url: https://go.microsoft.com/fwlink/?LinkId=521839
+          - listitem [ref=e967]:
+            - link "管理 Cookie" [ref=e968] [cursor=pointer]:
+              - /url: "#"
+          - listitem [ref=e969]:
+            - link "使用条款" [ref=e970] [cursor=pointer]:
+              - /url: https://go.microsoft.com/fwlink/?LinkID=206977
+          - listitem [ref=e971]:
+            - link "商标" [ref=e972] [cursor=pointer]:
+              - /url: https://go.microsoft.com/fwlink/?linkid=2196228
+          - listitem [ref=e973]:
+            - link "关于我们的广告" [ref=e974] [cursor=pointer]:
+              - /url: https://choice.microsoft.com/
+          - listitem [ref=e975]:
+            - link "京ICP备09042378号-6" [ref=e976] [cursor=pointer]:
+              - /url: https://beian.miit.gov.cn/#/Integrated/index
+          - listitem [ref=e977]: © Microsoft 2026
