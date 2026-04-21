@@ -24,7 +24,7 @@ withDefaults(defineProps<Props>(), {
 }
 
 .empty-state-icon {
-  font-size: 48px;
+  font-size: var(--font-size-icon);
   margin-bottom: var(--spacing-md);
 }
 

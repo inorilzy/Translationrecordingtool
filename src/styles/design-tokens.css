@@ -5,6 +5,7 @@
   --color-primary: #0078D4;
   --color-primary-hover: #106EBE;
   --color-primary-light: #E5F1FB;
+  --color-text-on-primary: #FFFFFF;
 
   --color-text-primary: #1F1F1F;
   --color-text-secondary: #616161;
@@ -16,8 +17,15 @@
   --color-border: #D4D4D4;
 
   --color-error: #E51400;
+  --color-error-bg: #FFEBEE;
   --color-success: #107C10;
+  --color-success-bg: #E8F5E9;
   --color-warning: #F59B00;
+
+  /* 状态面板 */
+  --color-status-info: #0078D4;
+  --color-status-info-bg: #E5F1FB;
+  --color-status-info-border: #B3D4FC;
 
   /* 间距 */
   --spacing-xs: 4px;
@@ -29,6 +37,9 @@
   /* 圆角 */
   --radius-sm: 4px;
   --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 50%;
+  --radius-pill: 999px;
 
   /* 阴影 */
   --shadow-sm: 0 2px 4px rgba(0,0,0,0.08);
@@ -39,6 +50,25 @@
   --font-size-md: 14px;
   --font-size-lg: 18px;
   --font-size-xl: 22px;
+  --font-size-icon: 48px;
+
+  /* 字重 */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* 边框 */
+  --border-width: 1px;
+  --border-width-active: 2px;
+
+  /* 过渡 */
+  --transition-fast: 0.2s;
+
+  /* 滚动条 */
+  --scrollbar-thumb: rgba(0, 0, 0, 0.2);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.35);
+  --scrollbar-track: transparent;
 }
 
 /* 深色主题 - Dark (VSCode Dark+) */
@@ -46,6 +76,7 @@
   --color-primary: #3794FF;
   --color-primary-hover: #4FA3FF;
   --color-primary-light: #1E3A5F;
+  --color-text-on-primary: #FFFFFF;
 
   --color-text-primary: #CCCCCC;
   --color-text-secondary: #9D9D9D;
@@ -57,11 +88,21 @@
   --color-border: #3E3E42;
 
   --color-error: #F48771;
+  --color-error-bg: #3D1F1F;
   --color-success: #89D185;
+  --color-success-bg: #1F3D1F;
   --color-warning: #DDB76C;
+
+  --color-status-info: #3794FF;
+  --color-status-info-bg: #1E3A5F;
+  --color-status-info-border: #1E3A5F;
 
   --shadow-sm: 0 2px 8px rgba(0,0,0,0.4);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
+  --scrollbar-track: transparent;
 }
 
 /* One Dark Pro 主题 */
@@ -69,6 +110,7 @@
   --color-primary: #61AFEF;
   --color-primary-hover: #84C0F4;
   --color-primary-light: #2C3E50;
+  --color-text-on-primary: #FFFFFF;
 
   --color-text-primary: #ABB2BF;
   --color-text-secondary: #828997;
@@ -80,11 +122,21 @@
   --color-border: #3E4451;
 
   --color-error: #E06C75;
+  --color-error-bg: #3D1F1F;
   --color-success: #98C379;
+  --color-success-bg: #1F3D1F;
   --color-warning: #E5C07B;
+
+  --color-status-info: #61AFEF;
+  --color-status-info-bg: #2C3E50;
+  --color-status-info-border: #2C3E50;
 
   --shadow-sm: 0 2px 8px rgba(0,0,0,0.5);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.6);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
+  --scrollbar-track: transparent;
 }
 
 /* GitHub Light 主题 */
@@ -92,6 +144,7 @@
   --color-primary: #0969DA;
   --color-primary-hover: #0860CA;
   --color-primary-light: #DDF4FF;
+  --color-text-on-primary: #FFFFFF;
 
   --color-text-primary: #24292F;
   --color-text-secondary: #57606A;
@@ -103,11 +156,21 @@
   --color-border: #D0D7DE;
 
   --color-error: #CF222E;
+  --color-error-bg: #FFEBEE;
   --color-success: #1A7F37;
+  --color-success-bg: #E8F5E9;
   --color-warning: #9A6700;
+
+  --color-status-info: #0969DA;
+  --color-status-info-bg: #DDF4FF;
+  --color-status-info-border: #B3D4FC;
 
   --shadow-sm: 0 1px 3px rgba(27,31,35,0.12);
   --shadow-md: 0 8px 24px rgba(140,149,159,0.2);
+
+  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+  --scrollbar-track: transparent;
 }
 
 /* GitHub Dark 主题 */
@@ -115,6 +178,7 @@
   --color-primary: #58A6FF;
   --color-primary-hover: #79B8FF;
   --color-primary-light: #1C2D41;
+  --color-text-on-primary: #FFFFFF;
 
   --color-text-primary: #C9D1D9;
   --color-text-secondary: #8B949E;
@@ -126,10 +190,19 @@
   --color-border: #30363D;
 
   --color-error: #F85149;
+  --color-error-bg: #3D1F1F;
   --color-success: #3FB950;
+  --color-success-bg: #1F3D1F;
   --color-warning: #D29922;
+
+  --color-status-info: #58A6FF;
+  --color-status-info-bg: #1C2D41;
+  --color-status-info-border: #1C2D41;
 
   --shadow-sm: 0 0 transparent;
   --shadow-md: 0 16px 32px rgba(1,4,9,0.85);
-}
 
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+  --scrollbar-track: transparent;
+}
