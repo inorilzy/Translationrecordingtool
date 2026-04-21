@@ -13,6 +13,7 @@ mod translator;
 use app_state::{
     AppConfig, PopupRuntimeState, TrayBehaviorConfig, migrate_legacy_app_data,
     persist_managed_settings, load_persisted_settings,
+    update_and_persist_api_config, update_and_persist_theme, update_and_persist_tray_behavior,
 };
 use database::{
     get_translation_by_id_in_connection, load_favorites_in_connection, load_history_in_connection,
@@ -38,12 +39,7 @@ fn update_api_config(
     api_key: String,
     api_secret: String,
 ) -> Result<(), String> {
-    {
-        let mut config = state.write().unwrap();
-        config.api_key = api_key;
-        config.api_secret = api_secret;
-    }
-    persist_managed_settings(&app, state.inner(), tray_behavior.inner())
+    update_and_persist_api_config(&app, state.inner(), tray_behavior.inner(), api_key, api_secret)
 }
 
 #[tauri::command]
@@ -81,11 +77,7 @@ fn update_tray_behavior(
     state: tauri::State<Arc<RwLock<TrayBehaviorConfig>>>,
     enabled: bool,
 ) -> Result<(), String> {
-    {
-        let mut config = state.write().unwrap();
-        config.enabled = enabled;
-    }
-    persist_managed_settings(&app, app_config.inner(), state.inner())
+    update_and_persist_tray_behavior(&app, app_config.inner(), state.inner(), enabled)
 }
 
 #[tauri::command]
@@ -95,11 +87,7 @@ fn update_theme(
     tray_behavior: tauri::State<Arc<RwLock<TrayBehaviorConfig>>>,
     theme: String,
 ) -> Result<(), String> {
-    {
-        let mut config = state.write().unwrap();
-        config.theme = theme;
-    }
-    persist_managed_settings(&app, state.inner(), tray_behavior.inner())
+    update_and_persist_theme(&app, state.inner(), tray_behavior.inner(), theme)
 }
 
 #[tauri::command]

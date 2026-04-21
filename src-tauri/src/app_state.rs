@@ -105,6 +105,53 @@ pub fn persist_managed_settings(
     save_persisted_settings(app, &settings)
 }
 
+// ─── Single-Field Update Helpers ─────────────────────────────────────────────
+//
+// Each helper acquires a write lock on `AppConfig`, applies the update, then
+// persists the combined (config + tray) snapshot to disk.  This removes the
+// repetitive "lock → mutate → persist" boilerplate from individual commands.
+
+pub fn update_and_persist_api_config(
+    app: &tauri::AppHandle,
+    config: &Arc<RwLock<AppConfig>>,
+    tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
+    api_key: String,
+    api_secret: String,
+) -> Result<(), String> {
+    {
+        let mut cfg = config.write().unwrap();
+        cfg.api_key = api_key;
+        cfg.api_secret = api_secret;
+    }
+    persist_managed_settings(app, config, tray_behavior)
+}
+
+pub fn update_and_persist_theme(
+    app: &tauri::AppHandle,
+    config: &Arc<RwLock<AppConfig>>,
+    tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
+    theme: String,
+) -> Result<(), String> {
+    {
+        let mut cfg = config.write().unwrap();
+        cfg.theme = theme;
+    }
+    persist_managed_settings(app, config, tray_behavior)
+}
+
+pub fn update_and_persist_tray_behavior(
+    app: &tauri::AppHandle,
+    config: &Arc<RwLock<AppConfig>>,
+    tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
+    enabled: bool,
+) -> Result<(), String> {
+    {
+        let mut tb = tray_behavior.write().unwrap();
+        tb.enabled = enabled;
+    }
+    persist_managed_settings(app, config, tray_behavior)
+}
+
 // ─── Legacy App Data Migration ───────────────────────────────────────────────
 
 const LEGACY_APP_DATA_DIR_NAME: &str = "com.zhiyu_liu.translation-tool";

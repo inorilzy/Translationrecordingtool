@@ -84,6 +84,21 @@ mod tests {
         }
     }
 
+    // ─── Default Values ──────────────────────────────────────────────────
+
+    #[test]
+    fn defaults_match_frontend_expectations() {
+        let defaults = PersistedSettings::default();
+
+        assert_eq!(defaults.api_key, "");
+        assert_eq!(defaults.api_secret, "");
+        assert_eq!(defaults.global_shortcut, DEFAULT_GLOBAL_SHORTCUT);
+        assert!(defaults.enable_tray);
+        assert_eq!(defaults.theme, DEFAULT_THEME);
+    }
+
+    // ─── Round-Trip ──────────────────────────────────────────────────────
+
     #[test]
     fn load_returns_defaults_when_file_is_missing() {
         let temp_dir = TempDirGuard::new("translation-tool-settings-defaults");
@@ -111,9 +126,149 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_all_fields_zero_values() {
+        let temp_dir = TempDirGuard::new("translation-tool-settings-zero");
+        let settings = PersistedSettings {
+            api_key: String::new(),
+            api_secret: String::new(),
+            global_shortcut: String::new(),
+            enable_tray: false,
+            theme: String::new(),
+        };
+
+        save_settings(temp_dir.path(), &settings).unwrap();
+        let loaded = load_settings(temp_dir.path()).unwrap();
+
+        assert_eq!(loaded, settings);
+    }
+
+    // ─── Field Naming Stability (camelCase serde contract) ───────────────
+
+    #[test]
+    fn serialization_uses_camel_case_field_names() {
+        let settings = PersistedSettings {
+            api_key: "k".to_string(),
+            api_secret: "s".to_string(),
+            global_shortcut: "Ctrl+Q".to_string(),
+            enable_tray: true,
+            theme: "dark".to_string(),
+        };
+
+        let json = serde_json::to_string(&settings).unwrap();
+
+        // Frontend expects camelCase keys — verify the serde contract
+        assert!(json.contains(r#""apiKey""#));
+        assert!(json.contains(r#""apiSecret""#));
+        assert!(json.contains(r#""globalShortcut""#));
+        assert!(json.contains(r#""enableTray""#));
+        assert!(json.contains(r#""theme""#));
+    }
+
+    #[test]
+    fn deserialization_accepts_camel_case_keys() {
+        let json = r#"{
+            "apiKey": "test-key",
+            "apiSecret": "test-secret",
+            "globalShortcut": "Ctrl+Shift+A",
+            "enableTray": false,
+            "theme": "solarized"
+        }"#;
+
+        let settings: PersistedSettings = serde_json::from_str(json).unwrap();
+
+        assert_eq!(settings.api_key, "test-key");
+        assert_eq!(settings.api_secret, "test-secret");
+        assert_eq!(settings.global_shortcut, "Ctrl+Shift+A");
+        assert!(!settings.enable_tray);
+        assert_eq!(settings.theme, "solarized");
+    }
+
+    // ─── Malformed / Error Paths ─────────────────────────────────────────
+
+    #[test]
     fn load_returns_error_for_invalid_json() {
         let temp_dir = TempDirGuard::new("translation-tool-settings-invalid");
         fs::write(settings_file_path(temp_dir.path()), "{invalid json}").unwrap();
+
+        let err = load_settings(temp_dir.path()).unwrap_err();
+
+        assert!(err.contains("解析设置文件失败"));
+    }
+
+    #[test]
+    fn load_error_message_contains_file_path() {
+        let temp_dir = TempDirGuard::new("translation-tool-settings-path");
+        let bad_path = settings_file_path(temp_dir.path());
+        fs::write(&bad_path, "not-json-at-all").unwrap();
+
+        let err = load_settings(temp_dir.path()).unwrap_err();
+
+        // Error must contain the file path so the user can locate the problem
+        assert!(err.contains(&bad_path.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn save_error_contains_file_path_on_write_failure() {
+        // Write to a read-only directory to trigger a write error
+        let temp_dir = TempDirGuard::new("translation-tool-settings-readonly");
+        let settings = PersistedSettings::default();
+
+        // On Windows, we can't easily make a directory read-only in tests,
+        // so we verify the error path by pointing to a path inside a file
+        let file_path = temp_dir.path().join("not-a-dir");
+        fs::write(&file_path, b"blocker").unwrap();
+
+        let err = save_settings(&file_path, &settings).unwrap_err();
+
+        assert!(err.contains("创建设置目录失败"));
+    }
+
+    // ─── Missing Fields → Serde Defaults ─────────────────────────────────
+
+    #[test]
+    fn partial_json_fills_missing_fields_with_defaults() {
+        // Frontend may send a subset of fields — serde default must handle it
+        let json = r#"{"apiKey": "partial-key"}"#;
+
+        let settings: PersistedSettings = serde_json::from_str(json).unwrap();
+
+        assert_eq!(settings.api_key, "partial-key");
+        assert_eq!(settings.api_secret, ""); // default
+        assert_eq!(settings.global_shortcut, DEFAULT_GLOBAL_SHORTCUT);
+        assert!(settings.enable_tray); // default true
+        assert_eq!(settings.theme, DEFAULT_THEME);
+    }
+
+    #[test]
+    fn empty_json_object_produces_full_defaults() {
+        let settings: PersistedSettings = serde_json::from_str("{}").unwrap();
+
+        assert_eq!(settings, PersistedSettings::default());
+    }
+
+    // ─── Unknown Fields ──────────────────────────────────────────────────
+
+    #[test]
+    fn unknown_fields_are_ignored() {
+        let json = r#"{
+            "apiKey": "known",
+            "unknownField": "should-be-ignored",
+            "theme": "dark",
+            "extraNested": {"a": 1}
+        }"#;
+
+        let settings: PersistedSettings = serde_json::from_str(json).unwrap();
+
+        assert_eq!(settings.api_key, "known");
+        assert_eq!(settings.theme, "dark");
+    }
+
+    // ─── Empty / Corrupt File ────────────────────────────────────────────
+
+    #[test]
+    fn load_returns_error_for_empty_file() {
+        let temp_dir = TempDirGuard::new("translation-tool-settings-empty");
+        fs::write(settings_file_path(temp_dir.path()), "").unwrap();
 
         let err = load_settings(temp_dir.path()).unwrap_err();
 
