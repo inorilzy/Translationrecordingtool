@@ -5,7 +5,7 @@ import { bootstrapTheme } from './lib/theme-bootstrap'
 import router from "./router";
 import App from "./App.vue";
 
-async function bootstrap() {
+export async function bootstrap() {
   await bootstrapTheme()
 
   const pinia = createPinia();
