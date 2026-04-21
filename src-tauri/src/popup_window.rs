@@ -8,10 +8,87 @@ use crate::app_state::{mark_popup_ready, PopupRuntimeState};
 
 // ─── Window Constants ────────────────────────────────────────────────────────
 
-const POPUP_WIDTH: i32 = 420;
-const POPUP_HEIGHT: i32 = 380;
-const OFFSET: i32 = 15;    // 鼠标偏移量
-const MARGIN: i32 = 20;    // 屏幕边缘留白
+pub const POPUP_WIDTH: i32 = 420;
+pub const POPUP_HEIGHT: i32 = 380;
+pub const OFFSET: i32 = 15;    // 鼠标偏移量
+pub const MARGIN: i32 = 20;    // 屏幕边缘留白
+
+// ─── Pure Positioning Helper (Testable) ──────────────────────────────────────
+
+/// Minimal monitor info needed for positioning — decoupled from Tauri's Monitor type.
+#[derive(Debug, Clone, Copy)]
+pub struct MonitorInfo {
+    pub width: i32,
+    pub height: i32,
+    pub x: i32,
+    pub y: i32,
+}
+
+/// Computed popup position with metadata about edge adjustments.
+#[derive(Debug, Clone, Copy)]
+pub struct PopupPositionInfo {
+    pub x: i32,
+    pub y: i32,
+    pub adjusted_for_edge: bool,
+}
+
+/// Calculate popup position near the cursor, with screen-edge awareness.
+/// Pure function — no I/O, no Tauri dependencies — suitable for unit testing.
+pub fn calculate_popup_position(
+    cursor_pos: (i32, i32),
+    popup_width: i32,
+    popup_height: i32,
+    offset: i32,
+    margin: i32,
+    monitor: Option<MonitorInfo>,
+) -> PopupPositionInfo {
+    let mut x = cursor_pos.0 + offset;
+    let mut y = cursor_pos.1 + offset;
+
+    let mut adjusted_for_edge = false;
+
+    if let Some(m) = monitor {
+        let screen_width = m.width;
+        let screen_height = m.height;
+        let screen_x = m.x;
+        let screen_y = m.y;
+
+        let usable_right = screen_x + screen_width - margin;
+        let usable_bottom = screen_y + screen_height - margin;
+        let usable_left = screen_x + margin;
+        let usable_top = screen_y + margin;
+
+        // X axis: prefer right side, fall back to left if overflow
+        if x + popup_width > usable_right {
+            let left_x = cursor_pos.0 - popup_width - offset;
+            if left_x >= usable_left {
+                x = left_x;
+                adjusted_for_edge = true;
+            } else {
+                x = usable_right - popup_width;
+                adjusted_for_edge = true;
+            }
+        }
+
+        // Y axis: prefer below, fall back to above if overflow
+        if y + popup_height > usable_bottom {
+            let top_y = cursor_pos.1 - popup_height - offset;
+            if top_y >= usable_top {
+                y = top_y;
+                adjusted_for_edge = true;
+            } else {
+                y = usable_bottom - popup_height;
+                adjusted_for_edge = true;
+            }
+        }
+
+        // Clamp to usable area
+        x = x.max(usable_left).min(usable_right - popup_width);
+        y = y.max(usable_top).min(usable_bottom - popup_height);
+    }
+
+    PopupPositionInfo { x, y, adjusted_for_edge }
+}
 
 // ─── Cursor Position ─────────────────────────────────────────────────────────
 
@@ -35,59 +112,45 @@ pub fn close_popup_window(app: &tauri::AppHandle) -> Result<(), String> {
 
 /// Position the popup near the cursor, with screen-edge awareness.
 fn set_popup_position(window: &tauri::WebviewWindow, cursor_pos: (i32, i32)) -> Result<(), String> {
-    let mut x = cursor_pos.0 + OFFSET;
-    let mut y = cursor_pos.1 + OFFSET;
-
-    match window.current_monitor() {
+    let monitor_info = match window.current_monitor() {
         Ok(Some(monitor)) => {
-            let screen_size = monitor.size();
-            let screen_position = monitor.position();
-
-            let screen_width = screen_size.width as i32;
-            let screen_height = screen_size.height as i32;
-            let screen_x = screen_position.x;
-            let screen_y = screen_position.y;
-
-            let usable_right = screen_x + screen_width - MARGIN;
-            let usable_bottom = screen_y + screen_height - MARGIN;
-            let usable_left = screen_x + MARGIN;
-            let usable_top = screen_y + MARGIN;
-
-            // X 轴：优先右侧，不够则左侧
-            if x + POPUP_WIDTH > usable_right {
-                let left_x = cursor_pos.0 - POPUP_WIDTH - OFFSET;
-                if left_x >= usable_left {
-                    x = left_x;
-                } else {
-                    x = usable_right - POPUP_WIDTH;
-                }
-            }
-
-            // Y 轴：优先下方，不够则上方
-            if y + POPUP_HEIGHT > usable_bottom {
-                let top_y = cursor_pos.1 - POPUP_HEIGHT - OFFSET;
-                if top_y >= usable_top {
-                    y = top_y;
-                } else {
-                    y = usable_bottom - POPUP_HEIGHT;
-                }
-            }
-
-            x = x.max(usable_left).min(usable_right - POPUP_WIDTH);
-            y = y.max(usable_top).min(usable_bottom - POPUP_HEIGHT);
-
-            info!("弹窗位置: 鼠标({}, {}) -> 窗口({}, {})", cursor_pos.0, cursor_pos.1, x, y);
+            let size = monitor.size();
+            let pos = monitor.position();
+            Some(MonitorInfo {
+                width: size.width as i32,
+                height: size.height as i32,
+                x: pos.x,
+                y: pos.y,
+            })
         }
         Ok(None) => {
             warn!("无法获取显示器信息，使用默认偏移");
+            None
         }
         Err(e) => {
             warn!("获取显示器信息失败: {}, 使用默认偏移", e);
+            None
         }
+    };
+
+    let pos = calculate_popup_position(
+        cursor_pos,
+        POPUP_WIDTH,
+        POPUP_HEIGHT,
+        OFFSET,
+        MARGIN,
+        monitor_info,
+    );
+
+    if pos.adjusted_for_edge {
+        info!("弹窗位置已调整（靠近屏幕边缘）: 鼠标({}, {}) -> 窗口({}, {})",
+              cursor_pos.0, cursor_pos.1, pos.x, pos.y);
+    } else {
+        info!("弹窗位置: 鼠标({}, {}) -> 窗口({}, {})", cursor_pos.0, cursor_pos.1, pos.x, pos.y);
     }
 
     window
-        .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
+        .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: pos.x, y: pos.y }))
         .map_err(|e: tauri::Error| e.to_string())
 }
 
@@ -100,7 +163,7 @@ pub fn build_popup_window(
         tauri::WebviewWindowBuilder::new(app, "popup", tauri::WebviewUrl::App("index.html".into()))
             .title("翻译")
             .inner_size(420.0, 380.0)
-            .decorations(true)
+            .decorations(false)
             .always_on_top(true)
             .skip_taskbar(true)
             .visible(false)

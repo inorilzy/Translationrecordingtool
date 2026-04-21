@@ -4,7 +4,7 @@ mod clipboard;
 mod database;
 pub mod local_dictionary;
 mod logger;
-mod popup_window;
+pub mod popup_window;
 mod settings;
 mod shortcut_handler;
 mod translation_flow;
