@@ -145,9 +145,34 @@ npm run tauri build
 npm run build:dictionary   # 生成离线词典库
 npm run build              # 前端构建
 npm run tauri dev          # 开发模式
+npm run verify:final       # 最终验证门禁（前端测试 + Rust 测试 + 编译检查 + 构建）
 cargo check                # Rust 编译检查
 cargo test                 # Rust 测试
 ```
+
+## 桌面 Smoke 测试指南
+
+运行 `npm run tauri dev` 后，按以下步骤验证真实桌面行为：
+
+### 1. 启动验证
+- 确认 Tauri dev 模式正常启动，无 panic 或编译错误
+- 主窗口正常显示，托盘图标（如配置启用）出现在系统托盘
+
+### 2. 设置保存
+- 打开设置页，修改任意配置项（如快捷键、托盘行为）
+- 关闭设置页后重新打开，确认修改已持久化
+
+### 3. 快捷键翻译
+- 在任意应用中复制一个英文单词
+- 按下全局快捷键（默认配置下），确认 popup 窗口弹出
+- popup 中展示单词查询结果（本地词典或在线翻译）
+
+### 4. Popup 窗口行为
+- **无标题栏**：popup 窗口不显示系统标题栏
+- **可拖拽**：鼠标按住 popup 窗口区域可拖动
+- **ESC 关闭**：按下 ESC 键 popup 关闭
+- **关闭按钮**：点击关闭按钮后 popup 关闭
+- 连续多次快捷键触发，确认 popup 正常响应且无崩溃
 
 ## 设计原则
 

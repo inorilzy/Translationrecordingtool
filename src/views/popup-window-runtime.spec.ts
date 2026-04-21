@@ -279,7 +279,6 @@ describe('popup-window-runtime: loading / result / update / theme / favorite con
       const error = shallowRef('previous error')
 
       // Simulate what the component does on translation-started
-      const applyTheme = vi.fn() // called by component
       settingsMocks.applyThemeCalls.length = 0
 
       // Mimic the component's translation-started handler
@@ -364,7 +363,7 @@ describe('popup-window-runtime: loading / result / update / theme / favorite con
 
       expect(loading.value).toBe(false)
       expect(currentTranslation.value).not.toBeNull()
-      expect(currentTranslation.value?.source_text).toBe('hello')
+      expect((currentTranslation.value as unknown as Record<string, unknown>)?.source_text).toBe('hello')
     })
 
     it('handles translation-update after translation-result (non-incrementing)', async () => {

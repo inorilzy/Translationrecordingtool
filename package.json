@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:final": "node scripts/verify-s06.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
