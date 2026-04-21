@@ -73,6 +73,10 @@
   --scrollbar-thumb-light: rgba(102, 126, 234, 0.5);
   --scrollbar-thumb-hover-light: rgba(102, 126, 234, 0.7);
 
+  /* 光标 */
+  --cursor-grab: grab;
+  --cursor-auto: auto;
+
   /* 芯片标签 */
   --color-chip-bg: rgba(102, 126, 234, 0.12);
   --color-chip-border: rgba(102, 126, 234, 0.2);

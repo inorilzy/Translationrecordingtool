@@ -2,15 +2,18 @@
 import { nextTick, ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type { Translation } from '../stores/translation'
 import { applyTheme as applyDocumentTheme, defaultSettings, getSettingsSnapshot } from '../lib/settings'
+import { createPopupControls } from './popup-window-controls'
 
 const currentTranslation = ref<Translation | null>(null)
 const loading = ref(true)
 const error = ref('')
 const contentRef = ref<HTMLElement | null>(null)
-const appWindow = getCurrentWebviewWindow()
+
+// Window controls (ESC, close, drag, popup-ready)
+const controls = createPopupControls()
+
 let unlistenTranslationResult: (() => void) | null = null
 let unlistenTranslationUpdate: (() => void) | null = null
 let unlistenTranslationStarted: (() => void) | null = null
@@ -86,11 +89,7 @@ onMounted(async () => {
     await applyTranslation(event.payload, false)
   })
 
-  // 监听 ESC 键关闭窗口
-  window.addEventListener('keydown', handleKeyDown)
-
-  // 通知后端前端已就绪
-  await appWindow.emit('popup-ready', {})
+  // ESC key listener registered by createPopupControls
 })
 
 // 清理事件监听
@@ -99,18 +98,8 @@ onUnmounted(() => {
   unlistenTranslationResult?.()
   unlistenTranslationUpdate?.()
   unlistenTheme?.()
-  window.removeEventListener('keydown', handleKeyDown)
+  // ESC key listener cleanup handled by createPopupControls
 })
-
-function handleKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    close()
-  }
-}
-
-function close() {
-  appWindow.hide()
-}
 
 async function toggleFavorite() {
   if (!currentTranslation.value?.id) {
@@ -143,6 +132,20 @@ function playAudio() {
 
 <template>
   <div class="popup-container">
+    <!-- Custom header: drag region + close button (no system title bar) -->
+    <header class="popup-header" data-testid="popup-header">
+      <div class="drag-region" data-testid="drag-region"></div>
+      <button
+        class="close-button"
+        data-testid="close-button"
+        @click="controls.close"
+        title="关闭"
+        aria-label="关闭窗口"
+      >
+        ✕
+      </button>
+    </header>
+
     <div v-if="loading" class="loading">
       <div class="spinner"></div>
       <span>翻译中...</span>
@@ -257,6 +260,49 @@ function playAudio() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.popup-header {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  flex-shrink: 0;
+  background: var(--color-bg-tertiary);
+  border-bottom: var(--border-width) solid var(--color-border);
+  cursor: var(--cursor-grab);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.drag-region {
+  flex: 1;
+  height: 100%;
+  -webkit-app-region: drag;
+}
+
+.close-button {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+  cursor: var(--cursor-auto);
+  transition: all var(--transition-fast);
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+
+.close-button:hover {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+.close-button:active {
+  background: var(--color-bg-tertiary);
 }
 
 .content {
