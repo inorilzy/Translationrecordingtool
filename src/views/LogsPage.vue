@@ -142,26 +142,26 @@ onMounted(() => {
 .btn-primary,
 .btn-secondary {
   padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--radius-sm);
   border: none;
   cursor: pointer;
   font-size: var(--font-size-sm);
-  transition: all 0.2s;
+  transition: all var(--transition-fast);
 }
 
 .btn-primary {
   background: var(--color-primary);
-  color: white;
+  color: var(--color-text-on-primary);
 }
 
 .btn-primary:hover {
-  opacity: 0.9;
+  background: var(--color-primary-hover);
 }
 
 .btn-secondary {
   background: var(--color-bg-secondary);
   color: var(--color-text-primary);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
 }
 
 .btn-secondary:hover {
@@ -169,10 +169,10 @@ onMounted(() => {
 }
 
 .error-message {
-  background: #fee;
-  color: #c33;
+  background: var(--color-error-bg);
+  color: var(--color-error);
   padding: var(--spacing-md);
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--radius-sm);
   margin-bottom: var(--spacing-md);
 }
 
@@ -190,8 +190,8 @@ onMounted(() => {
 
 .file-select {
   padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--border-radius-sm);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
   background: var(--color-bg-secondary);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
@@ -200,7 +200,7 @@ onMounted(() => {
 
 .logs-container {
   background: var(--color-bg-secondary);
-  border-radius: var(--border-radius-md);
+  border-radius: var(--radius-md);
   padding: var(--spacing-md);
   max-height: 600px;
   overflow-y: auto;
@@ -215,7 +215,7 @@ onMounted(() => {
 
 .log-content {
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .log-content pre {

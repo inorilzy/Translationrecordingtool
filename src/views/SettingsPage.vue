@@ -283,7 +283,7 @@ function showMessage(msg: string, type: 'success' | 'error') {
 
 .section-hint {
   margin: 0 0 var(--spacing-md) 0;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
   line-height: 1.6;
 }
@@ -299,7 +299,7 @@ function showMessage(msg: string, type: 'success' | 'error') {
 .form-group label {
   display: block;
   margin-bottom: var(--spacing-sm);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
 }
@@ -313,26 +313,26 @@ function showMessage(msg: string, type: 'success' | 'error') {
   display: block;
   margin-top: var(--spacing-xs);
   color: var(--color-text-tertiary);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .message {
   margin-top: var(--spacing-md);
   padding: var(--spacing-md);
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--radius-sm);
   animation: fadeIn 0.3s ease-in;
 }
 
 .success-message {
-  background: #e8f5e9;
-  color: #2e7d32;
-  border: 1px solid #a5d6a7;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border: var(--border-width) solid var(--color-border);
 }
 
 .error-message {
-  background: #ffebee;
-  color: #c62828;
-  border: 1px solid #ef9a9a;
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  border: var(--border-width) solid var(--color-border);
 }
 
 @keyframes fadeIn {
@@ -374,9 +374,9 @@ function showMessage(msg: string, type: 'success' | 'error') {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #ccc;
+  background-color: var(--toggle-bg-inactive);
   transition: 0.3s;
-  border-radius: 24px;
+  border-radius: var(--radius-pill);
 }
 
 .toggle-slider:before {
@@ -386,9 +386,10 @@ function showMessage(msg: string, type: 'success' | 'error') {
   width: 18px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: var(--toggle-thumb);
   transition: 0.3s;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
+  box-shadow: 0 1px 3px var(--toggle-thumb-shadow);
 }
 
 .toggle-switch input:checked + .toggle-slider {
@@ -421,7 +422,7 @@ function showMessage(msg: string, type: 'success' | 'error') {
   flex: 1;
   height: 6px;
   border-radius: 3px;
-  background: linear-gradient(to right, #e0e0e0 0%, var(--color-primary) 100%);
+  background: linear-gradient(to right, var(--color-border) 0%, var(--color-primary) 100%);
   outline: none;
   -webkit-appearance: none;
 }
@@ -434,7 +435,7 @@ function showMessage(msg: string, type: 'success' | 'error') {
   border-radius: 50%;
   background: var(--color-primary);
   cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-sm);
 }
 
 .slider::-moz-range-thumb {
@@ -444,13 +445,13 @@ function showMessage(msg: string, type: 'success' | 'error') {
   background: var(--color-primary);
   cursor: pointer;
   border: none;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-sm);
 }
 
 .slider-value {
   min-width: 80px;
   text-align: right;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
 }
@@ -459,7 +460,7 @@ function showMessage(msg: string, type: 'success' | 'error') {
   display: flex;
   justify-content: space-between;
   margin-top: var(--spacing-xs);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
 }
 

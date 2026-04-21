@@ -229,7 +229,7 @@ function playAudio() {
 <style scoped>
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(102, 126, 234, 0.5) transparent;
+  scrollbar-color: var(--scrollbar-thumb-light) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -242,12 +242,12 @@ function playAudio() {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(102, 126, 234, 0.5);
-  border-radius: 3px;
+  background: var(--scrollbar-thumb-light);
+  border-radius: var(--radius-sm);
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(102, 126, 234, 0.7);
+  background: var(--scrollbar-thumb-hover-light);
 }
 
 .popup-container {
@@ -261,27 +261,27 @@ function playAudio() {
 
 .content {
   flex: 1;
-  padding: 20px;
+  padding: var(--spacing-lg);
   overflow-y: auto;
   background: var(--color-bg-primary);
 }
 
 .word-section {
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 2px solid var(--color-border);
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  border-bottom: var(--border-width-active) solid var(--color-border);
 }
 
 .word-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
 }
 
 .word {
-  font-size: 24px;
-  font-weight: 600;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
   margin: 0;
   word-break: break-word;
@@ -291,15 +291,15 @@ function playAudio() {
 .audio-btn {
   background: var(--color-primary);
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   width: 36px;
   height: 36px;
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all var(--transition-fast);
   box-shadow: var(--shadow-sm);
 }
 
@@ -315,15 +315,15 @@ function playAudio() {
 
 .favorite-btn {
   width: 100%;
-  padding: 10px;
-  margin-bottom: 16px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-md);
   background: var(--color-primary);
-  color: white;
+  color: var(--color-text-on-primary);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-md);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-fast);
   box-shadow: var(--shadow-sm);
 }
 
@@ -339,12 +339,12 @@ function playAudio() {
 
 .phonetics {
   display: flex;
-  gap: 16px;
+  gap: var(--spacing-md);
   flex-wrap: wrap;
 }
 
 .phonetic {
-  font-size: 14px;
+  font-size: var(--font-size-md);
   color: var(--color-text-secondary);
   font-family: 'Courier New', monospace;
 }
@@ -352,25 +352,25 @@ function playAudio() {
 .phonetic .label {
   display: inline-block;
   background: var(--color-primary);
-  color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 11px;
-  margin-right: 4px;
-  font-weight: 600;
+  color: var(--color-text-on-primary);
+  padding: var(--spacing-xs) 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  margin-right: var(--spacing-xs);
+  font-weight: var(--font-weight-semibold);
 }
 
 .section-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-secondary);
-  margin: 0 0 12px 0;
+  margin: 0 0 var(--spacing-md) 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .explains-section {
-  margin-bottom: 16px;
+  margin-bottom: var(--spacing-md);
 }
 
 .explains-list {
@@ -380,35 +380,35 @@ function playAudio() {
 }
 
 .explains-list li {
-  padding: 8px 12px;
-  margin-bottom: 6px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-xs);
   background: var(--color-bg-secondary);
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-md);
   color: var(--color-text-primary);
   line-height: 1.6;
-  border-left: 3px solid var(--color-primary);
+  border-left: var(--border-width-active) solid var(--color-primary);
 }
 
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  padding: 6px 10px;
+  padding: 6px var(--spacing-sm);
   background: var(--color-primary-light);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
   color: var(--color-primary);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .translation-section {
-  margin-bottom: 16px;
+  margin-bottom: var(--spacing-md);
 }
 
 .translation-text {
@@ -416,17 +416,17 @@ function playAudio() {
   color: var(--color-text-primary);
   line-height: 1.8;
   margin: 0;
-  padding: 12px;
+  padding: var(--spacing-sm) var(--spacing-md);
   background: var(--color-bg-secondary);
-  border-radius: 8px;
-  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  border-left: var(--border-width-active) solid var(--color-primary);
 }
 
 .translation-word-type {
   display: inline-block;
-  margin-right: 8px;
+  margin-right: var(--spacing-sm);
   color: var(--color-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .loading {
@@ -435,17 +435,17 @@ function playAudio() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--spacing-md);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-md);
 }
 
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid var(--color-border);
+  border: var(--border-width-active) solid var(--color-border);
   border-top-color: var(--color-primary);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   animation: spin 0.8s linear infinite;
 }
 
@@ -459,14 +459,14 @@ function playAudio() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
   color: var(--color-error);
-  padding: 20px;
+  padding: var(--spacing-lg);
   text-align: center;
-  font-size: 14px;
+  font-size: var(--font-size-md);
 }
 
 .error-icon {
-  font-size: 32px;
+  font-size: var(--font-size-icon);
 }
 </style>

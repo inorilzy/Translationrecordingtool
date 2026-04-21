@@ -46,6 +46,7 @@
   --shadow-md: 0 4px 12px rgba(0,0,0,0.12);
 
   /* 字体 */
+  --font-size-xs: 12px;
   --font-size-sm: 13px;
   --font-size-md: 14px;
   --font-size-lg: 18px;
@@ -69,10 +70,22 @@
   --scrollbar-thumb: rgba(0, 0, 0, 0.2);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.35);
   --scrollbar-track: transparent;
+  --scrollbar-thumb-light: rgba(102, 126, 234, 0.5);
+  --scrollbar-thumb-hover-light: rgba(102, 126, 234, 0.7);
 
   /* 芯片标签 */
   --color-chip-bg: rgba(102, 126, 234, 0.12);
   --color-chip-border: rgba(102, 126, 234, 0.2);
+
+  /* Toggle 开关 */
+  --toggle-bg-inactive: #ccc;
+  --toggle-thumb: #fff;
+  --toggle-thumb-shadow: rgba(0, 0, 0, 0.2);
+
+  /* Popup 组件 */
+  --popup-content-padding: var(--spacing-md);
+  --popup-section-gap: var(--spacing-md);
+  --popup-list-item-gap: var(--spacing-xs);
 }
 
 /* 深色主题 - Dark (VSCode Dark+) */
@@ -104,9 +117,18 @@
   --shadow-sm: 0 2px 8px rgba(0,0,0,0.4);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
 
+  --font-size-xs: 12px;
+
   --scrollbar-thumb: rgba(255, 255, 255, 0.2);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
   --scrollbar-track: transparent;
+  --scrollbar-thumb-light: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover-light: rgba(255, 255, 255, 0.35);
+
+  /* Toggle 开关 */
+  --toggle-bg-inactive: #4a4a4a;
+  --toggle-thumb: #fff;
+  --toggle-thumb-shadow: rgba(0, 0, 0, 0.4);
 }
 
 /* One Dark Pro 主题 */
@@ -138,9 +160,18 @@
   --shadow-sm: 0 2px 8px rgba(0,0,0,0.5);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.6);
 
+  --font-size-xs: 12px;
+
   --scrollbar-thumb: rgba(255, 255, 255, 0.2);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
   --scrollbar-track: transparent;
+  --scrollbar-thumb-light: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover-light: rgba(255, 255, 255, 0.35);
+
+  /* Toggle 开关 */
+  --toggle-bg-inactive: #4a4a4a;
+  --toggle-thumb: #fff;
+  --toggle-thumb-shadow: rgba(0, 0, 0, 0.4);
 }
 
 /* GitHub Light 主题 */
@@ -172,9 +203,18 @@
   --shadow-sm: 0 1px 3px rgba(27,31,35,0.12);
   --shadow-md: 0 8px 24px rgba(140,149,159,0.2);
 
+  --font-size-xs: 12px;
+
   --scrollbar-thumb: rgba(0, 0, 0, 0.15);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
   --scrollbar-track: transparent;
+  --scrollbar-thumb-light: rgba(102, 126, 234, 0.5);
+  --scrollbar-thumb-hover-light: rgba(102, 126, 234, 0.7);
+
+  /* Toggle 开关 */
+  --toggle-bg-inactive: #c9c9c9;
+  --toggle-thumb: #fff;
+  --toggle-thumb-shadow: rgba(0, 0, 0, 0.2);
 }
 
 /* GitHub Dark 主题 */
@@ -206,7 +246,16 @@
   --shadow-sm: 0 0 transparent;
   --shadow-md: 0 16px 32px rgba(1,4,9,0.85);
 
+  --font-size-xs: 12px;
+
   --scrollbar-thumb: rgba(255, 255, 255, 0.15);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
   --scrollbar-track: transparent;
+  --scrollbar-thumb-light: rgba(255, 255, 255, 0.15);
+  --scrollbar-thumb-hover-light: rgba(255, 255, 255, 0.3);
+
+  /* Toggle 开关 */
+  --toggle-bg-inactive: #4a4a4a;
+  --toggle-thumb: #fff;
+  --toggle-thumb-shadow: rgba(0, 0, 0, 0.4);
 }

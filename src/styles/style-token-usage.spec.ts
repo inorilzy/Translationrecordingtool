@@ -156,6 +156,9 @@ const CONTENT_SURFACES = [
   'views/HistoryPage.vue',
   'views/FavoritesPage.vue',
   'views/DetailPage.vue',
+  'views/SettingsPage.vue',
+  'views/LogsPage.vue',
+  'views/PopupWindow.vue',
 ]
 
 function gatherContentFiles(): string[] {
@@ -266,11 +269,18 @@ describe('style-token-usage: design-tokens integrity', () => {
       'color-chip-border',
       'radius-sm',
       'radius-md',
+      'radius-full',
+      'radius-pill',
+      'font-size-xs',
       'font-size-icon',
       'font-weight-medium',
+      'font-weight-semibold',
       'border-width',
       'transition-fast',
       'scrollbar-thumb',
+      'scrollbar-thumb-light',
+      'toggle-bg-inactive',
+      'toggle-thumb',
     ]
     for (const token of expected) {
       expect(DEFINED_TOKENS.has(token), `missing token: --${token}`).toBe(true)
