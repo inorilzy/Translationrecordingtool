@@ -53,3 +53,5 @@ target/
 vendor/
 coverage/
 tmp/
+.claude/
+test-results/

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import TranslatePage from '../views/TranslatePage.vue'
 import PopupWindow from '../views/PopupWindow.vue'
 import HistoryPage from '../views/HistoryPage.vue'
 import FavoritesPage from '../views/FavoritesPage.vue'
@@ -6,10 +7,15 @@ import DetailPage from '../views/DetailPage.vue'
 import LogsPage from '../views/LogsPage.vue'
 import SettingsPage from '../views/SettingsPage.vue'
 
-const routes = [
+export const routes = [
   {
     path: '/',
-    redirect: '/history'
+    redirect: '/translate'
+  },
+  {
+    path: '/translate',
+    name: 'Translate',
+    component: TranslatePage
   },
   {
     path: '/popup',

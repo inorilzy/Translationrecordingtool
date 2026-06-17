@@ -1,3 +1,9 @@
+<script lang="ts">
+export function isNavigationPathActive(currentPath: string, path: string) {
+  return currentPath === path
+}
+</script>
+
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
 
@@ -5,7 +11,7 @@ const router = useRouter()
 const route = useRoute()
 
 function isActive(path: string) {
-  return route.path === path
+  return isNavigationPathActive(route.path, path)
 }
 
 function navigate(path: string) {
@@ -15,6 +21,12 @@ function navigate(path: string) {
 
 <template>
   <nav class="navigation-bar">
+    <button
+      @click="navigate('/translate')"
+      :class="['nav-item', { active: isActive('/translate') }]"
+    >
+      翻译
+    </button>
     <button
       @click="navigate('/history')"
       :class="['nav-item', { active: isActive('/history') }]"

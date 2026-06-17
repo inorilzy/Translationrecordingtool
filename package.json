@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:component": "vitest run",
+    "test:e2e": "playwright test",
     "verify:final": "node scripts/verify-s06.mjs",
     "tauri": "tauri"
   },
@@ -22,10 +24,13 @@
     "vue-router": "^5.0.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.6.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vitest/ui": "^4.1.4",
+    "@vue/test-utils": "^2.4.8",
+    "jsdom": "^29.0.2",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
     "vitest": "^4.1.4",

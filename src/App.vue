@@ -1,3 +1,16 @@
+<script lang="ts">
+export async function runStartupLoad(
+  windowLabel: string,
+  settingsStore: { loadSettings: () => Promise<void> },
+  translationStore: { loadHistory: () => Promise<void> },
+) {
+  if (windowLabel === 'main') {
+    await settingsStore.loadSettings()
+    await translationStore.loadHistory()
+  }
+}
+</script>
+
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
@@ -9,10 +22,7 @@ const settingsStore = useSettingsStore()
 const windowLabel = getCurrentWebviewWindow().label
 
 onMounted(async () => {
-  if (windowLabel === 'main') {
-    await settingsStore.loadSettings()
-    await translationStore.loadHistory()
-  }
+  await runStartupLoad(windowLabel, settingsStore, translationStore)
 })
 </script>
 
