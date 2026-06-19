@@ -9,7 +9,10 @@ use std::{
 };
 use tauri::Manager;
 
-use crate::settings::{load_settings, save_settings, PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_THEME};
+use crate::settings::{
+    load_settings, save_settings, PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_ENDPOINT,
+    DEFAULT_THEME,
+};
 
 // ─── Runtime State ───────────────────────────────────────────────────────────
 
@@ -18,6 +21,10 @@ use crate::settings::{load_settings, save_settings, PersistedSettings, DEFAULT_G
 pub struct AppConfig {
     pub api_key: String,
     pub api_secret: String,
+    pub translation_provider: String,
+    pub microsoft_translator_key: String,
+    pub microsoft_translator_region: String,
+    pub ocr_endpoint: String,
     pub global_shortcut: String,
     pub theme: String,
 }
@@ -27,6 +34,10 @@ impl Default for AppConfig {
         Self {
             api_key: String::new(),
             api_secret: String::new(),
+            translation_provider: "youdao".to_string(),
+            microsoft_translator_key: String::new(),
+            microsoft_translator_region: String::new(),
+            ocr_endpoint: DEFAULT_OCR_ENDPOINT.to_string(),
             global_shortcut: DEFAULT_GLOBAL_SHORTCUT.to_string(),
             theme: DEFAULT_THEME.to_string(),
         }
@@ -78,6 +89,10 @@ pub fn to_persisted_settings(config: &AppConfig, tray_behavior: &TrayBehaviorCon
     PersistedSettings {
         api_key: config.api_key.clone(),
         api_secret: config.api_secret.clone(),
+        translation_provider: config.translation_provider.clone(),
+        microsoft_translator_key: config.microsoft_translator_key.clone(),
+        microsoft_translator_region: config.microsoft_translator_region.clone(),
+        ocr_endpoint: config.ocr_endpoint.clone(),
         global_shortcut: config.global_shortcut.clone(),
         enable_tray: tray_behavior.enabled,
         theme: config.theme.clone(),
@@ -117,11 +132,19 @@ pub fn update_and_persist_api_config(
     tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
     api_key: String,
     api_secret: String,
+    translation_provider: String,
+    microsoft_translator_key: String,
+    microsoft_translator_region: String,
+    ocr_endpoint: String,
 ) -> Result<(), String> {
     {
         let mut cfg = config.write().unwrap();
         cfg.api_key = api_key;
         cfg.api_secret = api_secret;
+        cfg.translation_provider = translation_provider;
+        cfg.microsoft_translator_key = microsoft_translator_key;
+        cfg.microsoft_translator_region = microsoft_translator_region;
+        cfg.ocr_endpoint = ocr_endpoint;
     }
     persist_managed_settings(app, config, tray_behavior)
 }

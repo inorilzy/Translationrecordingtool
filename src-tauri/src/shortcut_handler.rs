@@ -159,15 +159,21 @@ pub fn handle_shortcut(
         }
 
         // 5. 本地未命中 → 查询远程翻译
-        let (app_key, app_secret) = {
+        let translation_config = {
             let cfg = config.read().unwrap();
-            (cfg.api_key.clone(), cfg.api_secret.clone())
+            translation_flow::TranslationConfig {
+                provider: cfg.translation_provider.clone(),
+                youdao_app_key: cfg.api_key.clone(),
+                youdao_app_secret: cfg.api_secret.clone(),
+                microsoft_key: cfg.microsoft_translator_key.clone(),
+                microsoft_region: cfg.microsoft_translator_region.clone(),
+            }
         };
 
         info!("开始查询翻译");
         let _ = show_loading_popup(&app, &popup_state, request_id, cursor_pos);
 
-        let result = match translation_flow::resolve_remote_translation(&text, &app_key, &app_secret).await {
+        let result = match translation_flow::resolve_remote_translation(&text, &translation_config).await {
             Ok(translation) => {
                 info!("翻译成功: {} -> {}", text, translation.translated_text);
                 translation

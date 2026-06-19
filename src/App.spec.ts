@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runStartupLoad } from './App.vue'
+import { resolveCurrentWindowLabel, runStartupLoad } from './App.vue'
 
 describe('App', () => {
   it('loads settings and history for the main window', async () => {
@@ -28,5 +28,13 @@ describe('App', () => {
 
     expect(settingsStore.loadSettings).not.toHaveBeenCalled()
     expect(translationStore.loadHistory).not.toHaveBeenCalled()
+  })
+
+  it('falls back to browser when the Tauri window API is unavailable', () => {
+    const getWindow = vi.fn(() => {
+      throw new Error('not in tauri')
+    })
+
+    expect(resolveCurrentWindowLabel(getWindow)).toBe('browser')
   })
 })

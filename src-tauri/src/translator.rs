@@ -20,6 +20,15 @@ pub struct TranslationContent {
     pub word_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct TranslationConfig {
+    pub provider: String,
+    pub youdao_app_key: String,
+    pub youdao_app_secret: String,
+    pub microsoft_key: String,
+    pub microsoft_region: String,
+}
+
 // 有道翻译 API 响应
 #[derive(Debug, Serialize, Deserialize)]
 pub struct YoudaoResponse {
@@ -33,6 +42,22 @@ pub struct YoudaoResponse {
 pub struct YoudaoBasic {
     pub phonetic: Option<String>,
     pub explains: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct MicrosoftTranslatorItem {
+    translations: Vec<MicrosoftTranslationItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct MicrosoftTranslationItem {
+    text: String,
+}
+
+#[derive(Debug, Serialize)]
+struct MicrosoftTranslatorRequest<'a> {
+    #[serde(rename = "Text")]
+    text: &'a str,
 }
 
 // Free Dictionary API 响应
@@ -66,7 +91,7 @@ pub struct Definition {
     pub antonyms: Option<Vec<String>>,
 }
 
-fn http_client() -> &'static reqwest::Client {
+pub(crate) fn http_client() -> &'static reqwest::Client {
     static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     HTTP_CLIENT.get_or_init(reqwest::Client::new)
 }
@@ -157,6 +182,67 @@ pub async fn translate_text(
         uk_phonetic: None,
         audio_url: None,
         explains,
+        examples: Vec::new(),
+        synonyms: Vec::new(),
+        word_type: None,
+    })
+}
+
+pub async fn translate_with_microsoft(
+    text: &str,
+    key: &str,
+    region: &str,
+) -> Result<TranslationContent, String> {
+    if key.trim().is_empty() {
+        return Err("使用微软翻译需要配置 Microsoft Translator Key".to_string());
+    }
+
+    info!("调用微软翻译 API");
+
+    let mut request = http_client()
+        .post("https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=zh-Hans")
+        .header("Content-Type", "application/json")
+        .header("Ocp-Apim-Subscription-Key", key)
+        .json(&vec![MicrosoftTranslatorRequest { text }]);
+
+    let region = region.trim();
+    if !region.is_empty() {
+        request = request.header("Ocp-Apim-Subscription-Region", region);
+    }
+
+    let response = request.send().await.map_err(|e| {
+        let err_msg = format!("微软翻译 API 请求失败: {}", e);
+        error!("{}", err_msg);
+        err_msg
+    })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let err_msg = format!("微软翻译 API 返回错误: {} {}", status, body);
+        error!("{}", err_msg);
+        return Err(err_msg);
+    }
+
+    let result: Vec<MicrosoftTranslatorItem> = response.json().await.map_err(|e| {
+        let err_msg = format!("微软翻译 API 解析响应失败: {}", e);
+        error!("{}", err_msg);
+        err_msg
+    })?;
+
+    let translated_text = result
+        .first()
+        .and_then(|item| item.translations.first())
+        .map(|item| item.text.clone())
+        .ok_or_else(|| "未获取到微软翻译结果".to_string())?;
+
+    Ok(TranslationContent {
+        translated_text,
+        phonetic: None,
+        us_phonetic: None,
+        uk_phonetic: None,
+        audio_url: None,
+        explains: Vec::new(),
         examples: Vec::new(),
         synonyms: Vec::new(),
         word_type: None,

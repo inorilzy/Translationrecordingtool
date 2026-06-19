@@ -8,10 +8,17 @@
 
     <div class="settings-content">
       <section class="setting-section">
-        <h2>有道翻译 API</h2>
-        <p class="section-hint">配置后可翻译句子。单词查询无需配置，使用免费的 Free Dictionary API。</p>
+        <h2>翻译与 OCR 服务</h2>
+        <p class="section-hint">单词查询优先使用本地词典；句子、截图 OCR 结果会使用这里选择的在线翻译服务。</p>
         <div class="form-group">
-          <label>App Key</label>
+          <label>句子翻译服务</label>
+          <select v-model="config.translationProvider" @change="saveApiConfig" class="input theme-select">
+            <option value="youdao">有道翻译</option>
+            <option value="microsoft">微软翻译</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>有道 App Key</label>
           <input
             v-model="config.apiKey"
             @blur="saveApiConfig"
@@ -21,7 +28,7 @@
           />
         </div>
         <div class="form-group">
-          <label>App Secret</label>
+          <label>有道 App Secret</label>
           <input
             v-model="config.apiSecret"
             @blur="saveApiConfig"
@@ -35,6 +42,52 @@
             点击这里获取有道翻译 API 密钥
           </a>
         </small>
+        <div class="form-group separated-group">
+          <label>Microsoft Translator Key</label>
+          <input
+            v-model="config.microsoftTranslatorKey"
+            @blur="saveApiConfig"
+            type="password"
+            placeholder="请输入 Microsoft Translator Key"
+            class="input"
+          />
+        </div>
+        <div class="form-group">
+          <label>Microsoft Translator Region</label>
+          <input
+            v-model="config.microsoftTranslatorRegion"
+            @blur="saveApiConfig"
+            type="text"
+            placeholder="例如 eastasia；global 资源可留空"
+            class="input"
+          />
+        </div>
+        <small>
+          <a href="https://portal.azure.com/#create/Microsoft.CognitiveServicesTextTranslation" target="_blank">
+            创建微软翻译资源
+          </a>
+        </small>
+        <div class="form-group separated-group">
+          <label>Paddle OCR HTTP 地址</label>
+          <input
+            v-model="config.ocrEndpoint"
+            @blur="saveApiConfig"
+            type="text"
+            placeholder="例如 http://127.0.0.1:8866/ocr"
+            class="input"
+          />
+          <div class="inline-actions">
+            <small>截图会以 PNG base64 JSON 发送到该地址，字段名为 image。</small>
+            <button
+              type="button"
+              class="btn btn-secondary service-test-btn"
+              :disabled="ocrCheckLoading || !config.ocrEndpoint.trim()"
+              @click="checkOcrService"
+            >
+              {{ ocrCheckLoading ? '检查中...' : '测试 OCR 服务' }}
+            </button>
+          </div>
+        </div>
       </section>
 
       <section class="setting-section">
@@ -113,6 +166,10 @@ const store = useSettingsStore()
 const config = ref({
   apiKey: '',
   apiSecret: '',
+  translationProvider: 'youdao',
+  microsoftTranslatorKey: '',
+  microsoftTranslatorRegion: '',
+  ocrEndpoint: 'http://127.0.0.1:8866/ocr',
   globalShortcut: 'Ctrl+Q',
   enableTray: true,
   enableAutostart: false,
@@ -121,6 +178,7 @@ const config = ref({
 
 const isCapturing = ref(false)
 const autostartLoading = ref(true)
+const ocrCheckLoading = ref(false)
 const message = ref('')
 const messageType = ref<'success' | 'error'>('success')
 
@@ -128,6 +186,10 @@ onMounted(async () => {
   await store.loadSettings()
   config.value.apiKey = store.apiKey
   config.value.apiSecret = store.apiSecret
+  config.value.translationProvider = store.translationProvider
+  config.value.microsoftTranslatorKey = store.microsoftTranslatorKey
+  config.value.microsoftTranslatorRegion = store.microsoftTranslatorRegion
+  config.value.ocrEndpoint = store.ocrEndpoint
   config.value.globalShortcut = store.globalShortcut
   config.value.enableTray = store.enableTray
   config.value.theme = store.theme
@@ -163,15 +225,29 @@ function captureShortcut(event: KeyboardEvent) {
 }
 
 async function saveApiConfig() {
-  if (config.value.apiKey === store.apiKey && config.value.apiSecret === store.apiSecret) {
+  if (
+    config.value.apiKey === store.apiKey
+    && config.value.apiSecret === store.apiSecret
+    && config.value.translationProvider === store.translationProvider
+    && config.value.microsoftTranslatorKey === store.microsoftTranslatorKey
+    && config.value.microsoftTranslatorRegion === store.microsoftTranslatorRegion
+    && config.value.ocrEndpoint === store.ocrEndpoint
+  ) {
     return // 没有变化，不保存
   }
 
   try {
-    await store.updateApiConfig(config.value.apiKey, config.value.apiSecret)
-    showMessage('API 配置已保存', 'success')
+    await store.updateApiConfig({
+      apiKey: config.value.apiKey,
+      apiSecret: config.value.apiSecret,
+      translationProvider: config.value.translationProvider,
+      microsoftTranslatorKey: config.value.microsoftTranslatorKey,
+      microsoftTranslatorRegion: config.value.microsoftTranslatorRegion,
+      ocrEndpoint: config.value.ocrEndpoint,
+    })
+    showMessage('服务配置已保存', 'success')
   } catch (e) {
-    showMessage(`保存 API 配置失败: ${e}`, 'error')
+    showMessage(`保存服务配置失败: ${e}`, 'error')
   }
 }
 
@@ -210,6 +286,18 @@ async function saveAutostartBehavior() {
   } catch (e) {
     console.warn('开机启动设置失败（开发模式下正常）:', e)
     // 开发模式下静默失败
+  }
+}
+
+async function checkOcrService() {
+  ocrCheckLoading.value = true
+  try {
+    const result = await store.checkOcrService(config.value.ocrEndpoint)
+    showMessage(result, 'success')
+  } catch (e) {
+    showMessage(`OCR 服务检查失败: ${e}`, 'error')
+  } finally {
+    ocrCheckLoading.value = false
   }
 }
 
@@ -296,6 +384,10 @@ function showMessage(msg: string, type: 'success' | 'error') {
   margin-bottom: 0;
 }
 
+.separated-group {
+  margin-top: var(--spacing-lg);
+}
+
 .form-group label {
   display: block;
   margin-bottom: var(--spacing-sm);
@@ -313,6 +405,24 @@ function showMessage(msg: string, type: 'success' | 'error') {
   display: block;
   margin-top: var(--spacing-xs);
   color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.inline-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  justify-content: space-between;
+  margin-top: var(--spacing-xs);
+}
+
+.inline-actions small {
+  margin-top: 0;
+}
+
+.service-test-btn {
+  flex: 0 0 auto;
+  padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--font-size-xs);
 }
 

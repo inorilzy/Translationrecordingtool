@@ -29,6 +29,10 @@ describe('useSettingsStore', () => {
       const store = useSettingsStore()
       expect(store.apiKey).toBe('')
       expect(store.apiSecret).toBe('')
+      expect(store.translationProvider).toBe('youdao')
+      expect(store.microsoftTranslatorKey).toBe('')
+      expect(store.microsoftTranslatorRegion).toBe('')
+      expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.globalShortcut).toBe('Ctrl+Q')
       expect(store.enableTray).toBe(true)
       expect(store.theme).toBe('light')
@@ -41,6 +45,10 @@ describe('useSettingsStore', () => {
       invokeMock.mockResolvedValue({
         apiKey: 'test-key',
         apiSecret: 'test-secret',
+        translationProvider: 'microsoft',
+        microsoftTranslatorKey: 'ms-key',
+        microsoftTranslatorRegion: 'eastasia',
+        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
         theme: 'dark',
       })
 
@@ -49,6 +57,10 @@ describe('useSettingsStore', () => {
 
       expect(store.apiKey).toBe('test-key')
       expect(store.apiSecret).toBe('test-secret')
+      expect(store.translationProvider).toBe('microsoft')
+      expect(store.microsoftTranslatorKey).toBe('ms-key')
+      expect(store.microsoftTranslatorRegion).toBe('eastasia')
+      expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.theme).toBe('dark')
       expect(store.globalShortcut).toBe('Ctrl+Q') // default for missing fields
       expect(store.enableTray).toBe(true)
@@ -62,6 +74,10 @@ describe('useSettingsStore', () => {
 
       expect(store.apiKey).toBe('')
       expect(store.apiSecret).toBe('')
+      expect(store.translationProvider).toBe('youdao')
+      expect(store.microsoftTranslatorKey).toBe('')
+      expect(store.microsoftTranslatorRegion).toBe('')
+      expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.theme).toBe('light')
       expect(store.globalShortcut).toBe('Ctrl+Q')
       expect(store.enableTray).toBe(true)
@@ -83,24 +99,49 @@ describe('useSettingsStore', () => {
       invokeMock.mockResolvedValue(undefined)
 
       const store = useSettingsStore()
-      await store.updateApiConfig('new-key', 'new-secret')
+      await store.updateApiConfig({
+        apiKey: 'new-key',
+        apiSecret: 'new-secret',
+        translationProvider: 'microsoft',
+        microsoftTranslatorKey: 'new-ms-key',
+        microsoftTranslatorRegion: 'eastasia',
+        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+      })
 
       expect(invokeMock).toHaveBeenCalledWith('update_api_config', {
         apiKey: 'new-key',
         apiSecret: 'new-secret',
+        translationProvider: 'microsoft',
+        microsoftTranslatorKey: 'new-ms-key',
+        microsoftTranslatorRegion: 'eastasia',
+        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
       })
       expect(store.apiKey).toBe('new-key')
       expect(store.apiSecret).toBe('new-secret')
+      expect(store.translationProvider).toBe('microsoft')
+      expect(store.microsoftTranslatorKey).toBe('new-ms-key')
+      expect(store.microsoftTranslatorRegion).toBe('eastasia')
+      expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
     })
 
     it('rethrows error and preserves local state on failure', async () => {
       invokeMock.mockRejectedValue(new Error('backend error'))
 
       const store = useSettingsStore()
-      await expect(store.updateApiConfig('bad-key', 'bad-secret')).rejects.toThrow('backend error')
+      await expect(store.updateApiConfig({
+        apiKey: 'bad-key',
+        apiSecret: 'bad-secret',
+        translationProvider: 'microsoft',
+        microsoftTranslatorKey: 'bad-ms-key',
+        microsoftTranslatorRegion: 'westus',
+        ocrEndpoint: 'http://bad.local/ocr',
+      })).rejects.toThrow('backend error')
 
       expect(store.apiKey).toBe('') // unchanged
       expect(store.apiSecret).toBe('') // unchanged
+      expect(store.translationProvider).toBe('youdao') // unchanged
+      expect(store.microsoftTranslatorKey).toBe('') // unchanged
+      expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr') // unchanged
       expect(store.error).toContain('更新配置失败')
     })
   })
@@ -176,6 +217,31 @@ describe('useSettingsStore', () => {
 
       expect(store.theme).toBe('light') // unchanged
       expect(store.error).toContain('更新主题失败')
+    })
+  })
+
+  describe('checkOcrService', () => {
+    it('checks OCR service with the configured endpoint', async () => {
+      invokeMock.mockResolvedValue('Paddle OCR 服务正常')
+
+      const store = useSettingsStore()
+      store.ocrEndpoint = 'http://127.0.0.1:8866/ocr'
+
+      const result = await store.checkOcrService()
+
+      expect(invokeMock).toHaveBeenCalledWith('check_ocr_service', {
+        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+      })
+      expect(result).toBe('Paddle OCR 服务正常')
+    })
+
+    it('sets error state when OCR service check fails', async () => {
+      invokeMock.mockRejectedValue(new Error('connection refused'))
+
+      const store = useSettingsStore()
+
+      await expect(store.checkOcrService()).rejects.toThrow('connection refused')
+      expect(store.error).toContain('OCR 服务检查失败')
     })
   })
 })

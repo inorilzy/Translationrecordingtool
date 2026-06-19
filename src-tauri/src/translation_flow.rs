@@ -9,6 +9,8 @@ use crate::{
     translator,
 };
 
+pub use translator::TranslationConfig;
+
 // ─── Translation Builders ────────────────────────────────────────────────────
 
 pub fn some_if_not_empty(items: Vec<String>) -> Option<Vec<String>> {
@@ -164,8 +166,7 @@ pub fn read_current_clipboard_text(app: &tauri::AppHandle) -> Result<String, Str
 pub async fn resolve_translation(
     app: &tauri::AppHandle,
     text: &str,
-    app_key: &str,
-    app_secret: &str,
+    config: &TranslationConfig,
 ) -> Result<Translation, String> {
     let is_word = is_single_word(text);
     info!("翻译文本: {}, 类型: {}", text, if is_word { "单词" } else { "句子" });
@@ -222,7 +223,7 @@ pub async fn resolve_translation(
     }
 
     // 句子使用有道翻译
-    resolve_youdao_translation(text, app_key, app_secret).await
+    resolve_remote_provider_translation(text, config).await
 }
 
 /// Youdao-only translation (for sentence fallback).
@@ -240,11 +241,44 @@ pub async fn resolve_youdao_translation(
     Ok(build_translation(text.to_string(), content))
 }
 
+pub async fn resolve_microsoft_translation(
+    text: &str,
+    key: &str,
+    region: &str,
+) -> Result<Translation, String> {
+    info!("使用微软翻译 API");
+    let content = translator::translate_with_microsoft(text, key, region).await?;
+    Ok(build_translation(text.to_string(), content))
+}
+
+pub async fn resolve_remote_provider_translation(
+    text: &str,
+    config: &TranslationConfig,
+) -> Result<Translation, String> {
+    match config.provider.trim().to_lowercase().as_str() {
+        "microsoft" => {
+            resolve_microsoft_translation(
+                text,
+                &config.microsoft_key,
+                &config.microsoft_region,
+            )
+            .await
+        }
+        _ => {
+            resolve_youdao_translation(
+                text,
+                &config.youdao_app_key,
+                &config.youdao_app_secret,
+            )
+            .await
+        }
+    }
+}
+
 /// Remote-only resolution (used by shortcut handler when local dict misses).
 pub async fn resolve_remote_translation(
     text: &str,
-    app_key: &str,
-    app_secret: &str,
+    config: &TranslationConfig,
 ) -> Result<Translation, String> {
     let is_word = is_single_word(text);
     info!("翻译文本: {}, 类型: {}", text, if is_word { "单词" } else { "句子" });
@@ -283,5 +317,5 @@ pub async fn resolve_remote_translation(
         }
     }
 
-    resolve_youdao_translation(text, app_key, app_secret).await
+    resolve_remote_provider_translation(text, config).await
 }

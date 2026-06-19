@@ -9,6 +9,17 @@ export async function runStartupLoad(
     await translationStore.loadHistory()
   }
 }
+
+export function resolveCurrentWindowLabel(
+  getWindow: () => { label: string },
+  fallback = 'browser',
+) {
+  try {
+    return getWindow().label
+  } catch {
+    return fallback
+  }
+}
 </script>
 
 <script setup lang="ts">
@@ -19,7 +30,7 @@ import { useSettingsStore } from './stores/settings'
 
 const translationStore = useTranslationStore()
 const settingsStore = useSettingsStore()
-const windowLabel = getCurrentWebviewWindow().label
+const windowLabel = resolveCurrentWindowLabel(getCurrentWebviewWindow)
 
 onMounted(async () => {
   await runStartupLoad(windowLabel, settingsStore, translationStore)

@@ -12,6 +12,7 @@
 ## 功能
 
 - 剪贴板翻译和全局快捷键触发
+- 截图 OCR 翻译：选择屏幕/窗口截图后，发送到 Paddle OCR HTTP 服务识别文本并翻译
 - 弹窗展示单词、音标、中文释义、英文释义
 - 收藏、历史记录、详情页
 - 关闭主窗口时可选择最小化到托盘
@@ -26,7 +27,9 @@
 - 数据库：`SQLite`
 - 在线服务：
   - 有道翻译 API
+  - Microsoft Translator Text API
   - Free Dictionary API
+  - Paddle OCR HTTP 服务
 - 离线词典：
   - `ECDICT`
   - `WordNet`
@@ -92,7 +95,23 @@ npm run build:dictionary
 npm run tauri dev
 ```
 
-### 4. 生产构建
+### 4. 启动本机 PaddleOCR 服务
+
+截图 OCR 翻译需要先启动一个 PaddleOCR HTTP 服务。首次使用先安装 Python 依赖：
+
+```bash
+pip install paddleocr paddlepaddle
+```
+
+然后启动服务：
+
+```bash
+npm run ocr:server
+```
+
+默认地址是 `http://127.0.0.1:8866/ocr`，在设置页填入同一个地址即可。服务健康检查地址是 `http://127.0.0.1:8866/health`。
+
+### 5. 生产构建
 
 ```bash
 npm run build
@@ -112,11 +131,30 @@ npm run tauri build
 
 1. 复制一个句子或本地词典未命中的内容
 2. 应用会回退到在线翻译 API
-3. 这时需要在设置页配置有道 `App Key / App Secret`
+3. 这时需要在设置页配置有道 `App Key / App Secret`，或选择微软翻译并配置 `Microsoft Translator Key / Region`
+
+### 截图 OCR 翻译
+
+1. 在设置页填写 `Paddle OCR HTTP 地址`，例如 `http://127.0.0.1:8866/ocr`
+2. 点击“截图 OCR 翻译”，在系统选择器中选择要截图的屏幕或窗口
+3. 应用会把 PNG base64 以 JSON `{ "image": "..." }` 发送到 OCR 地址
+4. OCR 返回文本后，会使用当前选择的在线翻译服务翻译并保存到历史记录
+
+OCR 服务返回建议使用以下任一格式：
+
+```json
+{ "text": "recognized text" }
+```
+
+或 Paddle 风格的行结果：
+
+```json
+{ "result": [{ "recText": "first line" }, { "recText": "second line" }] }
+```
 
 ### 设置页
 
-- API 配置：可选
+- 翻译与 OCR 服务：有道、微软翻译、Paddle OCR HTTP 地址
 - 全局快捷键：支持修改
 - 托盘行为：支持关闭时退出或最小化到托盘
 
@@ -143,6 +181,7 @@ npm run tauri build
 
 ```bash
 npm run build:dictionary   # 生成离线词典库
+npm run ocr:server         # 启动本机 PaddleOCR HTTP 服务
 npm run build              # 前端构建
 npm run tauri dev          # 开发模式
 npm run verify:final       # 最终验证门禁（前端测试 + Rust 测试 + 编译检查 + 构建）

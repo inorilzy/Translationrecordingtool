@@ -4,6 +4,7 @@ mod clipboard;
 mod database;
 pub mod local_dictionary;
 mod logger;
+mod ocr;
 pub mod popup_window;
 mod settings;
 mod shortcut_handler;
@@ -38,8 +39,38 @@ fn update_api_config(
     tray_behavior: tauri::State<Arc<RwLock<TrayBehaviorConfig>>>,
     api_key: String,
     api_secret: String,
+    translation_provider: String,
+    microsoft_translator_key: String,
+    microsoft_translator_region: String,
+    ocr_endpoint: String,
 ) -> Result<(), String> {
-    update_and_persist_api_config(&app, state.inner(), tray_behavior.inner(), api_key, api_secret)
+    update_and_persist_api_config(
+        &app,
+        state.inner(),
+        tray_behavior.inner(),
+        api_key,
+        api_secret,
+        translation_provider,
+        microsoft_translator_key,
+        microsoft_translator_region,
+        ocr_endpoint,
+    )
+}
+
+fn translation_config_from_args(
+    app_key: String,
+    app_secret: String,
+    translation_provider: String,
+    microsoft_translator_key: String,
+    microsoft_translator_region: String,
+) -> translation_flow::TranslationConfig {
+    translation_flow::TranslationConfig {
+        provider: translation_provider,
+        youdao_app_key: app_key,
+        youdao_app_secret: app_secret,
+        microsoft_key: microsoft_translator_key,
+        microsoft_region: microsoft_translator_region,
+    }
 }
 
 #[tauri::command]
@@ -105,9 +136,19 @@ async fn translate_from_clipboard(
     app: tauri::AppHandle,
     app_key: String,
     app_secret: String,
+    translation_provider: String,
+    microsoft_translator_key: String,
+    microsoft_translator_region: String,
 ) -> Result<Translation, String> {
     let text = translation_flow::read_current_clipboard_text(&app)?;
-    translation_flow::resolve_translation(&app, &text, &app_key, &app_secret).await
+    let config = translation_config_from_args(
+        app_key,
+        app_secret,
+        translation_provider,
+        microsoft_translator_key,
+        microsoft_translator_region,
+    );
+    translation_flow::resolve_translation(&app, &text, &config).await
 }
 
 #[tauri::command]
@@ -116,12 +157,54 @@ async fn translate_text(
     text: String,
     app_key: String,
     app_secret: String,
+    translation_provider: String,
+    microsoft_translator_key: String,
+    microsoft_translator_region: String,
 ) -> Result<Translation, String> {
     let text = text.trim();
     if text.is_empty() {
         return Err("输入文本为空".to_string());
     }
-    translation_flow::resolve_translation(&app, text, &app_key, &app_secret).await
+    let config = translation_config_from_args(
+        app_key,
+        app_secret,
+        translation_provider,
+        microsoft_translator_key,
+        microsoft_translator_region,
+    );
+    translation_flow::resolve_translation(&app, text, &config).await
+}
+
+#[tauri::command]
+async fn translate_image(
+    app: tauri::AppHandle,
+    image_base64: String,
+    ocr_endpoint: String,
+    app_key: String,
+    app_secret: String,
+    translation_provider: String,
+    microsoft_translator_key: String,
+    microsoft_translator_region: String,
+) -> Result<Translation, String> {
+    let text = ocr::recognize_text(&ocr_endpoint, &image_base64).await?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("OCR 未识别到文本".to_string());
+    }
+
+    let config = translation_config_from_args(
+        app_key,
+        app_secret,
+        translation_provider,
+        microsoft_translator_key,
+        microsoft_translator_region,
+    );
+    translation_flow::resolve_translation(&app, trimmed, &config).await
+}
+
+#[tauri::command]
+async fn check_ocr_service(ocr_endpoint: String) -> Result<String, String> {
+    ocr::check_service(&ocr_endpoint).await
 }
 
 #[tauri::command]
@@ -205,6 +288,10 @@ pub fn run() {
             let config = Arc::new(RwLock::new(AppConfig {
                 api_key: persisted_settings.api_key.clone(),
                 api_secret: persisted_settings.api_secret.clone(),
+                translation_provider: persisted_settings.translation_provider.clone(),
+                microsoft_translator_key: persisted_settings.microsoft_translator_key.clone(),
+                microsoft_translator_region: persisted_settings.microsoft_translator_region.clone(),
+                ocr_endpoint: persisted_settings.ocr_endpoint.clone(),
                 global_shortcut: persisted_settings.global_shortcut.clone(),
                 theme: persisted_settings.theme.clone(),
             }));
@@ -328,6 +415,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             translate_from_clipboard,
             translate_text,
+            translate_image,
+            check_ocr_service,
             save_translation,
             toggle_favorite,
             load_favorites,

@@ -62,6 +62,13 @@ async function handleTranslate() {
           >
             {{ store.loading ? '翻译中...' : `剪贴板翻译 (${settings.globalShortcut})` }}
           </button>
+          <button
+            @click="store.translateScreenshot"
+            :disabled="store.loading"
+            class="btn btn-secondary screenshot-btn"
+          >
+            {{ store.loading ? '处理中...' : '截图 OCR 翻译' }}
+          </button>
         </div>
       </div>
     </div>
@@ -139,6 +146,7 @@ async function handleTranslate() {
   align-items: center;
   gap: var(--spacing-md);
   justify-content: center;
+  flex-wrap: wrap;
 }
 
 .translate-btn {
@@ -148,6 +156,11 @@ async function handleTranslate() {
 }
 
 .clipboard-btn {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--font-size-sm);
+}
+
+.screenshot-btn {
   padding: var(--spacing-sm) var(--spacing-lg);
   font-size: var(--font-size-sm);
 }

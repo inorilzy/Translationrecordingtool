@@ -3,6 +3,7 @@ use std::{fs, path::{Path, PathBuf}};
 
 pub const DEFAULT_GLOBAL_SHORTCUT: &str = "Ctrl+Q";
 pub const DEFAULT_THEME: &str = "light";
+pub const DEFAULT_OCR_ENDPOINT: &str = "http://127.0.0.1:8866/ocr";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -10,6 +11,10 @@ const SETTINGS_FILE_NAME: &str = "settings.json";
 pub struct PersistedSettings {
     pub api_key: String,
     pub api_secret: String,
+    pub translation_provider: String,
+    pub microsoft_translator_key: String,
+    pub microsoft_translator_region: String,
+    pub ocr_endpoint: String,
     pub global_shortcut: String,
     pub enable_tray: bool,
     pub theme: String,
@@ -20,6 +25,10 @@ impl Default for PersistedSettings {
         Self {
             api_key: String::new(),
             api_secret: String::new(),
+            translation_provider: "youdao".to_string(),
+            microsoft_translator_key: String::new(),
+            microsoft_translator_region: String::new(),
+            ocr_endpoint: DEFAULT_OCR_ENDPOINT.to_string(),
             global_shortcut: DEFAULT_GLOBAL_SHORTCUT.to_string(),
             enable_tray: true,
             theme: DEFAULT_THEME.to_string(),
@@ -114,6 +123,10 @@ mod tests {
         let settings = PersistedSettings {
             api_key: "demo-key".to_string(),
             api_secret: "demo-secret".to_string(),
+            translation_provider: "microsoft".to_string(),
+            microsoft_translator_key: "ms-key".to_string(),
+            microsoft_translator_region: "eastasia".to_string(),
+            ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
             global_shortcut: "Ctrl+Shift+Q".to_string(),
             enable_tray: false,
             theme: "github-dark".to_string(),
@@ -149,6 +162,10 @@ mod tests {
         let settings = PersistedSettings {
             api_key: "k".to_string(),
             api_secret: "s".to_string(),
+            translation_provider: "youdao".to_string(),
+            microsoft_translator_key: "mk".to_string(),
+            microsoft_translator_region: "global".to_string(),
+            ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
             global_shortcut: "Ctrl+Q".to_string(),
             enable_tray: true,
             theme: "dark".to_string(),
@@ -159,6 +176,10 @@ mod tests {
         // Frontend expects camelCase keys — verify the serde contract
         assert!(json.contains(r#""apiKey""#));
         assert!(json.contains(r#""apiSecret""#));
+        assert!(json.contains(r#""translationProvider""#));
+        assert!(json.contains(r#""microsoftTranslatorKey""#));
+        assert!(json.contains(r#""microsoftTranslatorRegion""#));
+        assert!(json.contains(r#""ocrEndpoint""#));
         assert!(json.contains(r#""globalShortcut""#));
         assert!(json.contains(r#""enableTray""#));
         assert!(json.contains(r#""theme""#));
@@ -169,6 +190,10 @@ mod tests {
         let json = r#"{
             "apiKey": "test-key",
             "apiSecret": "test-secret",
+            "translationProvider": "microsoft",
+            "microsoftTranslatorKey": "ms-key",
+            "microsoftTranslatorRegion": "eastasia",
+            "ocrEndpoint": "http://127.0.0.1:8866/ocr",
             "globalShortcut": "Ctrl+Shift+A",
             "enableTray": false,
             "theme": "solarized"
@@ -178,6 +203,10 @@ mod tests {
 
         assert_eq!(settings.api_key, "test-key");
         assert_eq!(settings.api_secret, "test-secret");
+        assert_eq!(settings.translation_provider, "microsoft");
+        assert_eq!(settings.microsoft_translator_key, "ms-key");
+        assert_eq!(settings.microsoft_translator_region, "eastasia");
+        assert_eq!(settings.ocr_endpoint, "http://127.0.0.1:8866/ocr");
         assert_eq!(settings.global_shortcut, "Ctrl+Shift+A");
         assert!(!settings.enable_tray);
         assert_eq!(settings.theme, "solarized");
@@ -234,6 +263,10 @@ mod tests {
 
         assert_eq!(settings.api_key, "partial-key");
         assert_eq!(settings.api_secret, ""); // default
+        assert_eq!(settings.translation_provider, "youdao");
+        assert_eq!(settings.microsoft_translator_key, "");
+        assert_eq!(settings.microsoft_translator_region, "");
+        assert_eq!(settings.ocr_endpoint, DEFAULT_OCR_ENDPOINT);
         assert_eq!(settings.global_shortcut, DEFAULT_GLOBAL_SHORTCUT);
         assert!(settings.enable_tray); // default true
         assert_eq!(settings.theme, DEFAULT_THEME);

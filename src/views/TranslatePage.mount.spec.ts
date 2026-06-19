@@ -8,6 +8,7 @@ import TranslatePage from './TranslatePage.vue'
 const translationStore = vi.hoisted(() => ({
   translateText: vi.fn().mockResolvedValue(undefined),
   translateFromClipboard: vi.fn().mockResolvedValue(undefined),
+  translateScreenshot: vi.fn().mockResolvedValue(undefined),
   loading: false,
   error: '',
   currentTranslation: null as ReturnType<typeof createTranslationRecord> | null,
@@ -106,6 +107,25 @@ describe('TranslatePage mounted interactions', () => {
     await wrapper.get('.clipboard-btn').trigger('click')
 
     expect(translationStore.translateFromClipboard).toHaveBeenCalledTimes(1)
+  })
+
+  it('triggers screenshot OCR translation button', async () => {
+    const wrapper = await mountPage()
+
+    await wrapper.get('.screenshot-btn').trigger('click')
+
+    expect(translationStore.translateScreenshot).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables all translate actions while the store is loading', async () => {
+    translationStore.loading = true
+    const wrapper = await mountPage()
+
+    expect((wrapper.get('.translate-btn').element as HTMLButtonElement).disabled).toBe(true)
+    expect((wrapper.get('.clipboard-btn').element as HTMLButtonElement).disabled).toBe(true)
+    expect((wrapper.get('.screenshot-btn').element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.text()).toContain('翻译中...')
+    expect(wrapper.text()).toContain('处理中...')
   })
 
   it('renders error and translation result when store state is populated', async () => {

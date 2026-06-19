@@ -25,6 +25,10 @@ describe('normalizeSettings', () => {
     const result = normalizeSettings({ theme: 'dark' })
     expect(result.theme).toBe('dark')
     expect(result.apiKey).toBe(defaultSettings.apiKey)
+    expect(result.translationProvider).toBe(defaultSettings.translationProvider)
+    expect(result.microsoftTranslatorKey).toBe(defaultSettings.microsoftTranslatorKey)
+    expect(result.microsoftTranslatorRegion).toBe(defaultSettings.microsoftTranslatorRegion)
+    expect(result.ocrEndpoint).toBe(defaultSettings.ocrEndpoint)
     expect(result.enableTray).toBe(defaultSettings.enableTray)
   })
 
@@ -32,6 +36,10 @@ describe('normalizeSettings', () => {
     const partial = {
       apiKey: 'test-key',
       apiSecret: 'test-secret',
+      translationProvider: 'microsoft',
+      microsoftTranslatorKey: 'ms-key',
+      microsoftTranslatorRegion: 'eastasia',
+      ocrEndpoint: 'http://127.0.0.1:8866/ocr',
       globalShortcut: 'Ctrl+Shift+Q',
       enableTray: false,
       theme: 'dark',
@@ -44,6 +52,10 @@ describe('normalizeSettings', () => {
     const result = normalizeSettings({ apiKey: '', apiSecret: '', theme: 'light' })
     expect(result.apiKey).toBe('')
     expect(result.apiSecret).toBe('')
+    expect(result.translationProvider).toBe(defaultSettings.translationProvider)
+    expect(result.microsoftTranslatorKey).toBe(defaultSettings.microsoftTranslatorKey)
+    expect(result.microsoftTranslatorRegion).toBe(defaultSettings.microsoftTranslatorRegion)
+    expect(result.ocrEndpoint).toBe(defaultSettings.ocrEndpoint)
     expect(result.theme).toBe('light')
     expect(result.globalShortcut).toBe(defaultSettings.globalShortcut)
     expect(result.enableTray).toBe(defaultSettings.enableTray)
@@ -58,6 +70,9 @@ describe('isDefaultSettings', () => {
   it('returns false when any field differs', () => {
     expect(isDefaultSettings({ ...defaultSettings, theme: 'dark' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, apiKey: 'x' })).toBe(false)
+    expect(isDefaultSettings({ ...defaultSettings, translationProvider: 'microsoft' })).toBe(false)
+    expect(isDefaultSettings({ ...defaultSettings, microsoftTranslatorKey: 'x' })).toBe(false)
+    expect(isDefaultSettings({ ...defaultSettings, ocrEndpoint: 'http://127.0.0.1:8867/ocr' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, enableTray: false })).toBe(false)
   })
 })

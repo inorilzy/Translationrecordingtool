@@ -11,6 +11,10 @@ import {
 export const useSettingsStore = defineStore('settings', () => {
   const apiKey = ref(defaultSettings.apiKey)
   const apiSecret = ref(defaultSettings.apiSecret)
+  const translationProvider = ref(defaultSettings.translationProvider)
+  const microsoftTranslatorKey = ref(defaultSettings.microsoftTranslatorKey)
+  const microsoftTranslatorRegion = ref(defaultSettings.microsoftTranslatorRegion)
+  const ocrEndpoint = ref(defaultSettings.ocrEndpoint)
   const globalShortcut = ref(defaultSettings.globalShortcut)
   const enableTray = ref(defaultSettings.enableTray)
   const theme = ref(defaultSettings.theme)
@@ -19,6 +23,10 @@ export const useSettingsStore = defineStore('settings', () => {
   function applySettings(settings: AppSettings) {
     apiKey.value = settings.apiKey
     apiSecret.value = settings.apiSecret
+    translationProvider.value = settings.translationProvider
+    microsoftTranslatorKey.value = settings.microsoftTranslatorKey
+    microsoftTranslatorRegion.value = settings.microsoftTranslatorRegion
+    ocrEndpoint.value = settings.ocrEndpoint
     globalShortcut.value = settings.globalShortcut
     enableTray.value = settings.enableTray
     theme.value = settings.theme
@@ -36,14 +44,29 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function updateApiConfig(key: string, secret: string) {
+  async function updateApiConfig(settings: Pick<AppSettings,
+    'apiKey'
+    | 'apiSecret'
+    | 'translationProvider'
+    | 'microsoftTranslatorKey'
+    | 'microsoftTranslatorRegion'
+    | 'ocrEndpoint'
+  >) {
     try {
       await invoke('update_api_config', {
-        apiKey: key,
-        apiSecret: secret,
+        apiKey: settings.apiKey,
+        apiSecret: settings.apiSecret,
+        translationProvider: settings.translationProvider,
+        microsoftTranslatorKey: settings.microsoftTranslatorKey,
+        microsoftTranslatorRegion: settings.microsoftTranslatorRegion,
+        ocrEndpoint: settings.ocrEndpoint,
       })
-      apiKey.value = key
-      apiSecret.value = secret
+      apiKey.value = settings.apiKey
+      apiSecret.value = settings.apiSecret
+      translationProvider.value = settings.translationProvider
+      microsoftTranslatorKey.value = settings.microsoftTranslatorKey
+      microsoftTranslatorRegion.value = settings.microsoftTranslatorRegion
+      ocrEndpoint.value = settings.ocrEndpoint
     } catch (e) {
       error.value = `更新配置失败: ${e}`
       throw e
@@ -88,9 +111,24 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  async function checkOcrService(endpoint = ocrEndpoint.value) {
+    try {
+      return await invoke<string>('check_ocr_service', {
+        ocrEndpoint: endpoint,
+      })
+    } catch (e) {
+      error.value = `OCR 服务检查失败: ${e}`
+      throw e
+    }
+  }
+
   return {
     apiKey,
     apiSecret,
+    translationProvider,
+    microsoftTranslatorKey,
+    microsoftTranslatorRegion,
+    ocrEndpoint,
     globalShortcut,
     enableTray,
     theme,
@@ -100,5 +138,6 @@ export const useSettingsStore = defineStore('settings', () => {
     updateGlobalShortcut,
     updateTrayBehavior,
     updateTheme,
+    checkOcrService,
   }
 })
