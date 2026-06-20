@@ -78,6 +78,16 @@ pub fn spawn_startup_check(app: AppHandle, config: OcrRuntimeConfig) {
 }
 
 pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
+    if crate::native_ocr::is_native_engine(&config.engine) {
+        let app = app.clone();
+        let config = config.clone();
+        return tauri::async_runtime::spawn_blocking(move || {
+            crate::native_ocr::ensure_initialized(&app, &config)
+        })
+        .await
+        .map_err(|error| format!("原生 OCR 初始化任务失败: {}", error))?;
+    }
+
     if let Ok(message) = crate::ocr::check_service_engine(&config.endpoint, &config.engine).await {
         clear_last_error(app);
         return Ok(message);
@@ -103,17 +113,56 @@ pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Resul
 }
 
 pub async fn warmup(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
+    if crate::native_ocr::is_native_engine(&config.engine) {
+        return ensure_running(app, config).await;
+    }
+
     ensure_running(app, config).await?;
     crate::ocr::warmup_service(&config.endpoint).await
 }
 
 pub async fn restart(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
     stop_process(app)?;
+    if crate::native_ocr::is_native_engine(&config.engine) {
+        return ensure_running(app, config).await;
+    }
     ensure_running(app, config).await?;
     warmup(app, config).await
 }
 
 pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus {
+    if crate::native_ocr::is_native_engine(&config.engine) {
+        let (model_profile, model_dir) =
+            crate::native_ocr::model_status(app, &config.model_profile);
+        let running = model_dir.is_some();
+        return OcrServiceStatus {
+            running,
+            endpoint: "in-process".to_string(),
+            message: if running {
+                "原生 ONNX OCR 可用，无需 Python sidecar".to_string()
+            } else {
+                "未找到 PP-OCRv6 ONNX 模型目录".to_string()
+            },
+            last_error: if running {
+                None
+            } else {
+                Some("请先下载 PP-OCRv6 ONNX 模型".to_string())
+            },
+            engine: crate::native_ocr::engine_name().to_string(),
+            model_profile,
+            model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
+            sidecar_path: None,
+            log_path: None,
+            preload_on_startup: config.preload_on_startup,
+            rapidocr_version: RAPID_OCR_VERSION,
+            paddleocr_version: "-",
+            ppocr_version: PPOCR_VERSION,
+            onnxruntime_version: crate::native_ocr::onnx_runtime_version(),
+            lang: OCR_LANG,
+            device: OCR_DEVICE,
+        };
+    }
+
     let (model_profile, model_dir) = packaged_model_config(app, &config.model_profile);
     let sidecar_path = packaged_sidecar_path(app);
     let log_path = log_path(app).ok();

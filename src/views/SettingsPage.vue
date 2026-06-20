@@ -75,6 +75,7 @@ const microsoftRegionOptions: SelectOption[] = [
 ]
 
 const ocrEngineOptions: SelectOption[] = [
+  { label: '原生 ONNX Runtime / 推荐实验', value: 'native_onnx' },
   { label: 'PaddleOCR PP-OCRv6', value: 'paddleocr' },
   { label: 'RapidOCR / 备用', value: 'rapidocr' },
   { label: 'Windows OCR / 预留', value: 'windows', disabled: true },
@@ -118,6 +119,11 @@ const ocrStatusText = computed(() => {
 
 const ocrVersionText = computed(() => {
   const engine = ocrStatus.value?.engine || config.value.ocrEngine
+  if (engine === 'native_onnx') {
+    const onnxVersion = ocrStatus.value?.onnxruntimeVersion || '1.20.1'
+    const profile = ocrStatus.value?.modelProfile || config.value.ocrModelProfile
+    return `原生 ONNX Runtime ${onnxVersion} / PP-OCRv6 / CPU / ${profile}`
+  }
   if (engine === 'rapidocr') {
     const version = ocrStatus.value?.rapidocrVersion || '1.4.4'
     return `RapidOCR ${version} / ONNX Runtime / CPU`
@@ -131,6 +137,7 @@ const ocrVersionText = computed(() => {
 
 const ocrModelText = computed(() => {
   const engine = ocrStatus.value?.engine || config.value.ocrEngine
+  if (engine === 'native_onnx') return ocrStatus.value?.modelDir ? '使用内置 PP-OCRv6 ONNX 模型，无需 Python OCR 服务' : '未检测到内置模型目录'
   if (engine === 'rapidocr') return 'RapidOCR 使用内置 ONNX 模型，模型档位仅对 PaddleOCR 生效'
   if (!ocrStatus.value) return '模型目录未检查'
   return ocrStatus.value.modelDir ? '已检测到 PP-OCRv6 ONNX 模型目录' : '未检测到内置模型目录，将使用 PaddleOCR 自动缓存'

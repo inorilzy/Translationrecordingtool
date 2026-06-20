@@ -281,14 +281,6 @@ pub fn handle_screenshot_shortcut(
             )
         };
 
-        if let Err(error) = crate::ocr_service::ensure_running(&app, &ocr_runtime_config).await {
-            error!("启动 OCR 服务失败: {}", error);
-            if is_active_popup_request(&popup_state, request_id) {
-                let _ = close_popup_window(&app);
-            }
-            return;
-        }
-
         let _ = show_loading_popup_with_message(
             &app,
             &popup_state,
@@ -297,19 +289,22 @@ pub fn handle_screenshot_shortcut(
             "OCR 识别中...",
         );
 
-        let text =
-            match crate::ocr::recognize_text(&ocr_runtime_config.endpoint, &capture.image_base64)
-                .await
-            {
-                Ok(text) => text.trim().to_string(),
-                Err(error) => {
-                    error!("OCR 识别失败: {}", error);
-                    if is_active_popup_request(&popup_state, request_id) {
-                        let _ = close_popup_window(&app);
-                    }
-                    return;
+        let text = match crate::ocr::recognize_text_with_config(
+            &app,
+            &ocr_runtime_config,
+            &capture.image_base64,
+        )
+        .await
+        {
+            Ok(text) => text.trim().to_string(),
+            Err(error) => {
+                error!("OCR 识别失败: {}", error);
+                if is_active_popup_request(&popup_state, request_id) {
+                    let _ = close_popup_window(&app);
                 }
-            };
+                return;
+            }
+        };
 
         if text.is_empty() {
             warn!("OCR 未识别到文本");

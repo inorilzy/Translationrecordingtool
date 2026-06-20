@@ -4,6 +4,7 @@ mod clipboard;
 mod database;
 pub mod local_dictionary;
 mod logger;
+mod native_ocr;
 mod ocr;
 mod ocr_service;
 pub mod popup_window;
@@ -360,8 +361,7 @@ async fn translate_image(
 ) -> Result<Translation, String> {
     let mut ocr_config = ocr_runtime_config_from_state(state.inner());
     ocr_config.endpoint = ocr_endpoint.clone();
-    ocr_service::ensure_running(&app, &ocr_config).await?;
-    let text = ocr::recognize_text(&ocr_endpoint, &image_base64).await?;
+    let text = ocr::recognize_text_with_config(&app, &ocr_config, &image_base64).await?;
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err("OCR 未识别到文本".to_string());

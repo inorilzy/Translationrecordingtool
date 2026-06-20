@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{error, info};
 
+use crate::ocr_service::OcrRuntimeConfig;
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct OcrHealthStatus {
@@ -60,6 +62,26 @@ pub async fn recognize_text(endpoint: &str, image_base64: &str) -> Result<String
     })?;
 
     extract_text(&value).ok_or_else(|| "OCR 未返回可识别文本".to_string())
+}
+
+pub async fn recognize_text_with_config(
+    app: &tauri::AppHandle,
+    config: &OcrRuntimeConfig,
+    image_base64: &str,
+) -> Result<String, String> {
+    if crate::native_ocr::is_native_engine(&config.engine) {
+        let app = app.clone();
+        let config = config.clone();
+        let image_base64 = image_base64.to_string();
+        return tauri::async_runtime::spawn_blocking(move || {
+            crate::native_ocr::recognize_text(&app, &config, &image_base64)
+        })
+        .await
+        .map_err(|error| format!("原生 OCR 任务失败: {}", error))?;
+    }
+
+    crate::ocr_service::ensure_running(app, config).await?;
+    recognize_text(&config.endpoint, image_base64).await
 }
 
 pub async fn check_service_engine(endpoint: &str, expected_engine: &str) -> Result<String, String> {
@@ -148,6 +170,7 @@ fn normalize_engine(engine: &str) -> &str {
     match engine.trim().to_ascii_lowercase().as_str() {
         "paddle" | "paddleocr" => "paddleocr",
         "rapid" | "rapidocr" | "rapidocr_onnxruntime" => "rapidocr",
+        "native" | "native_onnx" | "onnx" | "onnxruntime" | "ppocr-rs" => "native_onnx",
         _ => "unknown",
     }
 }
@@ -156,6 +179,7 @@ fn engine_label(engine: &str) -> &'static str {
     match normalize_engine(engine) {
         "paddleocr" => "PaddleOCR",
         "rapidocr" => "RapidOCR",
+        "native_onnx" => "原生 ONNX OCR",
         _ => "OCR",
     }
 }
@@ -262,7 +286,9 @@ mod tests {
     fn normalizes_engine_aliases() {
         assert!(same_engine("paddleocr", "paddle"));
         assert!(same_engine("rapidocr_onnxruntime", "rapidocr"));
+        assert!(same_engine("onnxruntime", "native_onnx"));
         assert!(!same_engine("paddleocr", "rapidocr"));
         assert_eq!(engine_label("rapidocr_onnxruntime"), "RapidOCR");
+        assert_eq!(engine_label("native_onnx"), "原生 ONNX OCR");
     }
 }
