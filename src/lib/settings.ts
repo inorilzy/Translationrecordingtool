@@ -7,6 +7,9 @@ export interface AppSettings {
   microsoftTranslatorKey: string
   microsoftTranslatorRegion: string
   ocrEndpoint: string
+  ocrEngine: string
+  ocrModelProfile: string
+  ocrPreloadOnStartup: boolean
   globalShortcut: string
   screenshotShortcut: string
   enableTray: boolean
@@ -20,6 +23,9 @@ export const defaultSettings: AppSettings = {
   microsoftTranslatorKey: '',
   microsoftTranslatorRegion: '',
   ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+  ocrEngine: 'paddleocr',
+  ocrModelProfile: 'standard',
+  ocrPreloadOnStartup: true,
   globalShortcut: 'Ctrl+Q',
   screenshotShortcut: 'Ctrl+Shift+Q',
   enableTray: true,
@@ -46,6 +52,9 @@ export function isDefaultSettings(settings: AppSettings) {
     && settings.microsoftTranslatorKey === defaultSettings.microsoftTranslatorKey
     && settings.microsoftTranslatorRegion === defaultSettings.microsoftTranslatorRegion
     && settings.ocrEndpoint === defaultSettings.ocrEndpoint
+    && settings.ocrEngine === defaultSettings.ocrEngine
+    && settings.ocrModelProfile === defaultSettings.ocrModelProfile
+    && settings.ocrPreloadOnStartup === defaultSettings.ocrPreloadOnStartup
     && settings.globalShortcut === defaultSettings.globalShortcut
     && settings.screenshotShortcut === defaultSettings.screenshotShortcut
     && settings.enableTray === defaultSettings.enableTray

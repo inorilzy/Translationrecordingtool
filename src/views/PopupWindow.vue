@@ -8,6 +8,7 @@ import { createPopupControls } from './popup-window-controls'
 
 const currentTranslation = ref<Translation | null>(null)
 const loading = ref(true)
+const loadingMessage = ref('翻译中...')
 const error = ref('')
 const contentRef = ref<HTMLElement | null>(null)
 
@@ -72,9 +73,10 @@ onMounted(async () => {
   })
 
   // 监听翻译结果
-  unlistenTranslationStarted = await listen('translation-started', () => {
+  unlistenTranslationStarted = await listen<{ message?: string }>('translation-started', (event) => {
     applyTheme()
     loading.value = true
+    loadingMessage.value = event.payload?.message || '翻译中...'
     error.value = ''
     currentTranslation.value = null
   })
@@ -119,6 +121,15 @@ async function toggleFavorite() {
   }
 }
 
+async function openMainWindow() {
+  try {
+    await invoke('open_main_translate_window')
+    controls.close()
+  } catch (e) {
+    console.error('打开主界面失败:', e)
+  }
+}
+
 function playAudio() {
   if (currentTranslation.value?.audio_url) {
     const audio = new Audio(currentTranslation.value.audio_url)
@@ -148,7 +159,7 @@ function playAudio() {
 
     <div v-if="loading" class="loading">
       <div class="spinner"></div>
-      <span>翻译中...</span>
+      <span>{{ loadingMessage }}</span>
     </div>
 
     <div v-else-if="currentTranslation" ref="contentRef" class="content">
@@ -175,10 +186,14 @@ function playAudio() {
         </div>
       </div>
 
-      <!-- 收藏按钮 -->
-      <button @click="toggleFavorite" class="favorite-btn">
-        {{ currentTranslation.is_favorite ? '★' : '☆' }} {{ currentTranslation.is_favorite ? '已收藏' : '收藏' }}
-      </button>
+      <div class="quick-actions">
+        <button @click="toggleFavorite" class="action-btn favorite-btn">
+          {{ currentTranslation.is_favorite ? '★' : '☆' }} {{ currentTranslation.is_favorite ? '已收藏' : '收藏' }}
+        </button>
+        <button @click="openMainWindow" class="action-btn main-entry-btn">
+          进入主界面
+        </button>
+      </div>
 
       <!-- 中文翻译 -->
       <div class="translation-section">
@@ -359,12 +374,15 @@ function playAudio() {
   transform: scale(0.95);
 }
 
-.favorite-btn {
-  width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
+.quick-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
   margin-bottom: var(--spacing-md);
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
+}
+
+.action-btn {
+  padding: var(--spacing-sm) var(--spacing-md);
   border: none;
   border-radius: var(--radius-md);
   font-size: var(--font-size-md);
@@ -373,13 +391,32 @@ function playAudio() {
   box-shadow: var(--shadow-sm);
 }
 
-.favorite-btn:hover {
+.favorite-btn {
+  background: var(--color-primary);
+  color: var(--color-text-on-primary);
+}
+
+.main-entry-btn {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  border: var(--border-width) solid var(--color-border);
+}
+
+.action-btn:hover {
   transform: translateY(-2px);
-  background: var(--color-primary-hover);
   box-shadow: var(--shadow-md);
 }
 
-.favorite-btn:active {
+.favorite-btn:hover {
+  background: var(--color-primary-hover);
+}
+
+.main-entry-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.action-btn:active {
   transform: translateY(0);
 }
 

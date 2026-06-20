@@ -1,4 +1,4 @@
-/// Translation resolution pipeline: local dictionary → Free Dictionary → Youdao API.
+/// Translation resolution pipeline: local dictionary → Free Dictionary → configured remote API.
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tracing::{error, info, warn};
@@ -164,7 +164,7 @@ pub fn read_current_clipboard_text(app: &tauri::AppHandle) -> Result<String, Str
 
 // ─── Translation Resolution ──────────────────────────────────────────────────
 
-/// Full resolution: word → local + Free Dict; sentence → Youdao.
+/// Full resolution: word → local + Free Dict; sentence → configured remote provider.
 pub async fn resolve_translation(
     app: &tauri::AppHandle,
     text: &str,
@@ -219,11 +219,17 @@ pub async fn resolve_translation(
             }
             Ok(None) => {
                 warn!("Free Dictionary 未找到单词: {}", text);
-                return Err(format!("未找到单词 \"{}\" 的释义", text));
+                return resolve_word_remote_fallback(
+                    text,
+                    config,
+                    format!("未找到单词 \"{}\" 的释义", text),
+                )
+                .await;
             }
             Err(e) => {
                 error!("Free Dictionary 查询失败: {}", e);
-                return Err(format!("查询单词失败: {}", e));
+                return resolve_word_remote_fallback(text, config, format!("查询单词失败: {}", e))
+                    .await;
             }
         }
     }
@@ -273,6 +279,42 @@ pub async fn resolve_remote_provider_translation(
     }
 }
 
+async fn resolve_word_remote_fallback(
+    text: &str,
+    config: &TranslationConfig,
+    dictionary_error: String,
+) -> Result<Translation, String> {
+    info!("单词查询失败，回退到当前配置的在线翻译服务");
+    match resolve_remote_provider_translation(text, config).await {
+        Ok(translation) => Ok(translation),
+        Err(remote_error) => Err(format!(
+            "{}；在线翻译回退失败: {}",
+            dictionary_error, remote_error
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn http_timeouts_are_short_enough_for_popup_flows() {
+        assert_eq!(translator::HTTP_CONNECT_TIMEOUT, Duration::from_secs(5));
+        assert_eq!(translator::HTTP_REQUEST_TIMEOUT, Duration::from_secs(15));
+    }
+
+    #[test]
+    fn single_word_detection_accepts_regular_words_only() {
+        assert!(is_single_word("hello"));
+        assert!(is_single_word("well-known"));
+        assert!(is_single_word("don't"));
+        assert!(!is_single_word("hello world"));
+        assert!(!is_single_word("camelCase"));
+    }
+}
+
 /// Remote-only resolution (used by shortcut handler when local dict misses).
 pub async fn resolve_remote_translation(
     text: &str,
@@ -310,11 +352,17 @@ pub async fn resolve_remote_translation(
             }
             Ok(None) => {
                 warn!("Free Dictionary 未找到单词: {}", text);
-                return Err(format!("未找到单词 \"{}\" 的释义", text));
+                return resolve_word_remote_fallback(
+                    text,
+                    config,
+                    format!("未找到单词 \"{}\" 的释义", text),
+                )
+                .await;
             }
             Err(e) => {
                 error!("Free Dictionary 查询失败: {}", e);
-                return Err(format!("查询单词失败: {}", e));
+                return resolve_word_remote_fallback(text, config, format!("查询单词失败: {}", e))
+                    .await;
             }
         }
     }

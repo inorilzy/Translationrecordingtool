@@ -40,6 +40,9 @@ describe('normalizeSettings', () => {
       microsoftTranslatorKey: 'ms-key',
       microsoftTranslatorRegion: 'eastasia',
       ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+      ocrEngine: 'paddleocr',
+      ocrModelProfile: 'accurate',
+      ocrPreloadOnStartup: false,
       globalShortcut: 'Ctrl+Shift+Q',
       screenshotShortcut: 'Ctrl+Shift+S',
       enableTray: false,
@@ -57,6 +60,9 @@ describe('normalizeSettings', () => {
     expect(result.microsoftTranslatorKey).toBe(defaultSettings.microsoftTranslatorKey)
     expect(result.microsoftTranslatorRegion).toBe(defaultSettings.microsoftTranslatorRegion)
     expect(result.ocrEndpoint).toBe(defaultSettings.ocrEndpoint)
+    expect(result.ocrEngine).toBe(defaultSettings.ocrEngine)
+    expect(result.ocrModelProfile).toBe(defaultSettings.ocrModelProfile)
+    expect(result.ocrPreloadOnStartup).toBe(defaultSettings.ocrPreloadOnStartup)
     expect(result.theme).toBe('light')
     expect(result.globalShortcut).toBe(defaultSettings.globalShortcut)
     expect(result.screenshotShortcut).toBe(defaultSettings.screenshotShortcut)
@@ -75,6 +81,8 @@ describe('isDefaultSettings', () => {
     expect(isDefaultSettings({ ...defaultSettings, translationProvider: 'microsoft' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, microsoftTranslatorKey: 'x' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, ocrEndpoint: 'http://127.0.0.1:8867/ocr' })).toBe(false)
+    expect(isDefaultSettings({ ...defaultSettings, ocrModelProfile: 'lite' })).toBe(false)
+    expect(isDefaultSettings({ ...defaultSettings, ocrPreloadOnStartup: false })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, screenshotShortcut: 'Ctrl+Shift+S' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, enableTray: false })).toBe(false)
   })

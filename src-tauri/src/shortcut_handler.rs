@@ -1,13 +1,15 @@
 /// Global shortcut registration and translation flow orchestration.
 use std::sync::{Arc, RwLock};
 
+use tauri::{Emitter, Manager};
 use tracing::{error, info, warn};
 
 use crate::app_state::{
     is_active_popup_request, next_popup_request_id, AppConfig, PopupRuntimeState,
 };
 use crate::popup_window::{
-    close_popup_window, get_cursor_position, show_loading_popup, show_popup_translation,
+    close_popup_window, get_cursor_position, point_anchor, rect_anchor, show_loading_popup,
+    show_loading_popup_with_message, show_popup_translation,
 };
 use crate::translation_flow;
 
@@ -132,7 +134,7 @@ pub fn handle_shortcut(
                 request_id,
                 "translation-result",
                 local_translation.clone(),
-                cursor_pos,
+                point_anchor(cursor_pos),
                 true,
             );
 
@@ -171,7 +173,7 @@ pub fn handle_shortcut(
                         request_id,
                         "translation-update",
                         enriched_translation,
-                        cursor_pos,
+                        point_anchor(cursor_pos),
                         false,
                     );
                 }
@@ -193,7 +195,7 @@ pub fn handle_shortcut(
         };
 
         info!("开始查询翻译");
-        let _ = show_loading_popup(&app, &popup_state, request_id, cursor_pos);
+        let _ = show_loading_popup(&app, &popup_state, request_id, point_anchor(cursor_pos));
 
         let result =
             match translation_flow::resolve_remote_translation(&text, &translation_config).await {
@@ -220,7 +222,7 @@ pub fn handle_shortcut(
             request_id,
             "translation-result",
             result,
-            cursor_pos,
+            point_anchor(cursor_pos),
             true,
         );
     });
@@ -234,10 +236,9 @@ pub fn handle_screenshot_shortcut(
     tauri::async_runtime::spawn(async move {
         info!("开始执行截图 OCR 翻译流程");
         let request_id = next_popup_request_id(&popup_state);
-        let cursor_pos = get_cursor_position();
 
-        let image_base64 = match crate::screenshot::select_and_capture(app.clone()).await {
-            Ok(image) => image,
+        let capture = match crate::screenshot::select_and_capture_with_area(app.clone()).await {
+            Ok(capture) => capture,
             Err(error) => {
                 warn!("截图选择取消或失败: {}", error);
                 if is_active_popup_request(&popup_state, request_id) {
@@ -251,12 +252,25 @@ pub fn handle_screenshot_shortcut(
             return;
         }
 
-        let _ = show_loading_popup(&app, &popup_state, request_id, cursor_pos);
+        let result_anchor = rect_anchor(capture.area);
 
-        let (ocr_endpoint, translation_config) = {
+        let _ = show_loading_popup_with_message(
+            &app,
+            &popup_state,
+            request_id,
+            result_anchor,
+            "正在准备 OCR...",
+        );
+
+        let (ocr_runtime_config, translation_config) = {
             let cfg = config.read().unwrap();
             (
-                cfg.ocr_endpoint.clone(),
+                crate::ocr_service::OcrRuntimeConfig {
+                    endpoint: cfg.ocr_endpoint.clone(),
+                    engine: cfg.ocr_engine.clone(),
+                    model_profile: cfg.ocr_model_profile.clone(),
+                    preload_on_startup: cfg.ocr_preload_on_startup,
+                },
                 translation_flow::TranslationConfig {
                     provider: cfg.translation_provider.clone(),
                     youdao_app_key: cfg.api_key.clone(),
@@ -267,7 +281,7 @@ pub fn handle_screenshot_shortcut(
             )
         };
 
-        if let Err(error) = crate::ocr_service::ensure_running(&app, &ocr_endpoint).await {
+        if let Err(error) = crate::ocr_service::ensure_running(&app, &ocr_runtime_config).await {
             error!("启动 OCR 服务失败: {}", error);
             if is_active_popup_request(&popup_state, request_id) {
                 let _ = close_popup_window(&app);
@@ -275,16 +289,27 @@ pub fn handle_screenshot_shortcut(
             return;
         }
 
-        let text = match crate::ocr::recognize_text(&ocr_endpoint, &image_base64).await {
-            Ok(text) => text.trim().to_string(),
-            Err(error) => {
-                error!("OCR 识别失败: {}", error);
-                if is_active_popup_request(&popup_state, request_id) {
-                    let _ = close_popup_window(&app);
+        let _ = show_loading_popup_with_message(
+            &app,
+            &popup_state,
+            request_id,
+            result_anchor,
+            "OCR 识别中...",
+        );
+
+        let text =
+            match crate::ocr::recognize_text(&ocr_runtime_config.endpoint, &capture.image_base64)
+                .await
+            {
+                Ok(text) => text.trim().to_string(),
+                Err(error) => {
+                    error!("OCR 识别失败: {}", error);
+                    if is_active_popup_request(&popup_state, request_id) {
+                        let _ = close_popup_window(&app);
+                    }
+                    return;
                 }
-                return;
-            }
-        };
+            };
 
         if text.is_empty() {
             warn!("OCR 未识别到文本");
@@ -294,16 +319,29 @@ pub fn handle_screenshot_shortcut(
             return;
         }
 
-        let result = match translation_flow::resolve_translation(&app, &text, &translation_config).await {
-            Ok(translation) => translation,
-            Err(error) => {
-                error!("截图 OCR 翻译失败: {}", error);
-                if is_active_popup_request(&popup_state, request_id) {
-                    let _ = close_popup_window(&app);
+        if let Some(main_window) = app.get_webview_window("main") {
+            let _ = main_window.emit("ocr-source-text", &text);
+        }
+
+        let _ = show_loading_popup_with_message(
+            &app,
+            &popup_state,
+            request_id,
+            result_anchor,
+            "翻译中...",
+        );
+
+        let result =
+            match translation_flow::resolve_translation(&app, &text, &translation_config).await {
+                Ok(translation) => translation,
+                Err(error) => {
+                    error!("截图 OCR 翻译失败: {}", error);
+                    if is_active_popup_request(&popup_state, request_id) {
+                        let _ = close_popup_window(&app);
+                    }
+                    return;
                 }
-                return;
-            }
-        };
+            };
 
         if !is_active_popup_request(&popup_state, request_id) {
             return;
@@ -315,7 +353,7 @@ pub fn handle_screenshot_shortcut(
             request_id,
             "translation-result",
             result,
-            cursor_pos,
+            result_anchor,
             true,
         );
     });

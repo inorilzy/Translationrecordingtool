@@ -10,14 +10,17 @@ export async function submitTranslation(
 </script>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
 import { useTranslationStore } from '../stores/translation'
 import { useSettingsStore } from '../stores/settings'
 import TranslationCard from '../components/TranslationCard.vue'
 
 const store = useTranslationStore()
 const settings = useSettingsStore()
-const inputText = ref('')
+const inputText = computed({
+  get: () => store.manualInputText,
+  set: (value: string) => store.setManualInputText(value),
+})
 
 async function handleTranslate() {
   await submitTranslation(inputText.value, store.translateText)

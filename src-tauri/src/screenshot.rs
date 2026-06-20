@@ -41,6 +41,12 @@ pub struct CaptureArea {
     pub height: f64,
 }
 
+#[derive(Debug, Clone)]
+pub struct CaptureResult {
+    pub image_base64: String,
+    pub area: CaptureArea,
+}
+
 #[cfg(not(windows))]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", content = "area", rename_all = "camelCase")]
@@ -93,38 +99,48 @@ pub fn get_screenshot_selection_payload() -> Result<SelectionStartPayload, Strin
 }
 
 pub async fn select_and_capture(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(select_and_capture_with_area(app).await?.image_base64)
+}
+
+pub async fn select_and_capture_with_area(app: tauri::AppHandle) -> Result<CaptureResult, String> {
     tauri::async_runtime::spawn_blocking(move || select_and_capture_blocking(app))
         .await
         .map_err(|e| format!("截图任务执行失败: {}", e))?
 }
 
-fn select_and_capture_blocking(app: tauri::AppHandle) -> Result<String, String> {
+fn select_and_capture_blocking(app: tauri::AppHandle) -> Result<CaptureResult, String> {
+    let should_restore_main_window = should_restore_main_window_after_capture(&app);
+
     #[cfg(windows)]
     let result = select_and_capture_native_blocking();
 
     #[cfg(not(windows))]
     let result = select_and_capture_webview_blocking(&app);
 
-    restore_main_window(&app);
+    if should_restore_main_window {
+        restore_main_window(&app);
+    }
     result
 }
 
 #[cfg(windows)]
-fn select_and_capture_native_blocking() -> Result<String, String> {
+fn select_and_capture_native_blocking() -> Result<CaptureResult, String> {
     let area =
         windows_native_selection::select_area()?.ok_or_else(|| "已取消截图选择".to_string())?;
-    capture_area_as_png_data_url(area)
+    let image_base64 = capture_area_as_png_data_url(area)?;
+    Ok(CaptureResult { image_base64, area })
 }
 
 #[cfg(not(windows))]
-fn select_and_capture_webview_blocking(app: &tauri::AppHandle) -> Result<String, String> {
+fn select_and_capture_webview_blocking(app: &tauri::AppHandle) -> Result<CaptureResult, String> {
     let area = match wait_for_selection(&app) {
         Ok(area) => area,
         Err(error) => return Err(error),
     };
 
     thread::sleep(OVERLAY_HIDE_DELAY);
-    capture_area_as_png_data_url(area)
+    let image_base64 = capture_area_as_png_data_url(area)?;
+    Ok(CaptureResult { image_base64, area })
 }
 
 fn restore_main_window(app: &tauri::AppHandle) {
@@ -132,6 +148,16 @@ fn restore_main_window(app: &tauri::AppHandle) {
         let _ = main.show();
         let _ = main.set_focus();
     }
+}
+
+fn should_restore_main_window_after_capture(app: &tauri::AppHandle) -> bool {
+    app.get_webview_window("main")
+        .map(|main| {
+            main.is_visible().unwrap_or(false)
+                && !main.is_minimized().unwrap_or(false)
+                && main.is_focused().unwrap_or(false)
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(not(windows))]

@@ -12,7 +12,7 @@
 ## 功能
 
 - 剪贴板翻译和全局快捷键触发
-- 截图 OCR 翻译：选择屏幕/窗口截图后，发送到 Paddle OCR HTTP 服务识别文本并翻译
+- 截图 OCR 翻译：选择屏幕/窗口截图后，发送到本机 OCR HTTP 服务识别文本并翻译
 - 弹窗展示单词、音标、中文释义、英文释义
 - 收藏、历史记录、详情页
 - 关闭主窗口时可选择最小化到托盘
@@ -29,7 +29,7 @@
   - 有道翻译 API
   - Microsoft Translator Text API
   - Free Dictionary API
-  - Paddle OCR HTTP 服务
+  - PaddleOCR / RapidOCR 本机 OCR HTTP 服务
 - 离线词典：
   - `ECDICT`
   - `WordNet`
@@ -95,15 +95,9 @@ npm run build:dictionary
 npm run tauri dev
 ```
 
-### 4. 启动本机 PaddleOCR 服务
+### 4. 启动本机 OCR 服务
 
-截图 OCR 翻译需要先启动一个 PaddleOCR HTTP 服务。首次使用先安装 Python 依赖：
-
-```bash
-pip install paddleocr paddlepaddle
-```
-
-然后启动服务：
+开发模式下，截图 OCR 翻译会自动按设置页选择的引擎启动本机 OCR HTTP 服务，也可以手动启动用于排查问题：
 
 ```bash
 npm run ocr:server
@@ -111,12 +105,64 @@ npm run ocr:server
 
 默认地址是 `http://127.0.0.1:8866/ocr`，在设置页填入同一个地址即可。服务健康检查地址是 `http://127.0.0.1:8866/health`。
 
-### 5. 生产构建
+### 5. 构建 OCR sidecar
+
+生产打包前需要先生成 OCR sidecar。Windows x64 环境运行：
+
+```bash
+npm run ocr:sidecar:win
+```
+
+该命令会使用 `uv` 创建隔离 Python 环境，安装固定版本的 PaddleOCR / PaddlePaddle / RapidOCR / ONNX Runtime / PyInstaller，并生成：
+
+```text
+src-tauri/binaries/paddle-ocr-server-x86_64-pc-windows-msvc.exe
+```
+
+Tauri 打包时会把这个 exe 作为 sidecar 一起带上。生成文件体积较大，不纳入 Git。
+
+当前 sidecar 包含 Python 运行时和固定版本的 PaddleOCR / PaddlePaddle / RapidOCR / ONNX Runtime 依赖，可以在打包后的桌面端自动启动 OCR HTTP 服务。应用启动时可按设置后台预热 OCR 服务，也可以在设置页手动预热、重启 OCR 或打开 OCR 日志。
+
+如果要做完全离线和更快首次启动，把 PaddleOCR 模型文件放到下面的 profile 目录中：
+
+```text
+src-tauri/resources/ocr-models/lite/det
+src-tauri/resources/ocr-models/lite/rec
+src-tauri/resources/ocr-models/lite/cls
+src-tauri/resources/ocr-models/standard/det
+src-tauri/resources/ocr-models/standard/rec
+src-tauri/resources/ocr-models/standard/cls
+src-tauri/resources/ocr-models/accurate/det
+src-tauri/resources/ocr-models/accurate/rec
+src-tauri/resources/ocr-models/accurate/cls
+```
+
+设置页可选择 `lite` / `standard` / `accurate`。当所选 profile 的 `det` 和 `rec` 目录里有模型文件时，打包版会优先使用内置模型；否则继续沿用 PaddleOCR 默认缓存机制，首次识别时如果本机没有模型缓存，可能需要下载模型并导致第一次启动较慢。
+
+Windows 下也可以用脚本准备模型目录：
+
+```bash
+npm run ocr:models:win -- -Profile standard
+```
+
+可选 profile 为 `lite`、`standard`、`accurate`。模型文件体积较大，不纳入 Git。
+
+### 6. 生产构建
+
+普通构建：
 
 ```bash
 npm run build
 npm run tauri build
 ```
+
+带 OCR sidecar 的 Windows 构建：
+
+```bash
+npm run tauri:build:ocr
+```
+
+`tauri:build:ocr` 会先生成 `src-tauri/binaries/paddle-ocr-server-x86_64-pc-windows-msvc.exe`，再使用 `src-tauri/tauri.ocr-sidecar.conf.json` 把它作为 Tauri sidecar 打进安装包。这个 sidecar 是统一 OCR HTTP 服务，支持 PaddleOCR 和 RapidOCR 两种引擎。
 
 ## 使用说明
 
@@ -135,10 +181,20 @@ npm run tauri build
 
 ### 截图 OCR 翻译
 
-1. 在设置页填写 `Paddle OCR HTTP 地址`，例如 `http://127.0.0.1:8866/ocr`
-2. 点击“截图 OCR 翻译”，在系统选择器中选择要截图的屏幕或窗口
-3. 应用会把 PNG base64 以 JSON `{ "image": "..." }` 发送到 OCR 地址
-4. OCR 返回文本后，会使用当前选择的在线翻译服务翻译并保存到历史记录
+1. 在设置页选择 OCR 引擎：`PaddleOCR` 或 `RapidOCR`
+2. 填写 `OCR HTTP 地址`，例如 `http://127.0.0.1:8866/ocr`
+3. 可开启“启动时预热 OCR”，应用启动后会后台拉起 OCR 服务，首次截图等待更短
+4. 点击“截图 OCR 翻译”，在系统选择器中选择要截图的屏幕或窗口
+5. 应用会把 PNG base64 以 JSON `{ "image": "..." }` 发送到 OCR 地址
+6. OCR 返回文本后，会使用当前选择的在线翻译服务翻译并保存到历史记录
+
+PaddleOCR 支持 `lite / standard / accurate` 三档模型目录。模型文件默认不提交到 Git，可按需下载：
+
+```powershell
+npm run ocr:models:win
+```
+
+RapidOCR 使用自身 ONNX 模型，模型档位设置仅对 PaddleOCR 生效。
 
 OCR 服务返回建议使用以下任一格式：
 
@@ -154,7 +210,7 @@ OCR 服务返回建议使用以下任一格式：
 
 ### 设置页
 
-- 翻译与 OCR 服务：有道、微软翻译、Paddle OCR HTTP 地址
+- 翻译与 OCR 服务：有道、微软翻译、OCR 引擎、OCR HTTP 地址、预热、重启和日志入口
 - 全局快捷键：支持修改
 - 托盘行为：支持关闭时退出或最小化到托盘
 
@@ -181,7 +237,11 @@ OCR 服务返回建议使用以下任一格式：
 
 ```bash
 npm run build:dictionary   # 生成离线词典库
-npm run ocr:server         # 启动本机 PaddleOCR HTTP 服务
+npm run ocr:server         # 启动本机 PaddleOCR HTTP 服务（默认兼容命令）
+npm run ocr:server:paddle  # 启动 PaddleOCR HTTP 服务
+npm run ocr:server:rapid   # 启动 RapidOCR HTTP 服务
+npm run ocr:models:win     # 下载 PaddleOCR 模型到 src-tauri/resources/ocr-models
+npm run ocr:sidecar:win    # 生成带 PaddleOCR/RapidOCR 依赖的 OCR sidecar
 npm run build              # 前端构建
 npm run tauri dev          # 开发模式
 npm run verify:final       # 最终验证门禁（前端测试 + Rust 测试 + 编译检查 + 构建）

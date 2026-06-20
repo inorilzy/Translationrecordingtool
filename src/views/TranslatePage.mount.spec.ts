@@ -2,30 +2,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { createTestRouter, createTranslationRecord } from '../test-utils'
+import { useTranslationStore } from '../stores/translation'
+import { useSettingsStore } from '../stores/settings'
 import TranslatePage from './TranslatePage.vue'
-
-const translationStore = vi.hoisted(() => ({
-  translateText: vi.fn().mockResolvedValue(undefined),
-  translateFromClipboard: vi.fn().mockResolvedValue(undefined),
-  translateScreenshot: vi.fn().mockResolvedValue(undefined),
-  loading: false,
-  error: '',
-  currentTranslation: null as ReturnType<typeof createTranslationRecord> | null,
-}))
-
-const settingsStore = vi.hoisted(() => ({
-  globalShortcut: 'Ctrl+Q',
-  screenshotShortcut: 'Ctrl+Shift+Q',
-}))
-
-vi.mock('../stores/translation', () => ({
-  useTranslationStore: () => translationStore,
-}))
-
-vi.mock('../stores/settings', () => ({
-  useSettingsStore: () => settingsStore,
-}))
 
 const TranslationCardStub = defineComponent({
   props: {
@@ -65,11 +46,17 @@ async function mountPage() {
 }
 
 describe('TranslatePage mounted interactions', () => {
+  let translationStore: ReturnType<typeof useTranslationStore>
+  let settingsStore: ReturnType<typeof useSettingsStore>
+
   beforeEach(() => {
+    setActivePinia(createPinia())
+    translationStore = useTranslationStore()
+    settingsStore = useSettingsStore()
     vi.clearAllMocks()
-    translationStore.loading = false
-    translationStore.error = ''
-    translationStore.currentTranslation = null
+    vi.spyOn(translationStore, 'translateText').mockResolvedValue(null)
+    vi.spyOn(translationStore, 'translateFromClipboard').mockResolvedValue(null)
+    vi.spyOn(translationStore, 'translateScreenshot').mockResolvedValue(null)
     settingsStore.globalShortcut = 'Ctrl+Q'
     settingsStore.screenshotShortcut = 'Ctrl+Shift+Q'
   })
@@ -88,12 +75,13 @@ describe('TranslatePage mounted interactions', () => {
     expect(wrapper.text()).toContain('截图 OCR 翻译 (Ctrl+Alt+S)')
   })
 
-  it('submits trimmed text when clicking translate', async () => {
+  it('submits trimmed text from the manual input', async () => {
     const wrapper = await mountPage()
 
     await wrapper.get('textarea').setValue('  hello world  ')
-    await wrapper.get('.translate-btn').trigger('click')
+    await wrapper.get('textarea').trigger('keydown', { key: 'Enter', ctrlKey: true })
 
+    expect(translationStore.manualInputText).toBe('  hello world  ')
     expect(translationStore.translateText).toHaveBeenCalledWith('hello world')
   })
 
@@ -120,13 +108,13 @@ describe('TranslatePage mounted interactions', () => {
 
   it('triggers screenshot OCR translation button', async () => {
     const translated = createTranslationRecord({ source_text: 'ocr text' })
-    translationStore.translateScreenshot.mockResolvedValueOnce(translated)
+    vi.mocked(translationStore.translateScreenshot).mockResolvedValueOnce(translated)
     const wrapper = await mountPage()
 
     await wrapper.get('.screenshot-btn').trigger('click')
 
     expect(translationStore.translateScreenshot).toHaveBeenCalledTimes(1)
-    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('ocr text')
+    expect(translationStore.manualInputText).toBe('ocr text')
   })
 
   it('disables all translate actions while the store is loading', async () => {

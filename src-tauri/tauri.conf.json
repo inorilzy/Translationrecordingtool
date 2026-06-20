@@ -63,6 +63,7 @@
     "active": true,
     "resources": [
       "resources/dictionary.db",
+      "resources/ocr-models/**/*",
       "../scripts/paddle_ocr_server.py"
     ],
     "targets": "all",

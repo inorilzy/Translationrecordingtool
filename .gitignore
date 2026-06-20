@@ -13,6 +13,14 @@ dist-ssr
 *.local
 .cache/
 src-tauri/resources/dictionary.db
+src-tauri/binaries/*.exe
+!src-tauri/binaries/.gitkeep
+.ocr-sidecar-build/
+.ocr-model-cache/
+src-tauri/resources/ocr-models/**/*
+!src-tauri/resources/ocr-models/**/
+!src-tauri/resources/ocr-models/README.md
+!src-tauri/resources/ocr-models/**/.gitkeep
 src-tauri/target/
 src-tauri/target-*/
 

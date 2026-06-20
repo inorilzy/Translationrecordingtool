@@ -104,6 +104,14 @@ describe('useTranslationStore', () => {
       expect(store.error).toBe('')
     })
 
+    it('updates manual input text explicitly', () => {
+      const store = useTranslationStore()
+
+      store.setManualInputText('corrected OCR text')
+
+      expect(store.manualInputText).toBe('corrected OCR text')
+    })
+
     it('sets error state when translate_text rejects', async () => {
       invokeMock.mockRejectedValueOnce(new Error('network error'))
 
@@ -256,6 +264,7 @@ describe('useTranslationStore', () => {
       })
       expect(store.currentTranslation).toEqual(persisted)
       expect(store.history).toEqual([persisted])
+      expect(store.manualInputText).toBe('screen text')
       expect(store.loading).toBe(false)
       expect(store.error).toBe('')
     })

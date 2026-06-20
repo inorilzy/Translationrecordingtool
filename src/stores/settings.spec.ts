@@ -3,9 +3,14 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useSettingsStore } from './settings'
 import * as settingsLib from '../lib/settings'
 import { invoke } from '@tauri-apps/api/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+}))
+
+vi.mock('@tauri-apps/plugin-opener', () => ({
+  revealItemInDir: vi.fn(),
 }))
 
 vi.mock('../lib/settings', async () => {
@@ -17,6 +22,7 @@ vi.mock('../lib/settings', async () => {
 })
 
 const invokeMock = vi.mocked(invoke)
+const revealItemInDirMock = vi.mocked(revealItemInDir)
 
 describe('useSettingsStore', () => {
   beforeEach(() => {
@@ -33,6 +39,9 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorKey).toBe('')
       expect(store.microsoftTranslatorRegion).toBe('')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
+      expect(store.ocrEngine).toBe('paddleocr')
+      expect(store.ocrModelProfile).toBe('standard')
+      expect(store.ocrPreloadOnStartup).toBe(true)
       expect(store.globalShortcut).toBe('Ctrl+Q')
       expect(store.screenshotShortcut).toBe('Ctrl+Shift+Q')
       expect(store.enableTray).toBe(true)
@@ -50,6 +59,9 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'ms-key',
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+        ocrEngine: 'paddleocr',
+        ocrModelProfile: 'lite',
+        ocrPreloadOnStartup: false,
         screenshotShortcut: 'Ctrl+Shift+S',
         theme: 'dark',
       })
@@ -63,6 +75,9 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorKey).toBe('ms-key')
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
+      expect(store.ocrEngine).toBe('paddleocr')
+      expect(store.ocrModelProfile).toBe('lite')
+      expect(store.ocrPreloadOnStartup).toBe(false)
       expect(store.screenshotShortcut).toBe('Ctrl+Shift+S')
       expect(store.theme).toBe('dark')
       expect(store.globalShortcut).toBe('Ctrl+Q') // default for missing fields
@@ -81,6 +96,9 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorKey).toBe('')
       expect(store.microsoftTranslatorRegion).toBe('')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
+      expect(store.ocrEngine).toBe('paddleocr')
+      expect(store.ocrModelProfile).toBe('standard')
+      expect(store.ocrPreloadOnStartup).toBe(true)
       expect(store.theme).toBe('light')
       expect(store.globalShortcut).toBe('Ctrl+Q')
       expect(store.screenshotShortcut).toBe('Ctrl+Shift+Q')
@@ -110,6 +128,9 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'new-ms-key',
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+        ocrEngine: 'paddleocr',
+        ocrModelProfile: 'accurate',
+        ocrPreloadOnStartup: false,
       })
 
       expect(invokeMock).toHaveBeenCalledWith('update_api_config', {
@@ -119,6 +140,9 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'new-ms-key',
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+        ocrEngine: 'paddleocr',
+        ocrModelProfile: 'accurate',
+        ocrPreloadOnStartup: false,
       })
       expect(store.apiKey).toBe('new-key')
       expect(store.apiSecret).toBe('new-secret')
@@ -126,6 +150,9 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorKey).toBe('new-ms-key')
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
+      expect(store.ocrEngine).toBe('paddleocr')
+      expect(store.ocrModelProfile).toBe('accurate')
+      expect(store.ocrPreloadOnStartup).toBe(false)
     })
 
     it('rethrows error and preserves local state on failure', async () => {
@@ -139,6 +166,9 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'bad-ms-key',
         microsoftTranslatorRegion: 'westus',
         ocrEndpoint: 'http://bad.local/ocr',
+        ocrEngine: 'paddleocr',
+        ocrModelProfile: 'lite',
+        ocrPreloadOnStartup: false,
       })).rejects.toThrow('backend error')
 
       expect(store.apiKey).toBe('') // unchanged
@@ -146,6 +176,7 @@ describe('useSettingsStore', () => {
       expect(store.translationProvider).toBe('youdao') // unchanged
       expect(store.microsoftTranslatorKey).toBe('') // unchanged
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr') // unchanged
+      expect(store.ocrModelProfile).toBe('standard') // unchanged
       expect(store.error).toContain('更新配置失败')
     })
   })
@@ -226,7 +257,7 @@ describe('useSettingsStore', () => {
 
   describe('checkOcrService', () => {
     it('checks OCR service with the configured endpoint', async () => {
-      invokeMock.mockResolvedValue('Paddle OCR 服务正常')
+      invokeMock.mockResolvedValue('PaddleOCR 服务正常')
 
       const store = useSettingsStore()
       store.ocrEndpoint = 'http://127.0.0.1:8866/ocr'
@@ -236,7 +267,7 @@ describe('useSettingsStore', () => {
       expect(invokeMock).toHaveBeenCalledWith('check_ocr_service', {
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
       })
-      expect(result).toBe('Paddle OCR 服务正常')
+      expect(result).toBe('PaddleOCR 服务正常')
     })
 
     it('sets error state when OCR service check fails', async () => {
@@ -281,8 +312,15 @@ describe('useSettingsStore', () => {
       const status = {
         running: true,
         endpoint: 'http://127.0.0.1:8866/ocr',
-        message: 'Paddle OCR 服务正常',
+        message: 'PaddleOCR 服务正常',
         lastError: null,
+        engine: 'paddleocr',
+        modelProfile: 'standard',
+        modelDir: null,
+        sidecarPath: null,
+        logPath: 'C:/logs/paddle-ocr-service.log',
+        preloadOnStartup: true,
+        rapidocrVersion: '1.4.4',
         paddleocrVersion: '2.7.3',
         paddlepaddleVersion: '2.6.2',
         lang: 'ch',
@@ -306,6 +344,44 @@ describe('useSettingsStore', () => {
 
       await expect(store.getOcrServiceStatus()).rejects.toThrow('backend unavailable')
       expect(store.error).toContain('读取 OCR 服务状态失败')
+    })
+  })
+
+  describe('OCR service controls', () => {
+    it('warms up OCR service with configured endpoint', async () => {
+      invokeMock.mockResolvedValue('OCR 预热完成')
+
+      const store = useSettingsStore()
+      const result = await store.warmupOcrService()
+
+      expect(invokeMock).toHaveBeenCalledWith('warmup_ocr_service', {
+        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+      })
+      expect(result).toBe('OCR 预热完成')
+    })
+
+    it('restarts OCR service with configured endpoint', async () => {
+      invokeMock.mockResolvedValue('OCR 预热完成')
+
+      const store = useSettingsStore()
+      const result = await store.restartOcrService()
+
+      expect(invokeMock).toHaveBeenCalledWith('restart_ocr_service', {
+        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+      })
+      expect(result).toBe('OCR 预热完成')
+    })
+
+    it('reveals OCR log path from backend', async () => {
+      invokeMock.mockResolvedValue('C:/logs/paddle-ocr-service.log')
+      revealItemInDirMock.mockResolvedValue(undefined)
+
+      const store = useSettingsStore()
+      const path = await store.revealOcrLog()
+
+      expect(invokeMock).toHaveBeenCalledWith('get_ocr_log_path')
+      expect(revealItemInDirMock).toHaveBeenCalledWith('C:/logs/paddle-ocr-service.log')
+      expect(path).toBe('C:/logs/paddle-ocr-service.log')
     })
   })
 })

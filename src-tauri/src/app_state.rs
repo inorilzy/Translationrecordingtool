@@ -11,7 +11,7 @@ use tauri::Manager;
 
 use crate::settings::{
     load_settings, save_settings, PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_ENDPOINT,
-    DEFAULT_SCREENSHOT_SHORTCUT, DEFAULT_THEME,
+    DEFAULT_OCR_ENGINE, DEFAULT_OCR_MODEL_PROFILE, DEFAULT_SCREENSHOT_SHORTCUT, DEFAULT_THEME,
 };
 
 // ─── Runtime State ───────────────────────────────────────────────────────────
@@ -25,6 +25,9 @@ pub struct AppConfig {
     pub microsoft_translator_key: String,
     pub microsoft_translator_region: String,
     pub ocr_endpoint: String,
+    pub ocr_engine: String,
+    pub ocr_model_profile: String,
+    pub ocr_preload_on_startup: bool,
     pub global_shortcut: String,
     pub screenshot_shortcut: String,
     pub theme: String,
@@ -39,6 +42,9 @@ impl Default for AppConfig {
             microsoft_translator_key: String::new(),
             microsoft_translator_region: String::new(),
             ocr_endpoint: DEFAULT_OCR_ENDPOINT.to_string(),
+            ocr_engine: DEFAULT_OCR_ENGINE.to_string(),
+            ocr_model_profile: DEFAULT_OCR_MODEL_PROFILE.to_string(),
+            ocr_preload_on_startup: true,
             global_shortcut: DEFAULT_GLOBAL_SHORTCUT.to_string(),
             screenshot_shortcut: DEFAULT_SCREENSHOT_SHORTCUT.to_string(),
             theme: DEFAULT_THEME.to_string(),
@@ -98,6 +104,9 @@ pub fn to_persisted_settings(
         microsoft_translator_key: config.microsoft_translator_key.clone(),
         microsoft_translator_region: config.microsoft_translator_region.clone(),
         ocr_endpoint: config.ocr_endpoint.clone(),
+        ocr_engine: config.ocr_engine.clone(),
+        ocr_model_profile: config.ocr_model_profile.clone(),
+        ocr_preload_on_startup: config.ocr_preload_on_startup,
         global_shortcut: config.global_shortcut.clone(),
         screenshot_shortcut: config.screenshot_shortcut.clone(),
         enable_tray: tray_behavior.enabled,
@@ -145,6 +154,9 @@ pub fn update_and_persist_api_config(
     microsoft_translator_key: String,
     microsoft_translator_region: String,
     ocr_endpoint: String,
+    ocr_engine: String,
+    ocr_model_profile: String,
+    ocr_preload_on_startup: bool,
 ) -> Result<(), String> {
     {
         let mut cfg = config.write().unwrap();
@@ -154,6 +166,9 @@ pub fn update_and_persist_api_config(
         cfg.microsoft_translator_key = microsoft_translator_key;
         cfg.microsoft_translator_region = microsoft_translator_region;
         cfg.ocr_endpoint = ocr_endpoint;
+        cfg.ocr_engine = ocr_engine;
+        cfg.ocr_model_profile = ocr_model_profile;
+        cfg.ocr_preload_on_startup = ocr_preload_on_startup;
     }
     persist_managed_settings(app, config, tray_behavior)
 }

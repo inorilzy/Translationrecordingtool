@@ -3,9 +3,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     sync::OnceLock,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tracing::{debug, error, info};
+
+pub(crate) const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Default)]
 pub struct TranslationContent {
@@ -93,7 +96,13 @@ pub struct Definition {
 
 pub(crate) fn http_client() -> &'static reqwest::Client {
     static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    HTTP_CLIENT.get_or_init(reqwest::Client::new)
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(HTTP_CONNECT_TIMEOUT)
+            .timeout(HTTP_REQUEST_TIMEOUT)
+            .build()
+            .expect("failed to build HTTP client")
+    })
 }
 
 pub async fn translate_text(

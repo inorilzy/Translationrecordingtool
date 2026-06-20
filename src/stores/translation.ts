@@ -27,6 +27,11 @@ export const useTranslationStore = defineStore('translation', () => {
   const history = ref<Translation[]>([])
   const loading = ref(false)
   const error = ref('')
+  const manualInputText = ref('')
+
+  function setManualInputText(text: string) {
+    manualInputText.value = text
+  }
 
   async function loadHistory() {
     try {
@@ -157,6 +162,7 @@ export const useTranslationStore = defineStore('translation', () => {
       })
 
       currentTranslation.value = persisted
+      manualInputText.value = persisted.source_text
       history.value = mergeTranslationIntoHistory(history.value, persisted)
       return persisted
     } catch (e) {
@@ -172,6 +178,8 @@ export const useTranslationStore = defineStore('translation', () => {
     history,
     loading,
     error,
+    manualInputText,
+    setManualInputText,
     translateFromClipboard,
     translateText,
     translateScreenshot,

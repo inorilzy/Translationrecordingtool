@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import {
   applyTheme,
   defaultSettings,
@@ -13,6 +14,13 @@ export interface OcrServiceStatus {
   endpoint: string
   message: string
   lastError?: string | null
+  engine: string
+  modelProfile: string
+  modelDir?: string | null
+  sidecarPath?: string | null
+  logPath?: string | null
+  preloadOnStartup: boolean
+  rapidocrVersion: string
   paddleocrVersion: string
   paddlepaddleVersion: string
   lang: string
@@ -26,6 +34,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const microsoftTranslatorKey = ref(defaultSettings.microsoftTranslatorKey)
   const microsoftTranslatorRegion = ref(defaultSettings.microsoftTranslatorRegion)
   const ocrEndpoint = ref(defaultSettings.ocrEndpoint)
+  const ocrEngine = ref(defaultSettings.ocrEngine)
+  const ocrModelProfile = ref(defaultSettings.ocrModelProfile)
+  const ocrPreloadOnStartup = ref(defaultSettings.ocrPreloadOnStartup)
   const globalShortcut = ref(defaultSettings.globalShortcut)
   const screenshotShortcut = ref(defaultSettings.screenshotShortcut)
   const enableTray = ref(defaultSettings.enableTray)
@@ -39,6 +50,9 @@ export const useSettingsStore = defineStore('settings', () => {
     microsoftTranslatorKey.value = settings.microsoftTranslatorKey
     microsoftTranslatorRegion.value = settings.microsoftTranslatorRegion
     ocrEndpoint.value = settings.ocrEndpoint
+    ocrEngine.value = settings.ocrEngine
+    ocrModelProfile.value = settings.ocrModelProfile
+    ocrPreloadOnStartup.value = settings.ocrPreloadOnStartup
     globalShortcut.value = settings.globalShortcut
     screenshotShortcut.value = settings.screenshotShortcut
     enableTray.value = settings.enableTray
@@ -64,6 +78,9 @@ export const useSettingsStore = defineStore('settings', () => {
     | 'microsoftTranslatorKey'
     | 'microsoftTranslatorRegion'
     | 'ocrEndpoint'
+    | 'ocrEngine'
+    | 'ocrModelProfile'
+    | 'ocrPreloadOnStartup'
   >) {
     try {
       await invoke('update_api_config', {
@@ -73,6 +90,9 @@ export const useSettingsStore = defineStore('settings', () => {
         microsoftTranslatorKey: settings.microsoftTranslatorKey,
         microsoftTranslatorRegion: settings.microsoftTranslatorRegion,
         ocrEndpoint: settings.ocrEndpoint,
+        ocrEngine: settings.ocrEngine,
+        ocrModelProfile: settings.ocrModelProfile,
+        ocrPreloadOnStartup: settings.ocrPreloadOnStartup,
       })
       apiKey.value = settings.apiKey
       apiSecret.value = settings.apiSecret
@@ -80,6 +100,9 @@ export const useSettingsStore = defineStore('settings', () => {
       microsoftTranslatorKey.value = settings.microsoftTranslatorKey
       microsoftTranslatorRegion.value = settings.microsoftTranslatorRegion
       ocrEndpoint.value = settings.ocrEndpoint
+      ocrEngine.value = settings.ocrEngine
+      ocrModelProfile.value = settings.ocrModelProfile
+      ocrPreloadOnStartup.value = settings.ocrPreloadOnStartup
     } catch (e) {
       error.value = `更新配置失败: ${e}`
       throw e
@@ -159,6 +182,39 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  async function warmupOcrService(endpoint = ocrEndpoint.value) {
+    try {
+      return await invoke<string>('warmup_ocr_service', {
+        ocrEndpoint: endpoint,
+      })
+    } catch (e) {
+      error.value = `预热 OCR 服务失败: ${e}`
+      throw e
+    }
+  }
+
+  async function restartOcrService(endpoint = ocrEndpoint.value) {
+    try {
+      return await invoke<string>('restart_ocr_service', {
+        ocrEndpoint: endpoint,
+      })
+    } catch (e) {
+      error.value = `重启 OCR 服务失败: ${e}`
+      throw e
+    }
+  }
+
+  async function revealOcrLog() {
+    try {
+      const path = await invoke<string>('get_ocr_log_path')
+      await revealItemInDir(path)
+      return path
+    } catch (e) {
+      error.value = `打开 OCR 日志失败: ${e}`
+      throw e
+    }
+  }
+
   return {
     apiKey,
     apiSecret,
@@ -166,6 +222,9 @@ export const useSettingsStore = defineStore('settings', () => {
     microsoftTranslatorKey,
     microsoftTranslatorRegion,
     ocrEndpoint,
+    ocrEngine,
+    ocrModelProfile,
+    ocrPreloadOnStartup,
     globalShortcut,
     screenshotShortcut,
     enableTray,
@@ -179,5 +238,8 @@ export const useSettingsStore = defineStore('settings', () => {
     updateTheme,
     checkOcrService,
     getOcrServiceStatus,
+    warmupOcrService,
+    restartOcrService,
+    revealOcrLog,
   }
 })

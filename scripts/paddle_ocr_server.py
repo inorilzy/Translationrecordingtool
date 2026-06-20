@@ -4,10 +4,21 @@ import base64
 import binascii
 import inspect
 import json
+import sys
 import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+
+
+def configure_frozen_import_paths() -> None:
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if not bundle_dir:
+        return
+
+    paddleocr_dir = Path(bundle_dir) / "paddleocr"
+    if paddleocr_dir.exists():
+        sys.path.insert(0, str(paddleocr_dir))
 
 
 def clean_text_lines(lines: list[str]) -> list[str]:
@@ -63,21 +74,44 @@ def run_ocr(ocr: Any, image_path: Path) -> list[Any]:
     raise RuntimeError("PaddleOCR instance has neither ocr() nor predict()")
 
 
-class PaddleOcrServer(BaseHTTPRequestHandler):
+def run_rapid_ocr(ocr: Any, image_path: Path) -> Any:
+    if callable(ocr):
+        return ocr(str(image_path))
+    if hasattr(ocr, "detect"):
+        return ocr.detect(str(image_path))
+    raise RuntimeError("RapidOCR instance has neither __call__() nor detect()")
+
+
+def recognize_text(ocr: Any, image_path: Path, engine: str) -> tuple[list[str], list[Any]]:
+    prediction = run_rapid_ocr(ocr, image_path) if engine == "rapidocr" else run_ocr(ocr, image_path)
+    raw_results = [result_to_jsonable(item) for item in prediction] if isinstance(prediction, (list, tuple)) else [result_to_jsonable(prediction)]
+    lines: list[str] = []
+    for item in raw_results:
+        lines.extend(collect_text(item))
+    return clean_text_lines(lines), raw_results
+
+
+class OcrServer(BaseHTTPRequestHandler):
     ocr: Any = None
 
     def do_GET(self) -> None:
         if self.path == "/health":
             self.send_json({
                 "ok": True,
-                "engine": "paddleocr",
+                "engine": getattr(self.server, "ocr_engine", None),
                 "lang": getattr(self.server, "ocr_lang", None),
                 "device": getattr(self.server, "ocr_device", None),
+                "modelProfile": getattr(self.server, "ocr_model_profile", None),
+                "modelDir": getattr(self.server, "ocr_model_dir", None),
             })
             return
         self.send_error(404, "Not found")
 
     def do_POST(self) -> None:
+        if self.path == "/warmup":
+            self.send_json({"ok": True, "warmed": True})
+            return
+
         if self.path != "/ocr":
             self.send_error(404, "Not found")
             return
@@ -105,16 +139,14 @@ class PaddleOcrServer(BaseHTTPRequestHandler):
                 image_path = Path(tmp.name)
 
             try:
-                prediction = run_ocr(self.ocr, image_path)
+                lines, _raw_results = recognize_text(
+                    self.ocr,
+                    image_path,
+                    getattr(self.server, "ocr_engine", "paddleocr"),
+                )
             finally:
                 image_path.unlink(missing_ok=True)
 
-            raw_results = [result_to_jsonable(item) for item in prediction]
-            lines: list[str] = []
-            for item in raw_results:
-                lines.extend(collect_text(item))
-
-            lines = clean_text_lines(lines)
             self.send_json({
                 "text": "\n".join(lines),
                 "result": [{"recText": line} for line in lines],
@@ -123,7 +155,8 @@ class PaddleOcrServer(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc)}, status=500)
 
     def log_message(self, format: str, *args: Any) -> None:
-        print("[paddle-ocr] " + format % args)
+        engine = getattr(self.server, "ocr_engine", "ocr")
+        print(f"[{engine}] " + format % args)
 
     def send_json(self, payload: dict[str, Any], status: int = 200) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -135,11 +168,21 @@ class PaddleOcrServer(BaseHTTPRequestHandler):
 
 
 def build_ocr(args: argparse.Namespace) -> Any:
+    configure_frozen_import_paths()
+
+    if args.engine == "rapidocr":
+        return build_rapid_ocr()
+
+    return build_paddle_ocr(args)
+
+
+def build_paddle_ocr(args: argparse.Namespace) -> Any:
+
     try:
         from paddleocr import PaddleOCR
     except ImportError as exc:
         raise SystemExit(
-            "未安装 paddleocr。请先运行: pip install paddleocr paddlepaddle"
+            f"未安装或无法加载 paddleocr。请先运行: pip install paddleocr paddlepaddle。原始错误: {exc}"
         ) from exc
 
     init_params = inspect.signature(PaddleOCR.__init__).parameters
@@ -159,25 +202,53 @@ def build_ocr(args: argparse.Namespace) -> Any:
         if key in init_params:
             kwargs[key] = False
 
+    model_dir = Path(args.model_dir).resolve() if args.model_dir else None
+    if model_dir and model_dir.exists():
+        model_candidates = {
+            "det_model_dir": model_dir / "det",
+            "rec_model_dir": model_dir / "rec",
+            "cls_model_dir": model_dir / "cls",
+        }
+        for key, path in model_candidates.items():
+            if key in init_params and path.exists():
+                kwargs[key] = str(path)
+
     return PaddleOCR(**kwargs)
 
 
+def build_rapid_ocr() -> Any:
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+    except ImportError as exc:
+        raise SystemExit(
+            f"未安装或无法加载 rapidocr-onnxruntime。请先运行: pip install rapidocr-onnxruntime onnxruntime。原始错误: {exc}"
+        ) from exc
+
+    return RapidOCR()
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Local PaddleOCR HTTP server")
+    parser = argparse.ArgumentParser(description="Local OCR HTTP server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8866)
+    parser.add_argument("--engine", choices=["paddleocr", "rapidocr"], default="paddleocr")
     parser.add_argument("--lang", default="ch")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--model-profile", default="standard")
+    parser.add_argument("--model-dir", default="")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    PaddleOcrServer.ocr = build_ocr(args)
-    server = ThreadingHTTPServer((args.host, args.port), PaddleOcrServer)
+    OcrServer.ocr = build_ocr(args)
+    server = ThreadingHTTPServer((args.host, args.port), OcrServer)
+    server.ocr_engine = args.engine
     server.ocr_lang = args.lang
     server.ocr_device = args.device
-    print(f"PaddleOCR HTTP server listening on http://{args.host}:{args.port}/ocr")
+    server.ocr_model_profile = args.model_profile
+    server.ocr_model_dir = args.model_dir
+    print(f"{args.engine} HTTP server listening on http://{args.host}:{args.port}/ocr")
     server.serve_forever()
 
 

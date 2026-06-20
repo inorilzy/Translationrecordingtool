@@ -276,6 +276,7 @@ describe('popup-window-runtime: loading / result / update / theme / favorite con
         makeTranslationRecord(),
       )
       const loading = shallowRef(false)
+      const loadingMessage = shallowRef('old message')
       const error = shallowRef('previous error')
 
       // Simulate what the component does on translation-started
@@ -284,12 +285,24 @@ describe('popup-window-runtime: loading / result / update / theme / favorite con
       // Mimic the component's translation-started handler
       settingsMocks.applyThemeCalls.push('fallback-theme')
       loading.value = true
+      loadingMessage.value = 'OCR 识别中...'
       error.value = ''
       currentTranslation.value = null
 
       expect(loading.value).toBe(true)
+      expect(loadingMessage.value).toBe('OCR 识别中...')
       expect(error.value).toBe('')
       expect(currentTranslation.value).toBeNull()
+    })
+
+    it('falls back to translation loading text when translation-started has no message', async () => {
+      const loadingMessage = shallowRef('old message')
+
+      // Mimic the component's translation-started payload handling.
+      const payload = {} as { message?: string }
+      loadingMessage.value = payload.message || '翻译中...'
+
+      expect(loadingMessage.value).toBe('翻译中...')
     })
   })
 

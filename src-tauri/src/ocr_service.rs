@@ -1,6 +1,7 @@
 use std::{
+    env,
     fs::OpenOptions,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex, RwLock},
     thread,
@@ -16,6 +17,9 @@ const OCR_LANG: &str = "ch";
 const OCR_DEVICE: &str = "cpu";
 const PADDLE_OCR_VERSION: &str = "2.7.3";
 const PADDLEPADDLE_VERSION: &str = "2.6.2";
+const RAPID_OCR_VERSION: &str = "1.4.4";
+const OCR_SIDECAR_STEM: &str = "paddle-ocr-server";
+const OCR_MODEL_RESOURCE_DIR: &str = "ocr-models";
 
 #[derive(Default)]
 pub struct OcrServiceState {
@@ -30,33 +34,61 @@ pub struct OcrServiceStatus {
     pub endpoint: String,
     pub message: String,
     pub last_error: Option<String>,
+    pub engine: String,
+    pub model_profile: String,
+    pub model_dir: Option<String>,
+    pub sidecar_path: Option<String>,
+    pub log_path: Option<String>,
+    pub preload_on_startup: bool,
+    pub rapidocr_version: &'static str,
     pub paddleocr_version: &'static str,
     pub paddlepaddle_version: &'static str,
     pub lang: &'static str,
     pub device: &'static str,
 }
 
-pub fn spawn_startup_check(app: AppHandle, endpoint: String) {
+#[derive(Debug, Clone)]
+pub struct OcrRuntimeConfig {
+    pub endpoint: String,
+    pub engine: String,
+    pub model_profile: String,
+    pub preload_on_startup: bool,
+}
+
+pub fn spawn_startup_check(app: AppHandle, config: OcrRuntimeConfig) {
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = ensure_running(&app, &endpoint).await {
+        if !config.preload_on_startup {
+            info!("OCR 启动预热已关闭");
+            return;
+        }
+
+        if let Err(error) = ensure_running(&app, &config).await {
             set_last_error(&app, error.clone());
             warn!("自动启动 OCR 服务失败: {}", error);
+            return;
+        }
+
+        if let Err(error) = warmup(&app, &config).await {
+            set_last_error(&app, error.clone());
+            warn!("自动预热 OCR 服务失败: {}", error);
         }
     });
 }
 
-pub async fn ensure_running(app: &AppHandle, endpoint: &str) -> Result<String, String> {
-    if let Ok(message) = crate::ocr::check_service(endpoint).await {
+pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
+    if let Ok(message) = crate::ocr::check_service_engine(&config.endpoint, &config.engine).await {
         clear_last_error(app);
         return Ok(message);
     }
 
-    if let Err(error) = start_process_if_needed(app, endpoint) {
+    stop_process_if_managed(app)?;
+
+    if let Err(error) = start_process_if_needed(app, config) {
         set_last_error(app, error.clone());
         return Err(error);
     }
 
-    match wait_until_healthy(endpoint, Duration::from_secs(90)).await {
+    match wait_until_healthy(&config.endpoint, &config.engine, Duration::from_secs(90)).await {
         Ok(message) => {
             clear_last_error(app);
             Ok(message)
@@ -68,13 +100,34 @@ pub async fn ensure_running(app: &AppHandle, endpoint: &str) -> Result<String, S
     }
 }
 
-pub async fn status(app: &AppHandle, endpoint: &str) -> OcrServiceStatus {
-    match crate::ocr::check_service(endpoint).await {
+pub async fn warmup(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
+    ensure_running(app, config).await?;
+    crate::ocr::warmup_service(&config.endpoint).await
+}
+
+pub async fn restart(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
+    stop_process(app)?;
+    ensure_running(app, config).await?;
+    warmup(app, config).await
+}
+
+pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus {
+    let model_dir = packaged_model_dir(app, &config.model_profile);
+    let sidecar_path = packaged_sidecar_path(app);
+    let log_path = log_path(app).ok();
+    match crate::ocr::check_service_engine(&config.endpoint, &config.engine).await {
         Ok(message) => OcrServiceStatus {
             running: true,
-            endpoint: endpoint.to_string(),
+            endpoint: config.endpoint.clone(),
             message,
             last_error: None,
+            engine: config.engine.clone(),
+            model_profile: config.model_profile.clone(),
+            model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
+            sidecar_path: sidecar_path.as_ref().map(|path| path.display().to_string()),
+            log_path: log_path.as_ref().map(|path| path.display().to_string()),
+            preload_on_startup: config.preload_on_startup,
+            rapidocr_version: RAPID_OCR_VERSION,
             paddleocr_version: PADDLE_OCR_VERSION,
             paddlepaddle_version: PADDLEPADDLE_VERSION,
             lang: OCR_LANG,
@@ -82,9 +135,16 @@ pub async fn status(app: &AppHandle, endpoint: &str) -> OcrServiceStatus {
         },
         Err(error) => OcrServiceStatus {
             running: false,
-            endpoint: endpoint.to_string(),
-            message: "Paddle OCR 服务未运行".to_string(),
+            endpoint: config.endpoint.clone(),
+            message: "OCR 服务未运行".to_string(),
             last_error: last_error(app).or(Some(error)),
+            engine: config.engine.clone(),
+            model_profile: config.model_profile.clone(),
+            model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
+            sidecar_path: sidecar_path.as_ref().map(|path| path.display().to_string()),
+            log_path: log_path.as_ref().map(|path| path.display().to_string()),
+            preload_on_startup: config.preload_on_startup,
+            rapidocr_version: RAPID_OCR_VERSION,
             paddleocr_version: PADDLE_OCR_VERSION,
             paddlepaddle_version: PADDLEPADDLE_VERSION,
             lang: OCR_LANG,
@@ -93,7 +153,14 @@ pub async fn status(app: &AppHandle, endpoint: &str) -> OcrServiceStatus {
     }
 }
 
-fn start_process_if_needed(app: &AppHandle, endpoint: &str) -> Result<(), String> {
+fn start_process_if_needed(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<(), String> {
+    if !matches!(config.engine.as_str(), "paddleocr" | "rapidocr") {
+        return Err(format!(
+            "暂不支持 OCR 引擎 {}，当前可用引擎为 paddleocr、rapidocr",
+            config.engine
+        ));
+    }
+
     let state = app.state::<Arc<OcrServiceState>>();
     let mut child_guard = state
         .child
@@ -117,7 +184,7 @@ fn start_process_if_needed(app: &AppHandle, endpoint: &str) -> Result<(), String
         }
     }
 
-    let mut command = build_command(app, endpoint)?;
+    let mut command = build_command(app, config)?;
     configure_logs(app, &mut command)?;
 
     #[cfg(windows)]
@@ -129,46 +196,285 @@ fn start_process_if_needed(app: &AppHandle, endpoint: &str) -> Result<(), String
 
     let child = command
         .spawn()
-        .map_err(|error| format!("启动 Paddle OCR 服务失败: {}", error))?;
+        .map_err(|error| format!("启动 OCR 服务失败: {}", error))?;
 
     clear_last_error(app);
-    info!("已启动 Paddle OCR 服务进程: {}", child.id());
+    info!("已启动 OCR 服务进程: {}", child.id());
     *child_guard = Some(child);
     Ok(())
 }
 
-fn build_command(app: &AppHandle, endpoint: &str) -> Result<Command, String> {
-    let url = reqwest::Url::parse(endpoint.trim())
-        .map_err(|error| format!("Paddle OCR HTTP 地址无效: {}", error))?;
+fn stop_process(app: &AppHandle) -> Result<(), String> {
+    stop_process_if_managed(app)
+}
+
+fn stop_process_if_managed(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<Arc<OcrServiceState>>();
+    let mut child_guard = state
+        .child
+        .lock()
+        .map_err(|_| "OCR 服务状态锁定失败".to_string())?;
+
+    if let Some(mut child) = child_guard.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    Ok(())
+}
+
+fn build_command(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Command, String> {
+    let url = reqwest::Url::parse(config.endpoint.trim())
+        .map_err(|error| format!("OCR HTTP 地址无效: {}", error))?;
     let host = url.host_str().unwrap_or(OCR_HOST).to_string();
     let port = url.port().unwrap_or(8866).to_string();
+    let model_dir = packaged_model_dir(app, &config.model_profile);
 
     if cfg!(debug_assertions) {
         let mut command = npm_command();
-        command.args(["run", "ocr:server"]);
-        if let Ok(current_dir) = std::env::current_dir() {
-            command.current_dir(current_dir);
+        command.args(["run", ocr_server_script_name(&config.engine)]);
+        command.arg("--");
+        command.args(ocr_server_args(&host, &port, config, model_dir.as_ref()));
+        if let Some(workspace_root) = workspace_root_from_current_dir() {
+            command.current_dir(workspace_root);
         }
         return Ok(command);
     }
 
+    if let Some(sidecar_path) = packaged_sidecar_path(app) {
+        let mut command = Command::new(sidecar_path);
+        command.args(ocr_server_args(&host, &port, config, model_dir.as_ref()));
+        return Ok(command);
+    }
+
     let script_path = packaged_script_path(app)?;
-    let mut command = Command::new("uv");
+    let uv_path = find_command_on_path("uv").ok_or_else(|| {
+        format!(
+            "未找到内置 OCR sidecar，也未找到 uv。请先运行 npm run ocr:sidecar:win 生成 src-tauri/binaries/{}-x86_64-pc-windows-msvc.exe，或安装 uv 后重试。",
+            OCR_SIDECAR_STEM
+        )
+    })?;
+
+    let mut command = Command::new(uv_path);
     command.args([
         "run",
         "--python",
         "3.11",
         "--with",
-        &format!("paddleocr=={}", PADDLE_OCR_VERSION),
+        ocr_engine_runtime_requirement(&config.engine),
         "--with",
-        &format!("paddlepaddle=={}", PADDLEPADDLE_VERSION),
+        ocr_engine_core_requirement(&config.engine),
         "--with",
         "numpy<2",
         "python",
     ]);
     command.arg(script_path);
-    command.args(["--host", &host, "--port", &port, "--lang", OCR_LANG, "--device", OCR_DEVICE]);
+    command.args(ocr_server_args(&host, &port, config, model_dir.as_ref()));
     Ok(command)
+}
+
+fn ocr_server_args(
+    host: &str,
+    port: &str,
+    config: &OcrRuntimeConfig,
+    model_dir: Option<&PathBuf>,
+) -> Vec<String> {
+    let mut args = vec![
+        "--host".to_string(),
+        host.to_string(),
+        "--port".to_string(),
+        port.to_string(),
+        "--lang".to_string(),
+        OCR_LANG.to_string(),
+        "--device".to_string(),
+        OCR_DEVICE.to_string(),
+        "--engine".to_string(),
+        config.engine.clone(),
+        "--model-profile".to_string(),
+        config.model_profile.clone(),
+    ];
+
+    if let Some(model_dir) = model_dir {
+        args.push("--model-dir".to_string());
+        args.push(model_dir.display().to_string());
+    }
+
+    args
+}
+
+fn ocr_server_script_name(engine: &str) -> &'static str {
+    match engine {
+        "rapidocr" => "ocr:server:rapid",
+        _ => "ocr:server:paddle",
+    }
+}
+
+fn ocr_engine_runtime_requirement(engine: &str) -> &'static str {
+    match engine {
+        "rapidocr" => "rapidocr-onnxruntime==1.4.4",
+        _ => "paddleocr==2.7.3",
+    }
+}
+
+fn ocr_engine_core_requirement(engine: &str) -> &'static str {
+    match engine {
+        "rapidocr" => "onnxruntime==1.16.3",
+        _ => "paddlepaddle==2.6.2",
+    }
+}
+
+fn packaged_model_dir(app: &AppHandle, model_profile: &str) -> Option<PathBuf> {
+    let profile = normalize_model_profile(model_profile);
+    let mut candidates = Vec::new();
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join(OCR_MODEL_RESOURCE_DIR).join(&profile));
+    }
+    if let Ok(current_dir) = env::current_dir() {
+        candidates.push(
+            current_dir
+                .join("resources")
+                .join(OCR_MODEL_RESOURCE_DIR)
+                .join(&profile),
+        );
+        candidates.push(
+            current_dir
+                .join("src-tauri")
+                .join("resources")
+                .join(OCR_MODEL_RESOURCE_DIR)
+                .join(&profile),
+        );
+    }
+    if let Some(workspace_root) = workspace_root_from_current_dir() {
+        candidates.push(
+            workspace_root
+                .join("src-tauri")
+                .join("resources")
+                .join(OCR_MODEL_RESOURCE_DIR)
+                .join(&profile),
+        );
+    }
+
+    candidates.into_iter().find(|path| has_model_subdirs(path))
+}
+
+fn normalize_model_profile(model_profile: &str) -> String {
+    match model_profile.trim() {
+        "lite" => "lite".to_string(),
+        "accurate" => "accurate".to_string(),
+        _ => "standard".to_string(),
+    }
+}
+
+fn has_model_subdirs(path: &PathBuf) -> bool {
+    model_dir_has_files(&path.join("det")) && model_dir_has_files(&path.join("rec"))
+}
+
+fn model_dir_has_files(path: &PathBuf) -> bool {
+    path.is_dir()
+        && path
+            .read_dir()
+            .map(|mut entries| {
+                entries.any(|entry| entry.map(|item| item.path().is_file()).unwrap_or(false))
+            })
+            .unwrap_or(false)
+}
+
+fn packaged_sidecar_path(app: &AppHandle) -> Option<PathBuf> {
+    let sidecar_file_names = sidecar_file_names();
+    let mut candidates = sidecar_path_candidates(&sidecar_file_names);
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.extend(
+            sidecar_file_names
+                .iter()
+                .map(|name| resource_dir.join(name)),
+        );
+        candidates.extend(
+            sidecar_file_names
+                .iter()
+                .map(|name| resource_dir.join("binaries").join(name)),
+        );
+        if let Some(parent) = resource_dir.parent() {
+            candidates.extend(sidecar_file_names.iter().map(|name| parent.join(name)));
+        }
+    }
+
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn sidecar_path_candidates(sidecar_file_names: &[String]) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            candidates.extend(sidecar_file_names.iter().map(|name| exe_dir.join(name)));
+        }
+    }
+
+    if let Ok(current_dir) = env::current_dir() {
+        candidates.extend(
+            sidecar_file_names
+                .iter()
+                .map(|name| current_dir.join("src-tauri").join("binaries").join(name)),
+        );
+        candidates.extend(
+            sidecar_file_names
+                .iter()
+                .map(|name| current_dir.join("binaries").join(name)),
+        );
+    }
+
+    candidates
+}
+
+fn sidecar_file_names() -> Vec<String> {
+    let suffix = env::consts::EXE_SUFFIX;
+    let with_suffix = |stem: &str| {
+        if suffix.is_empty() {
+            stem.to_string()
+        } else {
+            format!("{}{}", stem, suffix)
+        }
+    };
+
+    let mut names = vec![with_suffix(OCR_SIDECAR_STEM)];
+    if let Some(target) = sidecar_target_triple() {
+        names.push(with_suffix(&format!("{}-{}", OCR_SIDECAR_STEM, target)));
+    }
+    names
+}
+
+fn sidecar_target_triple() -> Option<&'static str> {
+    match (env::consts::OS, env::consts::ARCH) {
+        ("windows", "x86_64") => Some("x86_64-pc-windows-msvc"),
+        ("windows", "aarch64") => Some("aarch64-pc-windows-msvc"),
+        ("macos", "x86_64") => Some("x86_64-apple-darwin"),
+        ("macos", "aarch64") => Some("aarch64-apple-darwin"),
+        ("linux", "x86_64") => Some("x86_64-unknown-linux-gnu"),
+        ("linux", "aarch64") => Some("aarch64-unknown-linux-gnu"),
+        _ => None,
+    }
+}
+
+fn find_command_on_path(command: &str) -> Option<PathBuf> {
+    let path_value = env::var_os("PATH")?;
+    let extensions = executable_extensions();
+
+    env::split_paths(&path_value).find_map(|dir| {
+        extensions
+            .iter()
+            .map(|extension| dir.join(format!("{}{}", command, extension)))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+fn executable_extensions() -> Vec<&'static str> {
+    if cfg!(windows) {
+        vec![".exe", ".cmd", ".bat", ""]
+    } else {
+        vec![""]
+    }
 }
 
 fn npm_command() -> Command {
@@ -177,6 +483,24 @@ fn npm_command() -> Command {
     } else {
         Command::new("npm")
     }
+}
+
+fn workspace_root_from_current_dir() -> Option<PathBuf> {
+    env::current_dir()
+        .ok()
+        .and_then(|current_dir| workspace_root_from(&current_dir))
+}
+
+fn workspace_root_from(start: &Path) -> Option<PathBuf> {
+    start.ancestors().find_map(|dir| {
+        let has_package = dir.join("package.json").is_file();
+        let has_ocr_script = dir.join("scripts").join("paddle_ocr_server.py").is_file();
+        if has_package && has_ocr_script {
+            Some(dir.to_path_buf())
+        } else {
+            None
+        }
+    })
 }
 
 fn packaged_script_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -197,13 +521,11 @@ fn packaged_script_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn configure_logs(app: &AppHandle, command: &mut Command) -> Result<(), String> {
-    let log_dir = app
-        .path()
-        .app_log_dir()
-        .map_err(|error| format!("无法获取日志目录: {}", error))?;
-    std::fs::create_dir_all(&log_dir)
-        .map_err(|error| format!("无法创建日志目录: {}", error))?;
-    let log_path = log_dir.join("paddle-ocr-service.log");
+    let log_path = log_path(app)?;
+    let Some(log_dir) = log_path.parent() else {
+        return Err("无法获取 OCR 日志目录".to_string());
+    };
+    std::fs::create_dir_all(log_dir).map_err(|error| format!("无法创建日志目录: {}", error))?;
     let log_file = OpenOptions::new()
         .create(true)
         .append(true)
@@ -217,12 +539,24 @@ fn configure_logs(app: &AppHandle, command: &mut Command) -> Result<(), String> 
     Ok(())
 }
 
-async fn wait_until_healthy(endpoint: &str, timeout: Duration) -> Result<String, String> {
+pub fn log_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let log_dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|error| format!("无法获取日志目录: {}", error))?;
+    Ok(log_dir.join("paddle-ocr-service.log"))
+}
+
+async fn wait_until_healthy(
+    endpoint: &str,
+    engine: &str,
+    timeout: Duration,
+) -> Result<String, String> {
     let started = std::time::Instant::now();
     let mut last_error = None;
 
     while started.elapsed() < timeout {
-        match crate::ocr::check_service(endpoint).await {
+        match crate::ocr::check_service_engine(endpoint, engine).await {
             Ok(message) => return Ok(message),
             Err(error) => last_error = Some(error),
         }
@@ -230,7 +564,7 @@ async fn wait_until_healthy(endpoint: &str, timeout: Duration) -> Result<String,
     }
 
     Err(format!(
-        "Paddle OCR 服务启动超时。最后错误: {}",
+        "OCR 服务启动超时。最后错误: {}",
         last_error.unwrap_or_else(|| "未知错误".to_string())
     ))
 }
@@ -260,4 +594,93 @@ fn clear_last_error(app: &AppHandle) {
 fn last_error(app: &AppHandle) -> Option<String> {
     app.try_state::<Arc<OcrServiceState>>()
         .and_then(|state| state.last_error.read().ok().and_then(|error| error.clone()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sidecar_file_names_include_plain_and_target_specific_names() {
+        let names = sidecar_file_names();
+
+        if cfg!(windows) {
+            assert!(names.contains(&"paddle-ocr-server.exe".to_string()));
+        } else {
+            assert!(names.contains(&"paddle-ocr-server".to_string()));
+        }
+
+        if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+            assert!(names.contains(&"paddle-ocr-server-x86_64-pc-windows-msvc.exe".to_string()));
+        }
+    }
+
+    #[test]
+    fn executable_extensions_match_platform() {
+        let extensions = executable_extensions();
+
+        if cfg!(windows) {
+            assert!(extensions.contains(&".exe"));
+            assert!(extensions.contains(&".cmd"));
+            assert!(extensions.contains(&".bat"));
+        }
+
+        assert!(extensions.contains(&""));
+    }
+
+    #[test]
+    fn picks_debug_script_for_engine() {
+        assert_eq!(ocr_server_script_name("paddleocr"), "ocr:server:paddle");
+        assert_eq!(ocr_server_script_name("rapidocr"), "ocr:server:rapid");
+    }
+
+    #[test]
+    fn picks_runtime_requirements_for_engine() {
+        assert_eq!(
+            ocr_engine_runtime_requirement("paddleocr"),
+            "paddleocr==2.7.3"
+        );
+        assert_eq!(
+            ocr_engine_core_requirement("paddleocr"),
+            "paddlepaddle==2.6.2"
+        );
+        assert_eq!(
+            ocr_engine_runtime_requirement("rapidocr"),
+            "rapidocr-onnxruntime==1.4.4"
+        );
+        assert_eq!(
+            ocr_engine_core_requirement("rapidocr"),
+            "onnxruntime==1.16.3"
+        );
+    }
+
+    #[test]
+    fn builds_server_args_with_engine_and_model_profile() {
+        let config = OcrRuntimeConfig {
+            endpoint: "http://127.0.0.1:8867/ocr".to_string(),
+            engine: "rapidocr".to_string(),
+            model_profile: "lite".to_string(),
+            preload_on_startup: true,
+        };
+
+        let args = ocr_server_args("127.0.0.1", "8867", &config, None);
+
+        assert!(args.windows(2).any(|pair| pair == ["--engine", "rapidocr"]));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--model-profile", "lite"]));
+        assert!(args.windows(2).any(|pair| pair == ["--port", "8867"]));
+    }
+
+    #[test]
+    fn finds_workspace_root_from_nested_path() {
+        let current_dir = env::current_dir().unwrap();
+        let workspace_root = workspace_root_from(&current_dir).unwrap();
+
+        assert!(workspace_root.join("package.json").is_file());
+        assert!(workspace_root
+            .join("scripts")
+            .join("paddle_ocr_server.py")
+            .is_file());
+    }
 }

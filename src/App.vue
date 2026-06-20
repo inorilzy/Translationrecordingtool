@@ -23,7 +23,9 @@ export function resolveCurrentWindowLabel(
 </script>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useTranslationStore } from './stores/translation'
 import { useSettingsStore } from './stores/settings'
@@ -31,11 +33,29 @@ import AppShell from './components/AppShell.vue'
 
 const translationStore = useTranslationStore()
 const settingsStore = useSettingsStore()
+const router = useRouter()
 const windowLabel = resolveCurrentWindowLabel(getCurrentWebviewWindow)
 const usesAppShell = computed(() => windowLabel !== 'popup' && windowLabel !== 'screenshot-selection')
+let unlistenOcrSourceText: (() => void) | null = null
+let unlistenNavigateToTranslate: (() => void) | null = null
 
 onMounted(async () => {
   await runStartupLoad(windowLabel, settingsStore, translationStore)
+  if (windowLabel === 'main') {
+    unlistenOcrSourceText = await listen<string>('ocr-source-text', (event) => {
+      translationStore.setManualInputText(event.payload)
+    })
+    unlistenNavigateToTranslate = await listen('navigate-to-translate', async () => {
+      if (router.currentRoute.value.path !== '/translate') {
+        await router.push('/translate')
+      }
+    })
+  }
+})
+
+onUnmounted(() => {
+  unlistenOcrSourceText?.()
+  unlistenNavigateToTranslate?.()
 })
 </script>
 

@@ -8,6 +8,8 @@ pub const DEFAULT_GLOBAL_SHORTCUT: &str = "Ctrl+Q";
 pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Ctrl+Shift+Q";
 pub const DEFAULT_THEME: &str = "light";
 pub const DEFAULT_OCR_ENDPOINT: &str = "http://127.0.0.1:8866/ocr";
+pub const DEFAULT_OCR_ENGINE: &str = "paddleocr";
+pub const DEFAULT_OCR_MODEL_PROFILE: &str = "standard";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -19,6 +21,9 @@ pub struct PersistedSettings {
     pub microsoft_translator_key: String,
     pub microsoft_translator_region: String,
     pub ocr_endpoint: String,
+    pub ocr_engine: String,
+    pub ocr_model_profile: String,
+    pub ocr_preload_on_startup: bool,
     pub global_shortcut: String,
     pub screenshot_shortcut: String,
     pub enable_tray: bool,
@@ -34,6 +39,9 @@ impl Default for PersistedSettings {
             microsoft_translator_key: String::new(),
             microsoft_translator_region: String::new(),
             ocr_endpoint: DEFAULT_OCR_ENDPOINT.to_string(),
+            ocr_engine: DEFAULT_OCR_ENGINE.to_string(),
+            ocr_model_profile: DEFAULT_OCR_MODEL_PROFILE.to_string(),
+            ocr_preload_on_startup: true,
             global_shortcut: DEFAULT_GLOBAL_SHORTCUT.to_string(),
             screenshot_shortcut: DEFAULT_SCREENSHOT_SHORTCUT.to_string(),
             enable_tray: true,
@@ -137,6 +145,9 @@ mod tests {
             microsoft_translator_key: "ms-key".to_string(),
             microsoft_translator_region: "eastasia".to_string(),
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
+            ocr_engine: "paddleocr".to_string(),
+            ocr_model_profile: "standard".to_string(),
+            ocr_preload_on_startup: true,
             global_shortcut: "Ctrl+Shift+Q".to_string(),
             screenshot_shortcut: "Ctrl+Shift+S".to_string(),
             enable_tray: false,
@@ -159,6 +170,9 @@ mod tests {
             microsoft_translator_key: String::new(),
             microsoft_translator_region: String::new(),
             ocr_endpoint: String::new(),
+            ocr_engine: String::new(),
+            ocr_model_profile: String::new(),
+            ocr_preload_on_startup: false,
             global_shortcut: String::new(),
             screenshot_shortcut: String::new(),
             enable_tray: false,
@@ -182,6 +196,9 @@ mod tests {
             microsoft_translator_key: "mk".to_string(),
             microsoft_translator_region: "global".to_string(),
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
+            ocr_engine: "paddleocr".to_string(),
+            ocr_model_profile: "standard".to_string(),
+            ocr_preload_on_startup: true,
             global_shortcut: "Ctrl+Q".to_string(),
             screenshot_shortcut: "Ctrl+Shift+Q".to_string(),
             enable_tray: true,
@@ -197,6 +214,9 @@ mod tests {
         assert!(json.contains(r#""microsoftTranslatorKey""#));
         assert!(json.contains(r#""microsoftTranslatorRegion""#));
         assert!(json.contains(r#""ocrEndpoint""#));
+        assert!(json.contains(r#""ocrEngine""#));
+        assert!(json.contains(r#""ocrModelProfile""#));
+        assert!(json.contains(r#""ocrPreloadOnStartup""#));
         assert!(json.contains(r#""globalShortcut""#));
         assert!(json.contains(r#""screenshotShortcut""#));
         assert!(json.contains(r#""enableTray""#));
@@ -212,6 +232,9 @@ mod tests {
             "microsoftTranslatorKey": "ms-key",
             "microsoftTranslatorRegion": "eastasia",
             "ocrEndpoint": "http://127.0.0.1:8866/ocr",
+            "ocrEngine": "paddleocr",
+            "ocrModelProfile": "lite",
+            "ocrPreloadOnStartup": false,
             "globalShortcut": "Ctrl+Shift+A",
             "screenshotShortcut": "Ctrl+Shift+S",
             "enableTray": false,
@@ -226,6 +249,9 @@ mod tests {
         assert_eq!(settings.microsoft_translator_key, "ms-key");
         assert_eq!(settings.microsoft_translator_region, "eastasia");
         assert_eq!(settings.ocr_endpoint, "http://127.0.0.1:8866/ocr");
+        assert_eq!(settings.ocr_engine, "paddleocr");
+        assert_eq!(settings.ocr_model_profile, "lite");
+        assert!(!settings.ocr_preload_on_startup);
         assert_eq!(settings.global_shortcut, "Ctrl+Shift+A");
         assert_eq!(settings.screenshot_shortcut, "Ctrl+Shift+S");
         assert!(!settings.enable_tray);
@@ -287,6 +313,9 @@ mod tests {
         assert_eq!(settings.microsoft_translator_key, "");
         assert_eq!(settings.microsoft_translator_region, "");
         assert_eq!(settings.ocr_endpoint, DEFAULT_OCR_ENDPOINT);
+        assert_eq!(settings.ocr_engine, DEFAULT_OCR_ENGINE);
+        assert_eq!(settings.ocr_model_profile, DEFAULT_OCR_MODEL_PROFILE);
+        assert!(settings.ocr_preload_on_startup);
         assert_eq!(settings.global_shortcut, DEFAULT_GLOBAL_SHORTCUT);
         assert_eq!(settings.screenshot_shortcut, DEFAULT_SCREENSHOT_SHORTCUT);
         assert!(settings.enable_tray); // default true
