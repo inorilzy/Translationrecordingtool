@@ -33,7 +33,7 @@ const config = ref({
   microsoftTranslatorKey: '',
   microsoftTranslatorRegion: '',
   ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-  ocrEngine: 'paddleocr',
+  ocrEngine: 'native_onnx',
   ocrModelProfile: 'small',
   ocrPreloadOnStartup: true,
   globalShortcut: 'Ctrl+Q',

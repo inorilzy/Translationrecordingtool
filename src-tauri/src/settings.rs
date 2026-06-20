@@ -8,7 +8,7 @@ pub const DEFAULT_GLOBAL_SHORTCUT: &str = "Ctrl+Q";
 pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Ctrl+Shift+Q";
 pub const DEFAULT_THEME: &str = "light";
 pub const DEFAULT_OCR_ENDPOINT: &str = "http://127.0.0.1:8866/ocr";
-pub const DEFAULT_OCR_ENGINE: &str = "paddleocr";
+pub const DEFAULT_OCR_ENGINE: &str = "native_onnx";
 pub const DEFAULT_OCR_MODEL_PROFILE: &str = "small";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 

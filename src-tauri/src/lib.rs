@@ -16,8 +16,9 @@ mod translator;
 
 use app_state::{
     load_persisted_settings, migrate_legacy_app_data, persist_managed_settings,
-    update_and_persist_api_config, update_and_persist_global_shortcuts, update_and_persist_theme,
-    update_and_persist_tray_behavior, AppConfig, PopupRuntimeState, TrayBehaviorConfig,
+    save_persisted_settings, update_and_persist_api_config, update_and_persist_global_shortcuts,
+    update_and_persist_theme, update_and_persist_tray_behavior, AppConfig, PopupRuntimeState,
+    TrayBehaviorConfig,
 };
 use database::{
     get_translation_by_id_in_connection, load_favorites_in_connection, load_history_in_connection,
@@ -74,6 +75,38 @@ fn ocr_runtime_config_from_state(config: &Arc<RwLock<AppConfig>>) -> ocr_service
         model_profile: cfg.ocr_model_profile.clone(),
         preload_on_startup: cfg.ocr_preload_on_startup,
     }
+}
+
+fn adapt_ocr_settings_for_packaged_runtime(
+    app: &tauri::AppHandle,
+    settings: &mut PersistedSettings,
+) -> bool {
+    let (native_profile, native_model_dir) =
+        native_ocr::model_status(app, &settings.ocr_model_profile);
+    if native_model_dir.is_none() {
+        return false;
+    }
+
+    if native_ocr::is_native_engine(&settings.ocr_engine) {
+        let mut changed = false;
+        if settings.ocr_engine != native_ocr::engine_name() {
+            settings.ocr_engine = native_ocr::engine_name().to_string();
+            changed = true;
+        }
+        if settings.ocr_model_profile != native_profile {
+            settings.ocr_model_profile = native_profile;
+            changed = true;
+        }
+        return changed;
+    }
+
+    if ocr_service::has_packaged_http_ocr_runtime(app) {
+        return false;
+    }
+
+    settings.ocr_engine = native_ocr::engine_name().to_string();
+    settings.ocr_model_profile = native_profile;
+    true
 }
 
 fn translation_config_from_args(
@@ -528,13 +561,28 @@ pub fn run() {
             }
 
             // 加载持久化设置
-            let persisted_settings = match load_persisted_settings(&app.handle().clone()) {
+            let mut persisted_settings = match load_persisted_settings(&app.handle().clone()) {
                 Ok(settings) => settings,
                 Err(error) => {
                     warn!("加载持久化设置失败，使用默认值: {}", error);
                     PersistedSettings::default()
                 }
             };
+
+            if adapt_ocr_settings_for_packaged_runtime(
+                &app.handle().clone(),
+                &mut persisted_settings,
+            ) {
+                info!(
+                    "已根据当前安装包切换 OCR 运行时: engine={}, profile={}",
+                    persisted_settings.ocr_engine, persisted_settings.ocr_model_profile
+                );
+                if let Err(error) =
+                    save_persisted_settings(&app.handle().clone(), &persisted_settings)
+                {
+                    warn!("保存 OCR 运行时迁移设置失败: {}", error);
+                }
+            }
 
             // 初始化状态管理
             let config = Arc::new(RwLock::new(AppConfig {
