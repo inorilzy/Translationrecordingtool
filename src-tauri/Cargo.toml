@@ -41,6 +41,10 @@ windows-sys = { version = "0.59.0", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
+windows = { version = "0.61.3", features = [
+    "Win32_System_Com",
+    "Win32_UI_Accessibility",
+] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "time"] }
 tracing-appender = "0.2"

@@ -6,6 +6,14 @@ pub fn read_clipboard(app: &tauri::AppHandle) -> Result<String, String> {
         .map_err(|e| format!("读取剪贴板失败: {}", e))
 }
 
+pub fn write_clipboard(app: &tauri::AppHandle, text: &str) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+
+    app.clipboard()
+        .write_text(text)
+        .map_err(|e| format!("写入剪贴板失败: {}", e))
+}
+
 pub fn clipboard_sequence_number() -> Option<u32> {
     #[cfg(target_os = "windows")]
     {

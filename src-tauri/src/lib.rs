@@ -9,6 +9,7 @@ mod ocr;
 mod ocr_service;
 pub mod popup_window;
 mod screenshot;
+mod selection_reader;
 mod settings;
 mod shortcut_handler;
 mod translation_flow;

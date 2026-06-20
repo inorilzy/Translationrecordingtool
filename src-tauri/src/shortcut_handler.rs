@@ -13,6 +13,12 @@ use crate::popup_window::{
 };
 use crate::translation_flow;
 
+#[derive(Debug, PartialEq, Eq)]
+enum SelectionTextSource {
+    UiAutomation,
+    ClipboardFallback,
+}
+
 // ─── Shortcut Registration ───────────────────────────────────────────────────
 
 pub fn register_shortcut_handler(
@@ -72,33 +78,13 @@ pub fn handle_shortcut(
 
         // 1. 获取鼠标位置（复制前获取）
         let cursor_pos = get_cursor_position();
-        let baseline_clipboard_sequence = crate::clipboard::clipboard_sequence_number();
-
-        // 2. 模拟 Ctrl+C
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        info!("正在模拟 Ctrl+C 复制");
-
-        use enigo::{Enigo, Key, Keyboard, Settings};
-        let mut enigo = Enigo::new(&Settings::default()).unwrap();
-        enigo.key(Key::Control, enigo::Direction::Press).ok();
-        enigo.key(Key::Unicode('c'), enigo::Direction::Click).ok();
-        enigo.key(Key::Control, enigo::Direction::Release).ok();
-
-        info!("复制完成，等待剪贴板更新");
-
-        // 3. 读取剪贴板
-        let text = match crate::clipboard::read_clipboard_after_update(
-            &app,
-            baseline_clipboard_sequence,
-            6,
-            80,
-        ) {
-            Ok(t) => {
-                info!("读取到剪贴板内容: {}", t);
-                t
+        let text = match read_selected_text_with_fallback(&app) {
+            Ok((text, source)) => {
+                info!("读取到选中文本({:?}): {}", source, text);
+                text
             }
             Err(e) => {
-                error!("读取剪贴板失败: {:?}", e);
+                error!("读取选中文本失败: {:?}", e);
                 if is_active_popup_request(&popup_state, request_id) {
                     let _ = close_popup_window(&app);
                 }
@@ -226,6 +212,55 @@ pub fn handle_shortcut(
             true,
         );
     });
+}
+
+fn read_selected_text_with_fallback(
+    app: &tauri::AppHandle,
+) -> Result<(String, SelectionTextSource), String> {
+    match crate::selection_reader::read_selected_text() {
+        Ok(text) if !text.trim().is_empty() => {
+            return Ok((text.trim().to_string(), SelectionTextSource::UiAutomation));
+        }
+        Ok(_) => {
+            warn!("UI Automation 未读取到选中文本，回退到剪贴板复制");
+        }
+        Err(error) => {
+            warn!(
+                "UI Automation 读取选中文本失败，回退到剪贴板复制: {}",
+                error
+            );
+        }
+    }
+
+    copy_selection_and_read_clipboard(app)
+        .map(|text| (text, SelectionTextSource::ClipboardFallback))
+}
+
+fn copy_selection_and_read_clipboard(app: &tauri::AppHandle) -> Result<String, String> {
+    let previous_clipboard = crate::clipboard::read_clipboard(app).ok();
+    let baseline_clipboard_sequence = crate::clipboard::clipboard_sequence_number();
+
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    info!("正在模拟 Ctrl+C 复制");
+
+    use enigo::{Enigo, Key, Keyboard, Settings};
+    let mut enigo = Enigo::new(&Settings::default())
+        .map_err(|error| format!("初始化键盘模拟失败: {}", error))?;
+    enigo.key(Key::Control, enigo::Direction::Press).ok();
+    enigo.key(Key::Unicode('c'), enigo::Direction::Click).ok();
+    enigo.key(Key::Control, enigo::Direction::Release).ok();
+
+    info!("复制完成，等待剪贴板更新");
+    let selected_text =
+        crate::clipboard::read_clipboard_after_update(app, baseline_clipboard_sequence, 6, 80);
+
+    if let Some(previous_text) = previous_clipboard {
+        if let Err(error) = crate::clipboard::write_clipboard(app, &previous_text) {
+            warn!("恢复原剪贴板失败: {}", error);
+        }
+    }
+
+    selected_text
 }
 
 pub fn handle_screenshot_shortcut(
