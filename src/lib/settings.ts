@@ -24,7 +24,7 @@ export const defaultSettings: AppSettings = {
   microsoftTranslatorRegion: '',
   ocrEndpoint: 'http://127.0.0.1:8866/ocr',
   ocrEngine: 'paddleocr',
-  ocrModelProfile: 'standard',
+  ocrModelProfile: 'small',
   ocrPreloadOnStartup: true,
   globalShortcut: 'Ctrl+Q',
   screenshotShortcut: 'Ctrl+Shift+Q',

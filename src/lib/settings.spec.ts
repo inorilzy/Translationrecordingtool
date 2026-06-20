@@ -41,7 +41,7 @@ describe('normalizeSettings', () => {
       microsoftTranslatorRegion: 'eastasia',
       ocrEndpoint: 'http://127.0.0.1:8866/ocr',
       ocrEngine: 'paddleocr',
-      ocrModelProfile: 'accurate',
+      ocrModelProfile: 'medium',
       ocrPreloadOnStartup: false,
       globalShortcut: 'Ctrl+Shift+Q',
       screenshotShortcut: 'Ctrl+Shift+S',
@@ -81,7 +81,7 @@ describe('isDefaultSettings', () => {
     expect(isDefaultSettings({ ...defaultSettings, translationProvider: 'microsoft' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, microsoftTranslatorKey: 'x' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, ocrEndpoint: 'http://127.0.0.1:8867/ocr' })).toBe(false)
-    expect(isDefaultSettings({ ...defaultSettings, ocrModelProfile: 'lite' })).toBe(false)
+    expect(isDefaultSettings({ ...defaultSettings, ocrModelProfile: 'tiny' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, ocrPreloadOnStartup: false })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, screenshotShortcut: 'Ctrl+Shift+S' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, enableTray: false })).toBe(false)

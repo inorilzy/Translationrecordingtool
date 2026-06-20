@@ -11,6 +11,19 @@ from pathlib import Path
 from typing import Any
 
 
+PPOCRV6_MODEL_NAMES = {
+    "tiny": ("PP-OCRv6_tiny_det", "PP-OCRv6_tiny_rec"),
+    "small": ("PP-OCRv6_small_det", "PP-OCRv6_small_rec"),
+    "medium": ("PP-OCRv6_medium_det", "PP-OCRv6_medium_rec"),
+}
+
+LEGACY_PROFILE_MAP = {
+    "lite": "tiny",
+    "standard": "small",
+    "accurate": "medium",
+}
+
+
 def configure_frozen_import_paths() -> None:
     bundle_dir = getattr(sys, "_MEIPASS", None)
     if not bundle_dir:
@@ -182,17 +195,32 @@ def build_paddle_ocr(args: argparse.Namespace) -> Any:
         from paddleocr import PaddleOCR
     except ImportError as exc:
         raise SystemExit(
-            f"未安装或无法加载 paddleocr。请先运行: pip install paddleocr paddlepaddle。原始错误: {exc}"
+            f"未安装或无法加载 paddleocr。请先运行: pip install paddleocr onnxruntime。原始错误: {exc}"
         ) from exc
 
     init_params = inspect.signature(PaddleOCR.__init__).parameters
-    kwargs: dict[str, Any] = {"lang": args.lang}
+    model_dir = Path(args.model_dir).resolve() if args.model_dir else None
+    use_local_models = bool(model_dir and model_dir.exists())
+    kwargs: dict[str, Any] = {} if use_local_models else {"lang": args.lang}
+    profile = normalize_model_profile(args.model_profile)
 
-    if "device" in init_params:
+    has_var_kwargs = accepts_var_kwargs(init_params)
+
+    if "device" in init_params or has_var_kwargs:
         kwargs["device"] = args.device
     else:
         kwargs["use_gpu"] = args.device.lower().startswith("gpu")
         kwargs["show_log"] = False
+
+    version_params = [] if use_local_models else [("ocr_version", "PP-OCRv6")]
+    for key, value in (
+        *version_params,
+        ("engine", "onnxruntime"),
+        ("enable_hpi", False),
+        ("use_tensorrt", False),
+    ):
+        if key in init_params or has_var_kwargs:
+            kwargs[key] = value
 
     for key in (
         "use_doc_orientation_classify",
@@ -202,9 +230,17 @@ def build_paddle_ocr(args: argparse.Namespace) -> Any:
         if key in init_params:
             kwargs[key] = False
 
-    model_dir = Path(args.model_dir).resolve() if args.model_dir else None
+    det_model_name, rec_model_name = PPOCRV6_MODEL_NAMES[profile]
+    if "text_detection_model_name" in init_params:
+        kwargs["text_detection_model_name"] = det_model_name
+    if "text_recognition_model_name" in init_params:
+        kwargs["text_recognition_model_name"] = rec_model_name
+
     if model_dir and model_dir.exists():
         model_candidates = {
+            "text_detection_model_dir": model_dir / "det",
+            "text_recognition_model_dir": model_dir / "rec",
+            "textline_orientation_model_dir": model_dir / "cls",
             "det_model_dir": model_dir / "det",
             "rec_model_dir": model_dir / "rec",
             "cls_model_dir": model_dir / "cls",
@@ -212,8 +248,23 @@ def build_paddle_ocr(args: argparse.Namespace) -> Any:
         for key, path in model_candidates.items():
             if key in init_params and path.exists():
                 kwargs[key] = str(path)
+    elif "text_detection_model_name" in init_params:
+        raise SystemExit(
+            "未找到 PP-OCRv6 ONNX 模型目录。请先运行: "
+            f"npm run ocr:models:win -- -Profile {profile}"
+        )
 
     return PaddleOCR(**kwargs)
+
+
+def accepts_var_kwargs(params: dict[str, inspect.Parameter]) -> bool:
+    return any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values())
+
+
+def normalize_model_profile(profile: str) -> str:
+    value = (profile or "small").strip().lower()
+    value = LEGACY_PROFILE_MAP.get(value, value)
+    return value if value in PPOCRV6_MODEL_NAMES else "small"
 
 
 def build_rapid_ocr() -> Any:
@@ -234,7 +285,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--engine", choices=["paddleocr", "rapidocr"], default="paddleocr")
     parser.add_argument("--lang", default="ch")
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--model-profile", default="standard")
+    parser.add_argument("--model-profile", default="small")
     parser.add_argument("--model-dir", default="")
     return parser.parse_args()
 

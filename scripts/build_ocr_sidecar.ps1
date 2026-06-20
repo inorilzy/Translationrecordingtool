@@ -1,9 +1,7 @@
 param(
     [string]$PythonVersion = "3.11",
-    [string]$PaddleOcrVersion = "2.7.3",
-    [string]$PaddlePaddleVersion = "2.6.2",
-    [string]$RapidOcrVersion = "1.4.4",
-    [string]$OnnxRuntimeVersion = "1.16.3"
+    [string]$PaddleOcrVersion = "3.7.0",
+    [string]$OnnxRuntimeVersion = "1.27.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +13,7 @@ $venvPath = Join-Path $buildRoot ".venv"
 $distPath = Join-Path $buildRoot "dist"
 $workPath = Join-Path $buildRoot "build"
 $binariesDir = Join-Path $repoRoot "src-tauri\binaries"
+$hookDir = Join-Path $repoRoot "scripts\pyinstaller-hooks"
 $targetName = "paddle-ocr-server-x86_64-pc-windows-msvc.exe"
 $targetPath = Join-Path $binariesDir $targetName
 
@@ -40,7 +39,7 @@ if (-not (Test-Path $python)) {
 }
 
 Write-Host "[ocr-sidecar] Installing dependencies..."
-uv pip install --python $python "paddleocr==$PaddleOcrVersion" "paddlepaddle==$PaddlePaddleVersion" "rapidocr-onnxruntime==$RapidOcrVersion" "onnxruntime==$OnnxRuntimeVersion" "numpy<2" "pyinstaller>=6,<7"
+uv pip install --python $python "paddleocr==$PaddleOcrVersion" "onnxruntime==$OnnxRuntimeVersion" "numpy<2" "pyinstaller>=6,<7"
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to install OCR sidecar dependencies"
 }
@@ -50,9 +49,31 @@ if (-not (Test-Path $paddleOcrPackageDir)) {
     throw "Failed to locate paddleocr package directory"
 }
 
-$rapidOcrPackageDir = Join-Path $venvPath "Lib\site-packages\rapidocr_onnxruntime"
-if (-not (Test-Path $rapidOcrPackageDir)) {
-    throw "Failed to locate rapidocr_onnxruntime package directory"
+$excludeModules = @(
+    "Cython",
+    "IPython",
+    "jupyter",
+    "matplotlib",
+    "notebook",
+    "onnxruntime.datasets",
+    "onnxruntime.quantization",
+    "onnxruntime.tools",
+    "onnxruntime.transformers",
+    "modelscope.exporters",
+    "modelscope.models",
+    "modelscope.msdatasets",
+    "modelscope.pipelines",
+    "modelscope.preprocessors",
+    "modelscope.trainers",
+    "scipy",
+    "skimage",
+    "torch",
+    "torchvision"
+)
+
+$excludeArgs = @()
+foreach ($module in $excludeModules) {
+    $excludeArgs += @("--exclude-module", $module)
 }
 
 Write-Host "[ocr-sidecar] Building executable..."
@@ -64,37 +85,27 @@ Write-Host "[ocr-sidecar] Building executable..."
     --specpath $buildRoot `
     --distpath $distPath `
     --workpath $workPath `
+    --additional-hooks-dir $hookDir `
     --paths $paddleOcrPackageDir `
-    --paths $rapidOcrPackageDir `
     --collect-all paddleocr `
-    --collect-all rapidocr_onnxruntime `
-    --collect-all onnxruntime `
-    --collect-all paddle `
-    --collect-all Cython `
+    --collect-all paddlex `
+    --collect-submodules onnxruntime.capi `
+    --collect-binaries onnxruntime `
     --collect-all pyclipper `
-    --collect-all lmdb `
-    --copy-metadata imageio `
-    --copy-metadata imgaug `
-    --copy-metadata scikit-image `
-    --copy-metadata scipy `
+    @excludeArgs `
+    --copy-metadata imagesize `
+    --copy-metadata pypdfium2 `
+    --copy-metadata python-bidi `
     --copy-metadata shapely `
     --copy-metadata pyclipper `
-    --copy-metadata lmdb `
-    --copy-metadata opencv-python `
     --copy-metadata opencv-contrib-python `
     --copy-metadata paddleocr `
-    --copy-metadata paddlepaddle `
-    --copy-metadata rapidocr-onnxruntime `
+    --copy-metadata paddlex `
     --copy-metadata onnxruntime `
     --hidden-import paddleocr `
-    --hidden-import rapidocr_onnxruntime `
+    --hidden-import paddlex `
     --hidden-import onnxruntime `
-    --hidden-import paddle `
-    --hidden-import ppocr `
-    --hidden-import ppstructure `
-    --hidden-import tools `
     --hidden-import pyclipper `
-    --hidden-import lmdb `
     $serverScript
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to build OCR sidecar with PyInstaller"

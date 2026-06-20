@@ -34,7 +34,7 @@ const config = ref({
   microsoftTranslatorRegion: '',
   ocrEndpoint: 'http://127.0.0.1:8866/ocr',
   ocrEngine: 'paddleocr',
-  ocrModelProfile: 'standard',
+  ocrModelProfile: 'small',
   ocrPreloadOnStartup: true,
   globalShortcut: 'Ctrl+Q',
   screenshotShortcut: 'Ctrl+Shift+Q',
@@ -75,15 +75,15 @@ const microsoftRegionOptions: SelectOption[] = [
 ]
 
 const ocrEngineOptions: SelectOption[] = [
-  { label: 'PaddleOCR', value: 'paddleocr' },
-  { label: 'RapidOCR', value: 'rapidocr' },
+  { label: 'PaddleOCR PP-OCRv6', value: 'paddleocr' },
+  { label: 'RapidOCR / 备用', value: 'rapidocr' },
   { label: 'Windows OCR / 预留', value: 'windows', disabled: true },
 ]
 
 const ocrModelProfileOptions: SelectOption[] = [
-  { label: 'Lite - 更快更小', value: 'lite' },
-  { label: 'Standard - 默认平衡', value: 'standard' },
-  { label: 'Accurate - 更高精度', value: 'accurate' },
+  { label: 'Tiny - 最小最快', value: 'tiny' },
+  { label: 'Small - 推荐平衡', value: 'small' },
+  { label: 'Medium - 更高精度', value: 'medium' },
 ]
 
 const providerName = computed(() => (
@@ -123,15 +123,17 @@ const ocrVersionText = computed(() => {
     return `RapidOCR ${version} / ONNX Runtime / CPU`
   }
 
-  if (!ocrStatus.value) return 'PaddleOCR 2.7.3 / PaddlePaddle 2.6.2 / CPU'
-  return `PaddleOCR ${ocrStatus.value.paddleocrVersion} / PaddlePaddle ${ocrStatus.value.paddlepaddleVersion} / ${ocrStatus.value.device.toUpperCase()} / ${ocrStatus.value.modelProfile}`
+  if (!ocrStatus.value) return 'PaddleOCR 3.7.0 / PP-OCRv6 / ONNXRuntime / CPU'
+  const ppocrVersion = ocrStatus.value.ppocrVersion || 'PP-OCRv6'
+  const onnxVersion = ocrStatus.value.onnxruntimeVersion || '1.27.0'
+  return `PaddleOCR ${ocrStatus.value.paddleocrVersion} / ${ppocrVersion} / ONNXRuntime ${onnxVersion} / ${ocrStatus.value.device.toUpperCase()} / ${ocrStatus.value.modelProfile}`
 })
 
 const ocrModelText = computed(() => {
   const engine = ocrStatus.value?.engine || config.value.ocrEngine
   if (engine === 'rapidocr') return 'RapidOCR 使用内置 ONNX 模型，模型档位仅对 PaddleOCR 生效'
   if (!ocrStatus.value) return '模型目录未检查'
-  return ocrStatus.value.modelDir ? '已检测到内置模型目录' : '未检测到内置模型目录，将使用 PaddleOCR 默认缓存'
+  return ocrStatus.value.modelDir ? '已检测到 PP-OCRv6 ONNX 模型目录' : '未检测到内置模型目录，将使用 PaddleOCR 自动缓存'
 })
 
 const ocrStatusDetail = computed(() => {

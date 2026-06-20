@@ -9,7 +9,7 @@ pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Ctrl+Shift+Q";
 pub const DEFAULT_THEME: &str = "light";
 pub const DEFAULT_OCR_ENDPOINT: &str = "http://127.0.0.1:8866/ocr";
 pub const DEFAULT_OCR_ENGINE: &str = "paddleocr";
-pub const DEFAULT_OCR_MODEL_PROFILE: &str = "standard";
+pub const DEFAULT_OCR_MODEL_PROFILE: &str = "small";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -146,7 +146,7 @@ mod tests {
             microsoft_translator_region: "eastasia".to_string(),
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
             ocr_engine: "paddleocr".to_string(),
-            ocr_model_profile: "standard".to_string(),
+            ocr_model_profile: "small".to_string(),
             ocr_preload_on_startup: true,
             global_shortcut: "Ctrl+Shift+Q".to_string(),
             screenshot_shortcut: "Ctrl+Shift+S".to_string(),
@@ -197,7 +197,7 @@ mod tests {
             microsoft_translator_region: "global".to_string(),
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
             ocr_engine: "paddleocr".to_string(),
-            ocr_model_profile: "standard".to_string(),
+            ocr_model_profile: "small".to_string(),
             ocr_preload_on_startup: true,
             global_shortcut: "Ctrl+Q".to_string(),
             screenshot_shortcut: "Ctrl+Shift+Q".to_string(),

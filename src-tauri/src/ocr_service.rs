@@ -15,8 +15,9 @@ use tracing::{info, warn};
 const OCR_HOST: &str = "127.0.0.1";
 const OCR_LANG: &str = "ch";
 const OCR_DEVICE: &str = "cpu";
-const PADDLE_OCR_VERSION: &str = "2.7.3";
-const PADDLEPADDLE_VERSION: &str = "2.6.2";
+const PADDLE_OCR_VERSION: &str = "3.7.0";
+const PPOCR_VERSION: &str = "PP-OCRv6";
+const ONNXRUNTIME_VERSION: &str = "1.27.0";
 const RAPID_OCR_VERSION: &str = "1.4.4";
 const OCR_SIDECAR_STEM: &str = "paddle-ocr-server";
 const OCR_MODEL_RESOURCE_DIR: &str = "ocr-models";
@@ -42,7 +43,8 @@ pub struct OcrServiceStatus {
     pub preload_on_startup: bool,
     pub rapidocr_version: &'static str,
     pub paddleocr_version: &'static str,
-    pub paddlepaddle_version: &'static str,
+    pub ppocr_version: &'static str,
+    pub onnxruntime_version: &'static str,
     pub lang: &'static str,
     pub device: &'static str,
 }
@@ -112,7 +114,7 @@ pub async fn restart(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Strin
 }
 
 pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus {
-    let model_dir = packaged_model_dir(app, &config.model_profile);
+    let (model_profile, model_dir) = packaged_model_config(app, &config.model_profile);
     let sidecar_path = packaged_sidecar_path(app);
     let log_path = log_path(app).ok();
     match crate::ocr::check_service_engine(&config.endpoint, &config.engine).await {
@@ -122,14 +124,15 @@ pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceSta
             message,
             last_error: None,
             engine: config.engine.clone(),
-            model_profile: config.model_profile.clone(),
+            model_profile: model_profile.clone(),
             model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
             sidecar_path: sidecar_path.as_ref().map(|path| path.display().to_string()),
             log_path: log_path.as_ref().map(|path| path.display().to_string()),
             preload_on_startup: config.preload_on_startup,
             rapidocr_version: RAPID_OCR_VERSION,
             paddleocr_version: PADDLE_OCR_VERSION,
-            paddlepaddle_version: PADDLEPADDLE_VERSION,
+            ppocr_version: PPOCR_VERSION,
+            onnxruntime_version: ONNXRUNTIME_VERSION,
             lang: OCR_LANG,
             device: OCR_DEVICE,
         },
@@ -139,14 +142,15 @@ pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceSta
             message: "OCR 服务未运行".to_string(),
             last_error: last_error(app).or(Some(error)),
             engine: config.engine.clone(),
-            model_profile: config.model_profile.clone(),
+            model_profile: model_profile.clone(),
             model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
             sidecar_path: sidecar_path.as_ref().map(|path| path.display().to_string()),
             log_path: log_path.as_ref().map(|path| path.display().to_string()),
             preload_on_startup: config.preload_on_startup,
             rapidocr_version: RAPID_OCR_VERSION,
             paddleocr_version: PADDLE_OCR_VERSION,
-            paddlepaddle_version: PADDLEPADDLE_VERSION,
+            ppocr_version: PPOCR_VERSION,
+            onnxruntime_version: ONNXRUNTIME_VERSION,
             lang: OCR_LANG,
             device: OCR_DEVICE,
         },
@@ -228,13 +232,19 @@ fn build_command(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Command, 
         .map_err(|error| format!("OCR HTTP 地址无效: {}", error))?;
     let host = url.host_str().unwrap_or(OCR_HOST).to_string();
     let port = url.port().unwrap_or(8866).to_string();
-    let model_dir = packaged_model_dir(app, &config.model_profile);
+    let (model_profile, model_dir) = packaged_model_config(app, &config.model_profile);
 
     if cfg!(debug_assertions) {
         let mut command = npm_command();
         command.args(["run", ocr_server_script_name(&config.engine)]);
         command.arg("--");
-        command.args(ocr_server_args(&host, &port, config, model_dir.as_ref()));
+        command.args(ocr_server_args(
+            &host,
+            &port,
+            config,
+            &model_profile,
+            model_dir.as_ref(),
+        ));
         if let Some(workspace_root) = workspace_root_from_current_dir() {
             command.current_dir(workspace_root);
         }
@@ -243,7 +253,13 @@ fn build_command(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Command, 
 
     if let Some(sidecar_path) = packaged_sidecar_path(app) {
         let mut command = Command::new(sidecar_path);
-        command.args(ocr_server_args(&host, &port, config, model_dir.as_ref()));
+        command.args(ocr_server_args(
+            &host,
+            &port,
+            config,
+            &model_profile,
+            model_dir.as_ref(),
+        ));
         return Ok(command);
     }
 
@@ -269,7 +285,13 @@ fn build_command(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Command, 
         "python",
     ]);
     command.arg(script_path);
-    command.args(ocr_server_args(&host, &port, config, model_dir.as_ref()));
+    command.args(ocr_server_args(
+        &host,
+        &port,
+        config,
+        &model_profile,
+        model_dir.as_ref(),
+    ));
     Ok(command)
 }
 
@@ -277,6 +299,7 @@ fn ocr_server_args(
     host: &str,
     port: &str,
     config: &OcrRuntimeConfig,
+    model_profile: &str,
     model_dir: Option<&PathBuf>,
 ) -> Vec<String> {
     let mut args = vec![
@@ -291,7 +314,7 @@ fn ocr_server_args(
         "--engine".to_string(),
         config.engine.clone(),
         "--model-profile".to_string(),
-        config.model_profile.clone(),
+        model_profile.to_string(),
     ];
 
     if let Some(model_dir) = model_dir {
@@ -312,16 +335,29 @@ fn ocr_server_script_name(engine: &str) -> &'static str {
 fn ocr_engine_runtime_requirement(engine: &str) -> &'static str {
     match engine {
         "rapidocr" => "rapidocr-onnxruntime==1.4.4",
-        _ => "paddleocr==2.7.3",
+        _ => "paddleocr==3.7.0",
     }
 }
 
 fn ocr_engine_core_requirement(engine: &str) -> &'static str {
     match engine {
         "rapidocr" => "onnxruntime==1.16.3",
-        _ => "paddlepaddle==2.6.2",
+        _ => "onnxruntime==1.27.0",
     }
 }
+
+fn packaged_model_config(app: &AppHandle, model_profile: &str) -> (String, Option<PathBuf>) {
+    let requested_profile = normalize_model_profile(model_profile);
+    if let Some(model_dir) = packaged_model_dir(app, &requested_profile) {
+        return (requested_profile, Some(model_dir));
+    }
+
+    let fallback_profile = DEFAULT_PACKAGED_MODEL_PROFILE.to_string();
+    let fallback_dir = packaged_model_dir(app, &fallback_profile);
+    (fallback_profile, fallback_dir)
+}
+
+const DEFAULT_PACKAGED_MODEL_PROFILE: &str = "small";
 
 fn packaged_model_dir(app: &AppHandle, model_profile: &str) -> Option<PathBuf> {
     let profile = normalize_model_profile(model_profile);
@@ -360,9 +396,9 @@ fn packaged_model_dir(app: &AppHandle, model_profile: &str) -> Option<PathBuf> {
 
 fn normalize_model_profile(model_profile: &str) -> String {
     match model_profile.trim() {
-        "lite" => "lite".to_string(),
-        "accurate" => "accurate".to_string(),
-        _ => "standard".to_string(),
+        "tiny" | "lite" => "tiny".to_string(),
+        "medium" | "accurate" => "medium".to_string(),
+        _ => "small".to_string(),
     }
 }
 
@@ -638,11 +674,11 @@ mod tests {
     fn picks_runtime_requirements_for_engine() {
         assert_eq!(
             ocr_engine_runtime_requirement("paddleocr"),
-            "paddleocr==2.7.3"
+            "paddleocr==3.7.0"
         );
         assert_eq!(
             ocr_engine_core_requirement("paddleocr"),
-            "paddlepaddle==2.6.2"
+            "onnxruntime==1.27.0"
         );
         assert_eq!(
             ocr_engine_runtime_requirement("rapidocr"),
@@ -659,16 +695,16 @@ mod tests {
         let config = OcrRuntimeConfig {
             endpoint: "http://127.0.0.1:8867/ocr".to_string(),
             engine: "rapidocr".to_string(),
-            model_profile: "lite".to_string(),
+            model_profile: "tiny".to_string(),
             preload_on_startup: true,
         };
 
-        let args = ocr_server_args("127.0.0.1", "8867", &config, None);
+        let args = ocr_server_args("127.0.0.1", "8867", &config, "tiny", None);
 
         assert!(args.windows(2).any(|pair| pair == ["--engine", "rapidocr"]));
         assert!(args
             .windows(2)
-            .any(|pair| pair == ["--model-profile", "lite"]));
+            .any(|pair| pair == ["--model-profile", "tiny"]));
         assert!(args.windows(2).any(|pair| pair == ["--port", "8867"]));
     }
 

@@ -1,0 +1,11 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/paddle-ocr-server"
+    ],
+    "resources": [
+      "resources/ocr-models/small/**/*",
+      "../scripts/paddle_ocr_server.py"
+    ]
+  }
+}

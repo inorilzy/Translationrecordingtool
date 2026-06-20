@@ -40,7 +40,7 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorRegion).toBe('')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.ocrEngine).toBe('paddleocr')
-      expect(store.ocrModelProfile).toBe('standard')
+      expect(store.ocrModelProfile).toBe('small')
       expect(store.ocrPreloadOnStartup).toBe(true)
       expect(store.globalShortcut).toBe('Ctrl+Q')
       expect(store.screenshotShortcut).toBe('Ctrl+Shift+Q')
@@ -60,7 +60,7 @@ describe('useSettingsStore', () => {
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
         ocrEngine: 'paddleocr',
-        ocrModelProfile: 'lite',
+        ocrModelProfile: 'tiny',
         ocrPreloadOnStartup: false,
         screenshotShortcut: 'Ctrl+Shift+S',
         theme: 'dark',
@@ -76,7 +76,7 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.ocrEngine).toBe('paddleocr')
-      expect(store.ocrModelProfile).toBe('lite')
+      expect(store.ocrModelProfile).toBe('tiny')
       expect(store.ocrPreloadOnStartup).toBe(false)
       expect(store.screenshotShortcut).toBe('Ctrl+Shift+S')
       expect(store.theme).toBe('dark')
@@ -97,7 +97,7 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorRegion).toBe('')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.ocrEngine).toBe('paddleocr')
-      expect(store.ocrModelProfile).toBe('standard')
+      expect(store.ocrModelProfile).toBe('small')
       expect(store.ocrPreloadOnStartup).toBe(true)
       expect(store.theme).toBe('light')
       expect(store.globalShortcut).toBe('Ctrl+Q')
@@ -129,7 +129,7 @@ describe('useSettingsStore', () => {
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
         ocrEngine: 'paddleocr',
-        ocrModelProfile: 'accurate',
+        ocrModelProfile: 'medium',
         ocrPreloadOnStartup: false,
       })
 
@@ -141,7 +141,7 @@ describe('useSettingsStore', () => {
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
         ocrEngine: 'paddleocr',
-        ocrModelProfile: 'accurate',
+        ocrModelProfile: 'medium',
         ocrPreloadOnStartup: false,
       })
       expect(store.apiKey).toBe('new-key')
@@ -151,7 +151,7 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.ocrEngine).toBe('paddleocr')
-      expect(store.ocrModelProfile).toBe('accurate')
+      expect(store.ocrModelProfile).toBe('medium')
       expect(store.ocrPreloadOnStartup).toBe(false)
     })
 
@@ -167,7 +167,7 @@ describe('useSettingsStore', () => {
         microsoftTranslatorRegion: 'westus',
         ocrEndpoint: 'http://bad.local/ocr',
         ocrEngine: 'paddleocr',
-        ocrModelProfile: 'lite',
+        ocrModelProfile: 'tiny',
         ocrPreloadOnStartup: false,
       })).rejects.toThrow('backend error')
 
@@ -176,7 +176,7 @@ describe('useSettingsStore', () => {
       expect(store.translationProvider).toBe('youdao') // unchanged
       expect(store.microsoftTranslatorKey).toBe('') // unchanged
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr') // unchanged
-      expect(store.ocrModelProfile).toBe('standard') // unchanged
+      expect(store.ocrModelProfile).toBe('small') // unchanged
       expect(store.error).toContain('更新配置失败')
     })
   })
@@ -315,14 +315,15 @@ describe('useSettingsStore', () => {
         message: 'PaddleOCR 服务正常',
         lastError: null,
         engine: 'paddleocr',
-        modelProfile: 'standard',
+        modelProfile: 'small',
         modelDir: null,
         sidecarPath: null,
         logPath: 'C:/logs/paddle-ocr-service.log',
         preloadOnStartup: true,
         rapidocrVersion: '1.4.4',
-        paddleocrVersion: '2.7.3',
-        paddlepaddleVersion: '2.6.2',
+        paddleocrVersion: '3.7.0',
+        ppocrVersion: 'PP-OCRv6',
+        onnxruntimeVersion: '1.27.0',
         lang: 'ch',
         device: 'cpu',
       }

@@ -22,7 +22,8 @@ export interface OcrServiceStatus {
   preloadOnStartup: boolean
   rapidocrVersion: string
   paddleocrVersion: string
-  paddlepaddleVersion: string
+  ppocrVersion: string
+  onnxruntimeVersion: string
   lang: string
   device: string
 }
