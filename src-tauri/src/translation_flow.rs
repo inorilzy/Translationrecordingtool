@@ -123,7 +123,9 @@ pub fn is_single_word(text: &str) -> bool {
         return false;
     }
 
-    trimmed.chars().all(|c| c.is_alphabetic() || c == '\'' || c == '-')
+    trimmed
+        .chars()
+        .all(|c| c.is_alphabetic() || c == '\'' || c == '-')
 }
 
 // ─── Local Dictionary Lookup ─────────────────────────────────────────────────
@@ -169,7 +171,11 @@ pub async fn resolve_translation(
     config: &TranslationConfig,
 ) -> Result<Translation, String> {
     let is_word = is_single_word(text);
-    info!("翻译文本: {}, 类型: {}", text, if is_word { "单词" } else { "句子" });
+    info!(
+        "翻译文本: {}, 类型: {}",
+        text,
+        if is_word { "单词" } else { "句子" }
+    );
 
     if is_word {
         // 1. 本地词典
@@ -257,20 +263,12 @@ pub async fn resolve_remote_provider_translation(
 ) -> Result<Translation, String> {
     match config.provider.trim().to_lowercase().as_str() {
         "microsoft" => {
-            resolve_microsoft_translation(
-                text,
-                &config.microsoft_key,
-                &config.microsoft_region,
-            )
-            .await
+            resolve_microsoft_translation(text, &config.microsoft_key, &config.microsoft_region)
+                .await
         }
         _ => {
-            resolve_youdao_translation(
-                text,
-                &config.youdao_app_key,
-                &config.youdao_app_secret,
-            )
-            .await
+            resolve_youdao_translation(text, &config.youdao_app_key, &config.youdao_app_secret)
+                .await
         }
     }
 }
@@ -281,7 +279,11 @@ pub async fn resolve_remote_translation(
     config: &TranslationConfig,
 ) -> Result<Translation, String> {
     let is_word = is_single_word(text);
-    info!("翻译文本: {}, 类型: {}", text, if is_word { "单词" } else { "句子" });
+    info!(
+        "翻译文本: {}, 类型: {}",
+        text,
+        if is_word { "单词" } else { "句子" }
+    );
 
     if is_word {
         info!("尝试 Free Dictionary");

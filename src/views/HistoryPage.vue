@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useTranslationStore } from '../stores/translation'
-import NavigationBar from '../components/NavigationBar.vue'
 import TranslationCard from '../components/TranslationCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 
@@ -24,8 +23,6 @@ onMounted(() => {
 
 <template>
   <div class="page-container">
-    <NavigationBar />
-
     <div class="page-header">
       <h1>历史记录</h1>
     </div>

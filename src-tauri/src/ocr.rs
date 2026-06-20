@@ -62,7 +62,10 @@ pub async fn check_service(endpoint: &str) -> Result<String, String> {
         .map_err(|e| format!("Paddle OCR 服务连接失败: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Paddle OCR 服务健康检查失败: {}", response.status()));
+        return Err(format!(
+            "Paddle OCR 服务健康检查失败: {}",
+            response.status()
+        ));
     }
 
     Ok(format!("Paddle OCR 服务正常: {}", health_url))
@@ -167,7 +170,10 @@ mod tests {
             ]
         });
 
-        assert_eq!(extract_text(&value), Some("first line\nsecond line".to_string()));
+        assert_eq!(
+            extract_text(&value),
+            Some("first line\nsecond line".to_string())
+        );
     }
 
     #[test]

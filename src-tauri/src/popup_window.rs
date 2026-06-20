@@ -10,8 +10,8 @@ use crate::app_state::{mark_popup_ready, PopupRuntimeState};
 
 pub const POPUP_WIDTH: i32 = 420;
 pub const POPUP_HEIGHT: i32 = 380;
-pub const OFFSET: i32 = 15;    // 鼠标偏移量
-pub const MARGIN: i32 = 20;    // 屏幕边缘留白
+pub const OFFSET: i32 = 15; // 鼠标偏移量
+pub const MARGIN: i32 = 20; // 屏幕边缘留白
 
 // ─── Pure Positioning Helper (Testable) ──────────────────────────────────────
 
@@ -87,7 +87,11 @@ pub fn calculate_popup_position(
         y = y.max(usable_top).min(usable_bottom - popup_height);
     }
 
-    PopupPositionInfo { x, y, adjusted_for_edge }
+    PopupPositionInfo {
+        x,
+        y,
+        adjusted_for_edge,
+    }
 }
 
 // ─── Cursor Position ─────────────────────────────────────────────────────────
@@ -143,14 +147,22 @@ fn set_popup_position(window: &tauri::WebviewWindow, cursor_pos: (i32, i32)) -> 
     );
 
     if pos.adjusted_for_edge {
-        info!("弹窗位置已调整（靠近屏幕边缘）: 鼠标({}, {}) -> 窗口({}, {})",
-              cursor_pos.0, cursor_pos.1, pos.x, pos.y);
+        info!(
+            "弹窗位置已调整（靠近屏幕边缘）: 鼠标({}, {}) -> 窗口({}, {})",
+            cursor_pos.0, cursor_pos.1, pos.x, pos.y
+        );
     } else {
-        info!("弹窗位置: 鼠标({}, {}) -> 窗口({}, {})", cursor_pos.0, cursor_pos.1, pos.x, pos.y);
+        info!(
+            "弹窗位置: 鼠标({}, {}) -> 窗口({}, {})",
+            cursor_pos.0, cursor_pos.1, pos.x, pos.y
+        );
     }
 
     window
-        .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: pos.x, y: pos.y }))
+        .set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x: pos.x,
+            y: pos.y,
+        }))
         .map_err(|e: tauri::Error| e.to_string())
 }
 

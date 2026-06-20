@@ -8,6 +8,7 @@ export interface AppSettings {
   microsoftTranslatorRegion: string
   ocrEndpoint: string
   globalShortcut: string
+  screenshotShortcut: string
   enableTray: boolean
   theme: string
 }
@@ -20,6 +21,7 @@ export const defaultSettings: AppSettings = {
   microsoftTranslatorRegion: '',
   ocrEndpoint: 'http://127.0.0.1:8866/ocr',
   globalShortcut: 'Ctrl+Q',
+  screenshotShortcut: 'Ctrl+Shift+Q',
   enableTray: true,
   theme: 'light',
 }
@@ -45,6 +47,7 @@ export function isDefaultSettings(settings: AppSettings) {
     && settings.microsoftTranslatorRegion === defaultSettings.microsoftTranslatorRegion
     && settings.ocrEndpoint === defaultSettings.ocrEndpoint
     && settings.globalShortcut === defaultSettings.globalShortcut
+    && settings.screenshotShortcut === defaultSettings.screenshotShortcut
     && settings.enableTray === defaultSettings.enableTray
     && settings.theme === defaultSettings.theme
   )

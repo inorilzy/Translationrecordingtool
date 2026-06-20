@@ -2,7 +2,6 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTranslationStore } from '../stores/translation'
-import NavigationBar from '../components/NavigationBar.vue'
 import EmptyState from '../components/EmptyState.vue'
 import type { Translation } from '../stores/translation'
 
@@ -39,8 +38,6 @@ async function removeFavorite(id: number | undefined, event: Event) {
 
 <template>
   <div class="page-container">
-    <NavigationBar />
-
     <div class="page-header">
       <h1>收藏列表</h1>
     </div>

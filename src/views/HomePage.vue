@@ -3,7 +3,6 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTranslationStore } from '../stores/translation'
 import { useSettingsStore } from '../stores/settings'
-import NavigationBar from '../components/NavigationBar.vue'
 import TranslationCard from '../components/TranslationCard.vue'
 
 const router = useRouter()
@@ -26,8 +25,6 @@ async function handleTranslate() {
 
 <template>
   <div class="page-container">
-    <NavigationBar />
-
     <div class="header">
       <h1>选词翻译工具</h1>
     </div>

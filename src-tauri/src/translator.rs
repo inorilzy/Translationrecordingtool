@@ -256,29 +256,22 @@ pub async fn fetch_free_dictionary_supplement(
 
     debug!("查询 Free Dictionary API: {}", url);
 
-    let response = http_client()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| {
-            let err_msg = format!("Free Dictionary API 请求失败: {}", e);
-            error!("{}", err_msg);
-            err_msg
-        })?;
+    let response = http_client().get(&url).send().await.map_err(|e| {
+        let err_msg = format!("Free Dictionary API 请求失败: {}", e);
+        error!("{}", err_msg);
+        err_msg
+    })?;
 
     if !response.status().is_success() {
         debug!("Free Dictionary API 未找到该单词");
         return Ok(None);
     }
 
-    let results: Vec<FreeDictionaryResponse> = response
-        .json()
-        .await
-        .map_err(|e| {
-            let err_msg = format!("Free Dictionary API 解析响应失败: {}", e);
-            error!("{}", err_msg);
-            err_msg
-        })?;
+    let results: Vec<FreeDictionaryResponse> = response.json().await.map_err(|e| {
+        let err_msg = format!("Free Dictionary API 解析响应失败: {}", e);
+        error!("{}", err_msg);
+        err_msg
+    })?;
 
     debug!("Free Dictionary API 响应: {:?}", results);
 

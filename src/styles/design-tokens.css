@@ -27,6 +27,28 @@
   --color-status-info-bg: #E5F1FB;
   --color-status-info-border: #B3D4FC;
 
+  /* App shell / refined surfaces */
+  --color-app-text-strong: #111827;
+  --color-app-text-muted: #6B7280;
+  --color-app-text-soft: #4B5563;
+  --color-app-icon-muted: #374151;
+  --color-app-accent: #1769E8;
+  --color-app-accent-strong: #1F6FEB;
+  --color-app-accent-soft: #5B8FF9;
+  --color-app-accent-light: #61A5FF;
+  --color-app-shell-bg: #F8FBFF;
+  --color-app-shell-bg-end: #F6F8FB;
+  --color-app-panel-bg: rgba(255, 255, 255, 0.86);
+  --color-app-sidebar-bg: rgba(248, 251, 255, 0.88);
+  --color-app-panel-border: rgba(148, 163, 184, 0.36);
+  --color-app-accent-tint: rgba(37, 99, 235, 0.1);
+  --color-app-accent-tint-soft: rgba(37, 99, 235, 0.07);
+  --color-app-accent-border: rgba(37, 99, 235, 0.18);
+  --color-app-shell-glow: rgba(37, 99, 235, 0.08);
+  --shadow-app-panel: 0 20px 50px rgba(15, 23, 42, 0.08);
+  --shadow-app-accent: 0 16px 28px rgba(37, 99, 235, 0.24);
+  --shadow-app-brand: 0 14px 32px rgba(37, 99, 235, 0.24);
+
   /* 间距 */
   --spacing-xs: 4px;
   --spacing-sm: 8px;

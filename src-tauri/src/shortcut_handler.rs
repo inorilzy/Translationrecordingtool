@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use tracing::{error, info, warn};
 
 use crate::app_state::{
-    AppConfig, PopupRuntimeState, is_active_popup_request, next_popup_request_id,
+    is_active_popup_request, next_popup_request_id, AppConfig, PopupRuntimeState,
 };
 use crate::popup_window::{
     close_popup_window, get_cursor_position, show_loading_popup, show_popup_translation,
@@ -33,6 +33,28 @@ pub fn register_shortcut_handler(
             handle_shortcut(app.clone(), config.clone(), popup_state.clone());
         })
         .map_err(|e| format!("注册快捷键失败: {}", e))
+}
+
+pub fn register_screenshot_shortcut_handler(
+    app: &tauri::AppHandle,
+    shortcut_value: &str,
+    config: Arc<RwLock<AppConfig>>,
+    popup_state: Arc<RwLock<PopupRuntimeState>>,
+) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+    let shortcut: Shortcut = shortcut_value
+        .parse()
+        .map_err(|e| format!("无效的截图快捷键格式: {}", e))?;
+
+    app.global_shortcut()
+        .on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state() != ShortcutState::Pressed {
+                return;
+            }
+            handle_screenshot_shortcut(app.clone(), config.clone(), popup_state.clone());
+        })
+        .map_err(|e| format!("注册截图快捷键失败: {}", e))
 }
 
 // ─── Shortcut Handler ────────────────────────────────────────────────────────
@@ -173,13 +195,109 @@ pub fn handle_shortcut(
         info!("开始查询翻译");
         let _ = show_loading_popup(&app, &popup_state, request_id, cursor_pos);
 
-        let result = match translation_flow::resolve_remote_translation(&text, &translation_config).await {
-            Ok(translation) => {
-                info!("翻译成功: {} -> {}", text, translation.translated_text);
-                translation
-            }
+        let result =
+            match translation_flow::resolve_remote_translation(&text, &translation_config).await {
+                Ok(translation) => {
+                    info!("翻译成功: {} -> {}", text, translation.translated_text);
+                    translation
+                }
+                Err(error) => {
+                    error!("翻译失败: {:?}", error);
+                    if is_active_popup_request(&popup_state, request_id) {
+                        let _ = close_popup_window(&app);
+                    }
+                    return;
+                }
+            };
+
+        if !is_active_popup_request(&popup_state, request_id) {
+            return;
+        }
+
+        let _ = show_popup_translation(
+            &app,
+            &popup_state,
+            request_id,
+            "translation-result",
+            result,
+            cursor_pos,
+            true,
+        );
+    });
+}
+
+pub fn handle_screenshot_shortcut(
+    app: tauri::AppHandle,
+    config: Arc<RwLock<AppConfig>>,
+    popup_state: Arc<RwLock<PopupRuntimeState>>,
+) {
+    tauri::async_runtime::spawn(async move {
+        info!("开始执行截图 OCR 翻译流程");
+        let request_id = next_popup_request_id(&popup_state);
+        let cursor_pos = get_cursor_position();
+
+        let image_base64 = match crate::screenshot::select_and_capture(app.clone()).await {
+            Ok(image) => image,
             Err(error) => {
-                error!("翻译失败: {:?}", error);
+                warn!("截图选择取消或失败: {}", error);
+                if is_active_popup_request(&popup_state, request_id) {
+                    let _ = close_popup_window(&app);
+                }
+                return;
+            }
+        };
+
+        if !is_active_popup_request(&popup_state, request_id) {
+            return;
+        }
+
+        let _ = show_loading_popup(&app, &popup_state, request_id, cursor_pos);
+
+        let (ocr_endpoint, translation_config) = {
+            let cfg = config.read().unwrap();
+            (
+                cfg.ocr_endpoint.clone(),
+                translation_flow::TranslationConfig {
+                    provider: cfg.translation_provider.clone(),
+                    youdao_app_key: cfg.api_key.clone(),
+                    youdao_app_secret: cfg.api_secret.clone(),
+                    microsoft_key: cfg.microsoft_translator_key.clone(),
+                    microsoft_region: cfg.microsoft_translator_region.clone(),
+                },
+            )
+        };
+
+        if let Err(error) = crate::ocr_service::ensure_running(&app, &ocr_endpoint).await {
+            error!("启动 OCR 服务失败: {}", error);
+            if is_active_popup_request(&popup_state, request_id) {
+                let _ = close_popup_window(&app);
+            }
+            return;
+        }
+
+        let text = match crate::ocr::recognize_text(&ocr_endpoint, &image_base64).await {
+            Ok(text) => text.trim().to_string(),
+            Err(error) => {
+                error!("OCR 识别失败: {}", error);
+                if is_active_popup_request(&popup_state, request_id) {
+                    let _ = close_popup_window(&app);
+                }
+                return;
+            }
+        };
+
+        if text.is_empty() {
+            warn!("OCR 未识别到文本");
+            if is_active_popup_request(&popup_state, request_id) {
+                let _ = close_popup_window(&app);
+            }
+            return;
+        }
+
+        let result = match translation_flow::resolve_translation(&app, &text, &translation_config).await {
+            Ok(translation) => translation,
+            Err(error) => {
+                error!("截图 OCR 翻译失败: {}", error);
                 if is_active_popup_request(&popup_state, request_id) {
                     let _ = close_popup_window(&app);
                 }

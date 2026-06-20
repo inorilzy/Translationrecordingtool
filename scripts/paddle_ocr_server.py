@@ -2,6 +2,7 @@
 import argparse
 import base64
 import binascii
+import inspect
 import json
 import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -54,6 +55,14 @@ def result_to_jsonable(result: Any) -> Any:
     return result
 
 
+def run_ocr(ocr: Any, image_path: Path) -> list[Any]:
+    if hasattr(ocr, "ocr"):
+        return ocr.ocr(str(image_path), cls=False)
+    if hasattr(ocr, "predict"):
+        return ocr.predict(str(image_path))
+    raise RuntimeError("PaddleOCR instance has neither ocr() nor predict()")
+
+
 class PaddleOcrServer(BaseHTTPRequestHandler):
     ocr: Any = None
 
@@ -96,7 +105,7 @@ class PaddleOcrServer(BaseHTTPRequestHandler):
                 image_path = Path(tmp.name)
 
             try:
-                prediction = self.ocr.predict(str(image_path))
+                prediction = run_ocr(self.ocr, image_path)
             finally:
                 image_path.unlink(missing_ok=True)
 
@@ -133,17 +142,28 @@ def build_ocr(args: argparse.Namespace) -> Any:
             "未安装 paddleocr。请先运行: pip install paddleocr paddlepaddle"
         ) from exc
 
-    return PaddleOCR(
-        lang=args.lang,
-        device=args.device,
-        use_doc_orientation_classify=False,
-        use_doc_unwarping=False,
-        use_textline_orientation=False,
-    )
+    init_params = inspect.signature(PaddleOCR.__init__).parameters
+    kwargs: dict[str, Any] = {"lang": args.lang}
+
+    if "device" in init_params:
+        kwargs["device"] = args.device
+    else:
+        kwargs["use_gpu"] = args.device.lower().startswith("gpu")
+        kwargs["show_log"] = False
+
+    for key in (
+        "use_doc_orientation_classify",
+        "use_doc_unwarping",
+        "use_textline_orientation",
+    ):
+        if key in init_params:
+            kwargs[key] = False
+
+    return PaddleOCR(**kwargs)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Local PaddleOCR v6 HTTP server")
+    parser = argparse.ArgumentParser(description="Local PaddleOCR HTTP server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8866)
     parser.add_argument("--lang", default="ch")

@@ -19,89 +19,6 @@ vi.mock('../lib/settings', async () => {
 
 const invokeMock = vi.mocked(invoke)
 
-function createMediaStreamMock({
-  width = 1280,
-  height = 720,
-}: {
-  width?: number
-  height?: number
-} = {}) {
-  const track = {
-    stop: vi.fn(),
-    getSettings: vi.fn(() => ({ width, height })),
-  }
-
-  const stream = {
-    getTracks: vi.fn(() => [track]),
-    getVideoTracks: vi.fn(() => [track]),
-  } as unknown as MediaStream
-
-  return { stream, track }
-}
-
-function createVideoMock({
-  videoWidth = 1280,
-  videoHeight = 720,
-  readyState = 0,
-}: {
-  videoWidth?: number
-  videoHeight?: number
-  readyState?: number
-} = {}) {
-  const listeners = new Map<string, Set<() => void>>()
-
-  const video = {
-    srcObject: null,
-    muted: false,
-    playsInline: false,
-    readyState,
-    videoWidth,
-    videoHeight,
-    play: vi.fn().mockResolvedValue(undefined),
-    addEventListener: vi.fn((event: string, listener: () => void) => {
-      if (!listeners.has(event)) {
-        listeners.set(event, new Set())
-      }
-      listeners.get(event)?.add(listener)
-    }),
-    removeEventListener: vi.fn((event: string, listener: () => void) => {
-      listeners.get(event)?.delete(listener)
-    }),
-    dispatch(event: string) {
-      listeners.get(event)?.forEach((listener) => listener())
-    },
-  } as unknown as HTMLVideoElement & { dispatch: (event: string) => void }
-
-  return video
-}
-
-function createCanvasMock({
-  context = {
-    drawImage: vi.fn(),
-  } as unknown as CanvasRenderingContext2D,
-  dataUrl = 'data:image/png;base64,fake-image',
-} = {}) {
-  return {
-    width: 0,
-    height: 0,
-    getContext: vi.fn(() => context),
-    toDataURL: vi.fn(() => dataUrl),
-  } as unknown as HTMLCanvasElement
-}
-
-function mockCaptureDom(video: HTMLVideoElement, canvas: HTMLCanvasElement) {
-  return vi.spyOn(document, 'createElement').mockImplementation(((tagName: string) => {
-    if (tagName === 'video') {
-      return video
-    }
-    if (tagName === 'canvas') {
-      return canvas
-    }
-
-    throw new Error(`Unexpected element created in test: ${tagName}`)
-  }) as typeof document.createElement)
-}
-
 function createTranslationRecord({
   id = 1,
   sourceText = 'hello',
@@ -303,22 +220,12 @@ describe('useTranslationStore', () => {
   })
 
   describe('translateScreenshot', () => {
-    it('captures the screen, translates the image, and persists the result', async () => {
-      const { stream, track } = createMediaStreamMock({ width: 1440, height: 900 })
-      const video = createVideoMock({ videoWidth: 1440, videoHeight: 900 })
-      const canvas = createCanvasMock()
+    it('selects a native screenshot area, translates the image, and persists the result', async () => {
       const translated = createTranslationRecord({ sourceText: 'screen text' })
       const persisted = { ...translated, id: 3, access_count: 1 }
 
-      const createElementSpy = mockCaptureDom(video, canvas)
-      Object.defineProperty(navigator, 'mediaDevices', {
-        configurable: true,
-        value: {
-          getDisplayMedia: vi.fn().mockResolvedValue(stream),
-        },
-      })
-
       invokeMock
+        .mockResolvedValueOnce('data:image/png;base64,fake-image')
         .mockResolvedValueOnce(translated)
         .mockResolvedValueOnce(persisted)
 
@@ -331,14 +238,10 @@ describe('useTranslationStore', () => {
       settings.ocrEndpoint = 'http://127.0.0.1:8000/ocr'
 
       const store = useTranslationStore()
-      const promise = store.translateScreenshot()
+      await store.translateScreenshot()
 
-      await Promise.resolve()
-      await Promise.resolve()
-      video.dispatch('loadedmetadata')
-      await promise
-
-      expect(invokeMock).toHaveBeenNthCalledWith(1, 'translate_image', {
+      expect(invokeMock).toHaveBeenNthCalledWith(1, 'select_screenshot_area')
+      expect(invokeMock).toHaveBeenNthCalledWith(2, 'translate_image', {
         imageBase64: 'data:image/png;base64,fake-image',
         ocrEndpoint: 'http://127.0.0.1:8000/ocr',
         appKey: 'screen-key',
@@ -347,7 +250,7 @@ describe('useTranslationStore', () => {
         microsoftTranslatorKey: 'screen-ms-key',
         microsoftTranslatorRegion: 'global',
       })
-      expect(invokeMock).toHaveBeenNthCalledWith(2, 'save_translation', {
+      expect(invokeMock).toHaveBeenNthCalledWith(3, 'save_translation', {
         translation: translated,
         incrementAccessCount: true,
       })
@@ -355,89 +258,31 @@ describe('useTranslationStore', () => {
       expect(store.history).toEqual([persisted])
       expect(store.loading).toBe(false)
       expect(store.error).toBe('')
-      expect(canvas.getContext).toHaveBeenCalledWith('2d')
-      expect(track.stop).toHaveBeenCalledTimes(1)
-      createElementSpy.mockRestore()
     })
 
-    it('shows a readable error when the user cancels screen selection', async () => {
-      Object.defineProperty(navigator, 'mediaDevices', {
-        configurable: true,
-        value: {
-          getDisplayMedia: vi.fn().mockRejectedValue(
-            new DOMException('Permission denied', 'NotAllowedError'),
-          ),
-        },
-      })
+    it('shows a readable error when the user cancels native screen selection', async () => {
+      invokeMock.mockRejectedValueOnce(new Error('已取消截图选择'))
 
       const store = useTranslationStore()
       await store.translateScreenshot()
 
-      expect(store.error).toBe('截图 OCR 翻译失败: 已取消屏幕选择')
+      expect(store.error).toBe('截图 OCR 翻译失败: 已取消截图选择')
       expect(store.loading).toBe(false)
-      expect(invokeMock).not.toHaveBeenCalled()
+      expect(invokeMock).toHaveBeenCalledTimes(1)
+      expect(invokeMock).toHaveBeenCalledWith('select_screenshot_area')
     })
 
-    it('releases loading and reports a timeout when video metadata never becomes available', async () => {
-      vi.useFakeTimers()
-
-      try {
-        const { stream, track } = createMediaStreamMock()
-        const video = createVideoMock({ videoWidth: 0, videoHeight: 0 })
-        const canvas = createCanvasMock()
-
-        const createElementSpy = mockCaptureDom(video, canvas)
-        Object.defineProperty(navigator, 'mediaDevices', {
-          configurable: true,
-          value: {
-            getDisplayMedia: vi.fn().mockResolvedValue(stream),
-          },
-        })
-
-        const store = useTranslationStore()
-        const promise = store.translateScreenshot()
-
-        await Promise.resolve()
-        await Promise.resolve()
-        await vi.advanceTimersByTimeAsync(2000)
-        await promise
-
-        expect(store.error).toBe('截图 OCR 翻译失败: 未能及时获取屏幕画面，请重试')
-        expect(store.loading).toBe(false)
-        expect(track.stop).toHaveBeenCalledTimes(1)
-        expect(invokeMock).not.toHaveBeenCalled()
-        createElementSpy.mockRestore()
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    it('fails fast when the captured frame has no usable size', async () => {
-      const { stream, track } = createMediaStreamMock({ width: 0, height: 0 })
-      const video = createVideoMock({ videoWidth: 0, videoHeight: 0 })
-      const canvas = createCanvasMock()
-
-      const createElementSpy = mockCaptureDom(video, canvas)
-      Object.defineProperty(navigator, 'mediaDevices', {
-        configurable: true,
-        value: {
-          getDisplayMedia: vi.fn().mockResolvedValue(stream),
-        },
-      })
+    it('does not persist when OCR translation rejects after a native screenshot', async () => {
+      invokeMock
+        .mockResolvedValueOnce('data:image/png;base64,fake-image')
+        .mockRejectedValueOnce(new Error('OCR 未识别到文本'))
 
       const store = useTranslationStore()
-      const promise = store.translateScreenshot()
+      await store.translateScreenshot()
 
-      await Promise.resolve()
-      await Promise.resolve()
-      video.dispatch('loadedmetadata')
-      await promise
-
-      expect(store.error).toBe('截图 OCR 翻译失败: 无法获取有效的屏幕画面尺寸')
+      expect(store.error).toBe('截图 OCR 翻译失败: OCR 未识别到文本')
       expect(store.loading).toBe(false)
-      expect(track.stop).toHaveBeenCalledTimes(1)
-      expect(invokeMock).not.toHaveBeenCalled()
-      createElementSpy.mockRestore()
+      expect(invokeMock).toHaveBeenCalledTimes(2)
     })
   })
 
@@ -567,9 +412,10 @@ describe('useTranslationStore', () => {
 
       const settingsKeys = [
         'apiKey', 'apiSecret', 'translationProvider', 'microsoftTranslatorKey',
-        'microsoftTranslatorRegion', 'ocrEndpoint', 'globalShortcut', 'enableTray', 'theme',
-        'loadSettings', 'updateGlobalShortcut', 'updateApiConfig',
-        'updateTrayBehavior', 'updateTheme', 'checkOcrService',
+        'microsoftTranslatorRegion', 'ocrEndpoint', 'globalShortcut', 'screenshotShortcut',
+        'enableTray', 'theme', 'loadSettings', 'updateGlobalShortcut',
+        'updateScreenshotShortcut', 'updateApiConfig', 'updateTrayBehavior',
+        'updateTheme', 'checkOcrService', 'getOcrServiceStatus',
       ]
 
       for (const key of settingsKeys) {

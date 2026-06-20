@@ -11,7 +11,7 @@ use tauri::Manager;
 
 use crate::settings::{
     load_settings, save_settings, PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_ENDPOINT,
-    DEFAULT_THEME,
+    DEFAULT_SCREENSHOT_SHORTCUT, DEFAULT_THEME,
 };
 
 // ─── Runtime State ───────────────────────────────────────────────────────────
@@ -26,6 +26,7 @@ pub struct AppConfig {
     pub microsoft_translator_region: String,
     pub ocr_endpoint: String,
     pub global_shortcut: String,
+    pub screenshot_shortcut: String,
     pub theme: String,
 }
 
@@ -39,6 +40,7 @@ impl Default for AppConfig {
             microsoft_translator_region: String::new(),
             ocr_endpoint: DEFAULT_OCR_ENDPOINT.to_string(),
             global_shortcut: DEFAULT_GLOBAL_SHORTCUT.to_string(),
+            screenshot_shortcut: DEFAULT_SCREENSHOT_SHORTCUT.to_string(),
             theme: DEFAULT_THEME.to_string(),
         }
     }
@@ -85,7 +87,10 @@ pub fn mark_popup_ready(state: &Arc<RwLock<PopupRuntimeState>>, ready: bool) {
 
 // ─── Settings Persistence ────────────────────────────────────────────────────
 
-pub fn to_persisted_settings(config: &AppConfig, tray_behavior: &TrayBehaviorConfig) -> PersistedSettings {
+pub fn to_persisted_settings(
+    config: &AppConfig,
+    tray_behavior: &TrayBehaviorConfig,
+) -> PersistedSettings {
     PersistedSettings {
         api_key: config.api_key.clone(),
         api_secret: config.api_secret.clone(),
@@ -94,6 +99,7 @@ pub fn to_persisted_settings(config: &AppConfig, tray_behavior: &TrayBehaviorCon
         microsoft_translator_region: config.microsoft_translator_region.clone(),
         ocr_endpoint: config.ocr_endpoint.clone(),
         global_shortcut: config.global_shortcut.clone(),
+        screenshot_shortcut: config.screenshot_shortcut.clone(),
         enable_tray: tray_behavior.enabled,
         theme: config.theme.clone(),
     }
@@ -104,7 +110,10 @@ pub fn load_persisted_settings(app: &tauri::AppHandle) -> Result<PersistedSettin
     load_settings(&config_dir)
 }
 
-pub fn save_persisted_settings(app: &tauri::AppHandle, settings: &PersistedSettings) -> Result<(), String> {
+pub fn save_persisted_settings(
+    app: &tauri::AppHandle,
+    settings: &PersistedSettings,
+) -> Result<(), String> {
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     save_settings(&config_dir, settings)
 }
@@ -158,6 +167,21 @@ pub fn update_and_persist_theme(
     {
         let mut cfg = config.write().unwrap();
         cfg.theme = theme;
+    }
+    persist_managed_settings(app, config, tray_behavior)
+}
+
+pub fn update_and_persist_global_shortcuts(
+    app: &tauri::AppHandle,
+    config: &Arc<RwLock<AppConfig>>,
+    tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
+    global_shortcut: String,
+    screenshot_shortcut: String,
+) -> Result<(), String> {
+    {
+        let mut cfg = config.write().unwrap();
+        cfg.global_shortcut = global_shortcut;
+        cfg.screenshot_shortcut = screenshot_shortcut;
     }
     persist_managed_settings(app, config, tray_behavior)
 }

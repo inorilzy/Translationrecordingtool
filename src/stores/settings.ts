@@ -8,6 +8,17 @@ import {
   type AppSettings,
 } from '../lib/settings'
 
+export interface OcrServiceStatus {
+  running: boolean
+  endpoint: string
+  message: string
+  lastError?: string | null
+  paddleocrVersion: string
+  paddlepaddleVersion: string
+  lang: string
+  device: string
+}
+
 export const useSettingsStore = defineStore('settings', () => {
   const apiKey = ref(defaultSettings.apiKey)
   const apiSecret = ref(defaultSettings.apiSecret)
@@ -16,6 +27,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const microsoftTranslatorRegion = ref(defaultSettings.microsoftTranslatorRegion)
   const ocrEndpoint = ref(defaultSettings.ocrEndpoint)
   const globalShortcut = ref(defaultSettings.globalShortcut)
+  const screenshotShortcut = ref(defaultSettings.screenshotShortcut)
   const enableTray = ref(defaultSettings.enableTray)
   const theme = ref(defaultSettings.theme)
   const error = ref('')
@@ -28,6 +40,7 @@ export const useSettingsStore = defineStore('settings', () => {
     microsoftTranslatorRegion.value = settings.microsoftTranslatorRegion
     ocrEndpoint.value = settings.ocrEndpoint
     globalShortcut.value = settings.globalShortcut
+    screenshotShortcut.value = settings.screenshotShortcut
     enableTray.value = settings.enableTray
     theme.value = settings.theme
     applyTheme(settings.theme)
@@ -122,6 +135,30 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  async function updateScreenshotShortcut(newShortcut: string) {
+    try {
+      await invoke('update_screenshot_shortcut', {
+        oldShortcut: screenshotShortcut.value,
+        newShortcut,
+      })
+      screenshotShortcut.value = newShortcut
+    } catch (e) {
+      error.value = `更新截图快捷键失败: ${e}`
+      throw e
+    }
+  }
+
+  async function getOcrServiceStatus(endpoint = ocrEndpoint.value) {
+    try {
+      return await invoke<OcrServiceStatus>('get_ocr_service_status', {
+        ocrEndpoint: endpoint,
+      })
+    } catch (e) {
+      error.value = `读取 OCR 服务状态失败: ${e}`
+      throw e
+    }
+  }
+
   return {
     apiKey,
     apiSecret,
@@ -130,14 +167,17 @@ export const useSettingsStore = defineStore('settings', () => {
     microsoftTranslatorRegion,
     ocrEndpoint,
     globalShortcut,
+    screenshotShortcut,
     enableTray,
     theme,
     error,
     loadSettings,
     updateApiConfig,
     updateGlobalShortcut,
+    updateScreenshotShortcut,
     updateTrayBehavior,
     updateTheme,
     checkOcrService,
+    getOcrServiceStatus,
   }
 })

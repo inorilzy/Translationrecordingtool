@@ -10,8 +10,6 @@ import { useSettingsStore } from './settings'
 
 export type { Translation }
 
-const SCREENSHOT_METADATA_TIMEOUT_MS = 2000
-
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message
@@ -22,109 +20,6 @@ function getErrorMessage(error: unknown) {
 
 function formatStoreError(prefix: string, error: unknown) {
   return `${prefix}: ${getErrorMessage(error)}`
-}
-
-function isScreenSelectionCancelled(error: unknown) {
-  return error instanceof DOMException
-    && (error.name === 'NotAllowedError' || error.name === 'AbortError')
-}
-
-async function waitForVideoMetadata(video: HTMLVideoElement): Promise<void> {
-  const haveMetadata = typeof HTMLMediaElement === 'undefined'
-    ? 1
-    : HTMLMediaElement.HAVE_METADATA
-
-  if (video.readyState >= haveMetadata) {
-    return
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const cleanup = () => {
-      window.clearTimeout(timeoutId)
-      video.removeEventListener('loadedmetadata', handleReady)
-      video.removeEventListener('loadeddata', handleReady)
-      video.removeEventListener('error', handleError)
-    }
-
-    const handleReady = () => {
-      cleanup()
-      resolve()
-    }
-
-    const handleError = () => {
-      cleanup()
-      reject(new Error('无法读取屏幕画面，请重试'))
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      cleanup()
-      reject(new Error('未能及时获取屏幕画面，请重试'))
-    }, SCREENSHOT_METADATA_TIMEOUT_MS)
-
-    video.addEventListener('loadedmetadata', handleReady)
-    video.addEventListener('loadeddata', handleReady)
-    video.addEventListener('error', handleError)
-  })
-}
-
-function getCaptureDimensions(video: HTMLVideoElement, stream: MediaStream) {
-  const trackSettings = stream.getVideoTracks()[0]?.getSettings()
-  const width = video.videoWidth || trackSettings?.width || 0
-  const height = video.videoHeight || trackSettings?.height || 0
-
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    throw new Error('无法获取有效的屏幕画面尺寸')
-  }
-
-  return { width, height }
-}
-
-async function captureScreenFrame(): Promise<string> {
-  if (!navigator.mediaDevices?.getDisplayMedia) {
-    throw new Error('当前环境不支持屏幕截图')
-  }
-
-  let stream: MediaStream | null = null
-
-  try {
-    stream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: false,
-    })
-
-    const video = document.createElement('video')
-    video.srcObject = stream
-    video.muted = true
-    video.playsInline = true
-    await video.play()
-
-    await waitForVideoMetadata(video)
-    const { width, height } = getCaptureDimensions(video, stream)
-
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const context = canvas.getContext('2d')
-    if (!context) {
-      throw new Error('无法创建截图画布')
-    }
-
-    try {
-      context.drawImage(video, 0, 0, canvas.width, canvas.height)
-    } catch {
-      throw new Error('无法捕获屏幕画面，请重试')
-    }
-
-    return canvas.toDataURL('image/png')
-  } catch (error) {
-    if (isScreenSelectionCancelled(error)) {
-      throw new Error('已取消屏幕选择')
-    }
-
-    throw error
-  } finally {
-    stream?.getTracks().forEach((track) => track.stop())
-  }
 }
 
 export const useTranslationStore = defineStore('translation', () => {
@@ -199,8 +94,10 @@ export const useTranslationStore = defineStore('translation', () => {
 
       currentTranslation.value = persisted
       history.value = mergeTranslationIntoHistory(history.value, persisted)
+      return persisted
     } catch (e) {
       error.value = formatStoreError('翻译失败', e)
+      return null
     } finally {
       loading.value = false
     }
@@ -228,8 +125,10 @@ export const useTranslationStore = defineStore('translation', () => {
 
       currentTranslation.value = persisted
       history.value = mergeTranslationIntoHistory(history.value, persisted)
+      return persisted
     } catch (e) {
       error.value = formatStoreError('翻译失败', e)
+      return null
     } finally {
       loading.value = false
     }
@@ -241,7 +140,7 @@ export const useTranslationStore = defineStore('translation', () => {
     error.value = ''
 
     try {
-      const imageBase64 = await captureScreenFrame()
+      const imageBase64 = await invoke<string>('select_screenshot_area')
       const result = await invoke<Translation>('translate_image', {
         imageBase64,
         ocrEndpoint: settings.ocrEndpoint,
@@ -259,8 +158,10 @@ export const useTranslationStore = defineStore('translation', () => {
 
       currentTranslation.value = persisted
       history.value = mergeTranslationIntoHistory(history.value, persisted)
+      return persisted
     } catch (e) {
       error.value = formatStoreError('截图 OCR 翻译失败', e)
+      return null
     } finally {
       loading.value = false
     }

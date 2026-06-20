@@ -117,10 +117,14 @@ fn serialize_string_list(value: &Option<Vec<String>>) -> Result<Option<String>, 
         return Ok(None);
     }
 
-    serde_json::to_string(value).map(Some).map_err(|e| format!("序列化翻译列表失败: {}", e))
+    serde_json::to_string(value)
+        .map(Some)
+        .map_err(|e| format!("序列化翻译列表失败: {}", e))
 }
 
-fn translation_record_row_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TranslationRecordRow> {
+fn translation_record_row_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<TranslationRecordRow> {
     Ok(TranslationRecordRow {
         id: row.get(0)?,
         source_text: row.get(1)?,
@@ -193,7 +197,10 @@ pub fn ensure_translations_schema(connection: &Connection) -> Result<(), String>
 
         connection
             .execute(
-                &format!("ALTER TABLE translations ADD COLUMN {} {}", column_name, column_type),
+                &format!(
+                    "ALTER TABLE translations ADD COLUMN {} {}",
+                    column_name, column_type
+                ),
                 [],
             )
             .map_err(|e| format!("补充翻译表字段失败 ({}): {}", column_name, e))?;
@@ -451,7 +458,9 @@ mod tests {
         assert_eq!(history.len(), 100);
         assert_eq!(history.first().unwrap().source_text, "word-100");
         assert_eq!(history.last().unwrap().source_text, "word-1");
-        assert!(favorites.iter().all(|translation| translation.is_favorite == 1));
+        assert!(favorites
+            .iter()
+            .all(|translation| translation.is_favorite == 1));
         assert_eq!(favorites.first().unwrap().source_text, "word-100");
     }
 

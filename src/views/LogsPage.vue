@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import NavigationBar from '../components/NavigationBar.vue'
 
 const logFiles = ref<string[]>([])
 const selectedFile = ref<string>('')
@@ -73,8 +72,6 @@ onMounted(() => {
 
 <template>
   <div class="page-container">
-    <NavigationBar />
-
     <div class="page-header">
       <h1>日志</h1>
       <div class="header-actions">

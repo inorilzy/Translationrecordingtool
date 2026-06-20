@@ -44,6 +44,17 @@
             "core:window:allow-show",
             "core:window:allow-start-dragging"
           ]
+        },
+        {
+          "identifier": "screenshot-selection-capability",
+          "windows": ["screenshot-selection"],
+          "permissions": [
+            "core:default",
+            "core:event:allow-emit",
+            "core:event:allow-listen",
+            "core:event:allow-unlisten",
+            "core:window:allow-hide"
+          ]
         }
       ]
     }
@@ -51,7 +62,8 @@
   "bundle": {
     "active": true,
     "resources": [
-      "resources/dictionary.db"
+      "resources/dictionary.db",
+      "../scripts/paddle_ocr_server.py"
     ],
     "targets": "all",
     "icon": [

@@ -23,14 +23,16 @@ export function resolveCurrentWindowLabel(
 </script>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useTranslationStore } from './stores/translation'
 import { useSettingsStore } from './stores/settings'
+import AppShell from './components/AppShell.vue'
 
 const translationStore = useTranslationStore()
 const settingsStore = useSettingsStore()
 const windowLabel = resolveCurrentWindowLabel(getCurrentWebviewWindow)
+const usesAppShell = computed(() => windowLabel !== 'popup' && windowLabel !== 'screenshot-selection')
 
 onMounted(async () => {
   await runStartupLoad(windowLabel, settingsStore, translationStore)
@@ -38,7 +40,14 @@ onMounted(async () => {
 </script>
 
 <template>
-  <router-view />
+  <n-config-provider>
+    <n-message-provider>
+      <AppShell v-if="usesAppShell">
+        <router-view />
+      </AppShell>
+      <router-view v-else />
+    </n-message-provider>
+  </n-config-provider>
 </template>
 
 <style>

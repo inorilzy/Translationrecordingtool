@@ -34,6 +34,7 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorRegion).toBe('')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.globalShortcut).toBe('Ctrl+Q')
+      expect(store.screenshotShortcut).toBe('Ctrl+Shift+Q')
       expect(store.enableTray).toBe(true)
       expect(store.theme).toBe('light')
       expect(store.error).toBe('')
@@ -49,6 +50,7 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'ms-key',
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+        screenshotShortcut: 'Ctrl+Shift+S',
         theme: 'dark',
       })
 
@@ -61,6 +63,7 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorKey).toBe('ms-key')
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
+      expect(store.screenshotShortcut).toBe('Ctrl+Shift+S')
       expect(store.theme).toBe('dark')
       expect(store.globalShortcut).toBe('Ctrl+Q') // default for missing fields
       expect(store.enableTray).toBe(true)
@@ -80,6 +83,7 @@ describe('useSettingsStore', () => {
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.theme).toBe('light')
       expect(store.globalShortcut).toBe('Ctrl+Q')
+      expect(store.screenshotShortcut).toBe('Ctrl+Shift+Q')
       expect(store.enableTray).toBe(true)
       expect(store.error).toContain('加载设置失败')
     })
@@ -242,6 +246,66 @@ describe('useSettingsStore', () => {
 
       await expect(store.checkOcrService()).rejects.toThrow('connection refused')
       expect(store.error).toContain('OCR 服务检查失败')
+    })
+  })
+
+  describe('updateScreenshotShortcut', () => {
+    it('sends old and new screenshot shortcut to backend', async () => {
+      invokeMock.mockResolvedValue(undefined)
+
+      const store = useSettingsStore()
+      store.screenshotShortcut = 'Ctrl+Shift+Q'
+      await store.updateScreenshotShortcut('Ctrl+Shift+S')
+
+      expect(invokeMock).toHaveBeenCalledWith('update_screenshot_shortcut', {
+        oldShortcut: 'Ctrl+Shift+Q',
+        newShortcut: 'Ctrl+Shift+S',
+      })
+      expect(store.screenshotShortcut).toBe('Ctrl+Shift+S')
+    })
+
+    it('rolls back local state on failure', async () => {
+      invokeMock.mockRejectedValue(new Error('invalid screenshot shortcut'))
+
+      const store = useSettingsStore()
+      store.screenshotShortcut = 'Ctrl+Shift+Q'
+      await expect(store.updateScreenshotShortcut('Ctrl+Alt+S')).rejects.toThrow('invalid screenshot shortcut')
+
+      expect(store.screenshotShortcut).toBe('Ctrl+Shift+Q')
+      expect(store.error).toContain('更新截图快捷键失败')
+    })
+  })
+
+  describe('getOcrServiceStatus', () => {
+    it('loads OCR service status from backend', async () => {
+      const status = {
+        running: true,
+        endpoint: 'http://127.0.0.1:8866/ocr',
+        message: 'Paddle OCR 服务正常',
+        lastError: null,
+        paddleocrVersion: '2.7.3',
+        paddlepaddleVersion: '2.6.2',
+        lang: 'ch',
+        device: 'cpu',
+      }
+      invokeMock.mockResolvedValue(status)
+
+      const store = useSettingsStore()
+      const result = await store.getOcrServiceStatus()
+
+      expect(invokeMock).toHaveBeenCalledWith('get_ocr_service_status', {
+        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
+      })
+      expect(result).toEqual(status)
+    })
+
+    it('sets error state when OCR service status fails', async () => {
+      invokeMock.mockRejectedValue(new Error('backend unavailable'))
+
+      const store = useSettingsStore()
+
+      await expect(store.getOcrServiceStatus()).rejects.toThrow('backend unavailable')
+      expect(store.error).toContain('读取 OCR 服务状态失败')
     })
   })
 })

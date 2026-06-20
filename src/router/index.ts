@@ -6,6 +6,7 @@ import FavoritesPage from '../views/FavoritesPage.vue'
 import DetailPage from '../views/DetailPage.vue'
 import LogsPage from '../views/LogsPage.vue'
 import SettingsPage from '../views/SettingsPage.vue'
+import ScreenshotSelection from '../views/ScreenshotSelection.vue'
 
 export const routes = [
   {
@@ -21,6 +22,11 @@ export const routes = [
     path: '/popup',
     name: 'Popup',
     component: PopupWindow
+  },
+  {
+    path: '/screenshot-selection',
+    name: 'ScreenshotSelection',
+    component: ScreenshotSelection
   },
   {
     path: '/history',

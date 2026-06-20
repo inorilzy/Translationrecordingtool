@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "build:dictionary": "python scripts/build_dictionary.py",
-    "ocr:server": "python scripts/paddle_ocr_server.py",
+    "ocr:server": "uv run --python 3.11 --with paddleocr==2.7.3 --with paddlepaddle==2.6.2 --with \"numpy<2\" python scripts/paddle_ocr_server.py",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -17,9 +17,12 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@lucide/vue": "^1.21.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2",
+    "@unocss/reset": "^66.7.2",
+    "naive-ui": "^2.44.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.13",
     "vue-router": "^5.0.3"
@@ -28,11 +31,13 @@
     "@playwright/test": "^1.59.1",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.6.0",
+    "@unocss/preset-uno": "^66.7.2",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vitest/ui": "^4.1.4",
     "@vue/test-utils": "^2.4.8",
     "jsdom": "^29.0.2",
     "typescript": "~5.6.2",
+    "unocss": "^66.7.2",
     "vite": "^6.0.3",
     "vitest": "^4.1.4",
     "vue-tsc": "^2.1.10"

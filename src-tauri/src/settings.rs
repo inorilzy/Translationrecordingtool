@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 pub const DEFAULT_GLOBAL_SHORTCUT: &str = "Ctrl+Q";
+pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Ctrl+Shift+Q";
 pub const DEFAULT_THEME: &str = "light";
 pub const DEFAULT_OCR_ENDPOINT: &str = "http://127.0.0.1:8866/ocr";
 const SETTINGS_FILE_NAME: &str = "settings.json";
@@ -16,6 +20,7 @@ pub struct PersistedSettings {
     pub microsoft_translator_region: String,
     pub ocr_endpoint: String,
     pub global_shortcut: String,
+    pub screenshot_shortcut: String,
     pub enable_tray: bool,
     pub theme: String,
 }
@@ -30,6 +35,7 @@ impl Default for PersistedSettings {
             microsoft_translator_region: String::new(),
             ocr_endpoint: DEFAULT_OCR_ENDPOINT.to_string(),
             global_shortcut: DEFAULT_GLOBAL_SHORTCUT.to_string(),
+            screenshot_shortcut: DEFAULT_SCREENSHOT_SHORTCUT.to_string(),
             enable_tray: true,
             theme: DEFAULT_THEME.to_string(),
         }
@@ -58,8 +64,8 @@ pub fn save_settings(config_dir: &Path, settings: &PersistedSettings) -> Result<
         .map_err(|e| format!("创建设置目录失败: {} ({})", config_dir.display(), e))?;
 
     let settings_path = settings_file_path(config_dir);
-    let content = serde_json::to_string_pretty(settings)
-        .map_err(|e| format!("序列化设置失败: {}", e))?;
+    let content =
+        serde_json::to_string_pretty(settings).map_err(|e| format!("序列化设置失败: {}", e))?;
 
     fs::write(&settings_path, content)
         .map_err(|e| format!("写入设置文件失败: {} ({})", settings_path.display(), e))
@@ -68,7 +74,10 @@ pub fn save_settings(config_dir: &Path, settings: &PersistedSettings) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{env, fs, path::{Path, PathBuf}};
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+    };
     use uuid::Uuid;
 
     struct TempDirGuard {
@@ -102,6 +111,7 @@ mod tests {
         assert_eq!(defaults.api_key, "");
         assert_eq!(defaults.api_secret, "");
         assert_eq!(defaults.global_shortcut, DEFAULT_GLOBAL_SHORTCUT);
+        assert_eq!(defaults.screenshot_shortcut, DEFAULT_SCREENSHOT_SHORTCUT);
         assert!(defaults.enable_tray);
         assert_eq!(defaults.theme, DEFAULT_THEME);
     }
@@ -128,6 +138,7 @@ mod tests {
             microsoft_translator_region: "eastasia".to_string(),
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
             global_shortcut: "Ctrl+Shift+Q".to_string(),
+            screenshot_shortcut: "Ctrl+Shift+S".to_string(),
             enable_tray: false,
             theme: "github-dark".to_string(),
         };
@@ -144,7 +155,12 @@ mod tests {
         let settings = PersistedSettings {
             api_key: String::new(),
             api_secret: String::new(),
+            translation_provider: String::new(),
+            microsoft_translator_key: String::new(),
+            microsoft_translator_region: String::new(),
+            ocr_endpoint: String::new(),
             global_shortcut: String::new(),
+            screenshot_shortcut: String::new(),
             enable_tray: false,
             theme: String::new(),
         };
@@ -167,6 +183,7 @@ mod tests {
             microsoft_translator_region: "global".to_string(),
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
             global_shortcut: "Ctrl+Q".to_string(),
+            screenshot_shortcut: "Ctrl+Shift+Q".to_string(),
             enable_tray: true,
             theme: "dark".to_string(),
         };
@@ -181,6 +198,7 @@ mod tests {
         assert!(json.contains(r#""microsoftTranslatorRegion""#));
         assert!(json.contains(r#""ocrEndpoint""#));
         assert!(json.contains(r#""globalShortcut""#));
+        assert!(json.contains(r#""screenshotShortcut""#));
         assert!(json.contains(r#""enableTray""#));
         assert!(json.contains(r#""theme""#));
     }
@@ -195,6 +213,7 @@ mod tests {
             "microsoftTranslatorRegion": "eastasia",
             "ocrEndpoint": "http://127.0.0.1:8866/ocr",
             "globalShortcut": "Ctrl+Shift+A",
+            "screenshotShortcut": "Ctrl+Shift+S",
             "enableTray": false,
             "theme": "solarized"
         }"#;
@@ -208,6 +227,7 @@ mod tests {
         assert_eq!(settings.microsoft_translator_region, "eastasia");
         assert_eq!(settings.ocr_endpoint, "http://127.0.0.1:8866/ocr");
         assert_eq!(settings.global_shortcut, "Ctrl+Shift+A");
+        assert_eq!(settings.screenshot_shortcut, "Ctrl+Shift+S");
         assert!(!settings.enable_tray);
         assert_eq!(settings.theme, "solarized");
     }
@@ -268,6 +288,7 @@ mod tests {
         assert_eq!(settings.microsoft_translator_region, "");
         assert_eq!(settings.ocr_endpoint, DEFAULT_OCR_ENDPOINT);
         assert_eq!(settings.global_shortcut, DEFAULT_GLOBAL_SHORTCUT);
+        assert_eq!(settings.screenshot_shortcut, DEFAULT_SCREENSHOT_SHORTCUT);
         assert!(settings.enable_tray); // default true
         assert_eq!(settings.theme, DEFAULT_THEME);
     }

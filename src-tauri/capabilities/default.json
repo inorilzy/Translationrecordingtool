@@ -9,6 +9,8 @@
     "core:window:allow-hide",
     "core:window:allow-set-focus",
     "core:window:allow-set-position",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:tray:allow-new",
     "core:tray:allow-set-menu",
     "core:menu:allow-new",

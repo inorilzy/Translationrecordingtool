@@ -16,6 +16,7 @@ const translationStore = vi.hoisted(() => ({
 
 const settingsStore = vi.hoisted(() => ({
   globalShortcut: 'Ctrl+Q',
+  screenshotShortcut: 'Ctrl+Shift+Q',
 }))
 
 vi.mock('../stores/translation', () => ({
@@ -70,6 +71,7 @@ describe('TranslatePage mounted interactions', () => {
     translationStore.error = ''
     translationStore.currentTranslation = null
     settingsStore.globalShortcut = 'Ctrl+Q'
+    settingsStore.screenshotShortcut = 'Ctrl+Shift+Q'
   })
 
   it('renders shortcut text from settings store', async () => {
@@ -77,6 +79,13 @@ describe('TranslatePage mounted interactions', () => {
     const wrapper = await mountPage()
 
     expect(wrapper.text()).toContain('剪贴板翻译 (Ctrl+Shift+T)')
+  })
+
+  it('renders screenshot shortcut text from settings store', async () => {
+    settingsStore.screenshotShortcut = 'Ctrl+Alt+S'
+    const wrapper = await mountPage()
+
+    expect(wrapper.text()).toContain('截图 OCR 翻译 (Ctrl+Alt+S)')
   })
 
   it('submits trimmed text when clicking translate', async () => {
@@ -110,11 +119,14 @@ describe('TranslatePage mounted interactions', () => {
   })
 
   it('triggers screenshot OCR translation button', async () => {
+    const translated = createTranslationRecord({ source_text: 'ocr text' })
+    translationStore.translateScreenshot.mockResolvedValueOnce(translated)
     const wrapper = await mountPage()
 
     await wrapper.get('.screenshot-btn').trigger('click')
 
     expect(translationStore.translateScreenshot).toHaveBeenCalledTimes(1)
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('ocr text')
   })
 
   it('disables all translate actions while the store is loading', async () => {

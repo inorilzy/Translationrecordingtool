@@ -5,10 +5,9 @@
 ///
 /// Run with:
 ///   cargo test --manifest-path src-tauri/Cargo.toml --test popup_window_contract_tests
-
 use translation_tool_lib::popup_window::{
-    MonitorInfo, PopupPositionInfo, calculate_popup_position,
-    OFFSET, MARGIN, POPUP_WIDTH, POPUP_HEIGHT,
+    calculate_popup_position, MonitorInfo, PopupPositionInfo, MARGIN, OFFSET, POPUP_HEIGHT,
+    POPUP_WIDTH,
 };
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
@@ -54,8 +53,8 @@ fn normal_position_with_default_offset_no_monitor() {
 fn right_edge_overflow_moves_to_left_of_cursor() {
     // Cursor near right edge — popup should appear on the left
     let monitor = default_monitor(); // 1920 wide, usable_right = 1920 - 20 = 1900
-    // Cursor at 1700: 1700 + 15 + 420 = 2135 > 1900 → overflow
-    // Left attempt: 1700 - 420 - 15 = 1265 >= 20 (usable_left) → fits
+                                     // Cursor at 1700: 1700 + 15 + 420 = 2135 > 1900 → overflow
+                                     // Left attempt: 1700 - 420 - 15 = 1265 >= 20 (usable_left) → fits
     let pos = calc((1700, 500), Some(monitor));
 
     assert_eq!(pos.x, 1700 - POPUP_WIDTH - OFFSET); // 1265
@@ -74,7 +73,7 @@ fn right_edge_overflow_left_also_does_not_fit_clamps() {
     // Let's use a case that does overflow: cursor at 40, right side 40+15+420=475 <= 1900, no overflow
     // Actually for this test we need a narrow screen scenario
     let narrow_monitor = MonitorInfo {
-        width: 500,  // Very narrow: usable_right = 500 - 20 = 480
+        width: 500, // Very narrow: usable_right = 500 - 20 = 480
         height: 1080,
         x: 0,
         y: 0,
@@ -94,8 +93,8 @@ fn right_edge_overflow_left_also_does_not_fit_clamps() {
 fn bottom_edge_overflow_moves_above_cursor() {
     // Cursor near bottom — popup should appear above
     let monitor = default_monitor(); // 1080 tall, usable_bottom = 1080 - 20 = 1060
-    // Cursor at 900: 900 + 15 + 380 = 1295 > 1060 → overflow
-    // Top attempt: 900 - 380 - 15 = 505 >= 20 → fits
+                                     // Cursor at 900: 900 + 15 + 380 = 1295 > 1060 → overflow
+                                     // Top attempt: 900 - 380 - 15 = 505 >= 20 → fits
     let pos = calc((800, 900), Some(monitor));
 
     assert_eq!(pos.x, 800 + OFFSET); // X unchanged
@@ -108,7 +107,7 @@ fn bottom_edge_overflow_above_does_not_fit_clamps() {
     // Cursor so low that even above doesn't fit
     let narrow_monitor = MonitorInfo {
         width: 1920,
-        height: 450,   // Very short: usable_bottom = 450 - 20 = 430
+        height: 450, // Very short: usable_bottom = 450 - 20 = 430
         x: 0,
         y: 0,
     };
@@ -156,7 +155,7 @@ fn extreme_top_left_clamped_to_usable_area() {
 
     assert_eq!(pos.x, MARGIN); // 20, clamped from 15
     assert_eq!(pos.y, MARGIN); // 20, clamped from 15
-    // Note: clamp doesn't set adjusted_for_edge since it's just a safety boundary
+                               // Note: clamp doesn't set adjusted_for_edge since it's just a safety boundary
 }
 
 // ─── Multi-Monitor Scenario ──────────────────────────────────────────────────

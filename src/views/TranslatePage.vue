@@ -1,7 +1,7 @@
 <script lang="ts">
 export async function submitTranslation(
   inputText: string,
-  translateText: (text: string) => Promise<void>,
+  translateText: (text: string) => Promise<unknown>,
 ) {
   const text = inputText.trim()
   if (!text) return
@@ -13,7 +13,6 @@ export async function submitTranslation(
 import { ref } from 'vue'
 import { useTranslationStore } from '../stores/translation'
 import { useSettingsStore } from '../stores/settings'
-import NavigationBar from '../components/NavigationBar.vue'
 import TranslationCard from '../components/TranslationCard.vue'
 
 const store = useTranslationStore()
@@ -23,12 +22,17 @@ const inputText = ref('')
 async function handleTranslate() {
   await submitTranslation(inputText.value, store.translateText)
 }
+
+async function handleScreenshotTranslate() {
+  const result = await store.translateScreenshot()
+  if (result?.source_text) {
+    inputText.value = result.source_text
+  }
+}
 </script>
 
 <template>
   <div class="page-container">
-    <NavigationBar />
-
     <div class="header">
       <h1>手动翻译</h1>
       <p class="subtitle">输入或粘贴文本，获取翻译结果</p>
@@ -63,11 +67,11 @@ async function handleTranslate() {
             {{ store.loading ? '翻译中...' : `剪贴板翻译 (${settings.globalShortcut})` }}
           </button>
           <button
-            @click="store.translateScreenshot"
+            @click="handleScreenshotTranslate"
             :disabled="store.loading"
             class="btn btn-secondary screenshot-btn"
           >
-            {{ store.loading ? '处理中...' : '截图 OCR 翻译' }}
+            {{ store.loading ? '处理中...' : `截图 OCR 翻译 (${settings.screenshotShortcut})` }}
           </button>
         </div>
       </div>
