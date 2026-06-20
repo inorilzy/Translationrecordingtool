@@ -75,8 +75,8 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorKey).toBe('ms-key')
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
-      expect(store.ocrEngine).toBe('paddleocr')
-      expect(store.ocrModelProfile).toBe('tiny')
+      expect(store.ocrEngine).toBe('native_onnx')
+      expect(store.ocrModelProfile).toBe('small')
       expect(store.ocrPreloadOnStartup).toBe(false)
       expect(store.screenshotShortcut).toBe('Ctrl+Shift+S')
       expect(store.theme).toBe('dark')
@@ -128,8 +128,8 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'new-ms-key',
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-        ocrEngine: 'paddleocr',
-        ocrModelProfile: 'medium',
+        ocrEngine: 'native_onnx',
+        ocrModelProfile: 'small',
         ocrPreloadOnStartup: false,
       })
 
@@ -140,8 +140,8 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'new-ms-key',
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-        ocrEngine: 'paddleocr',
-        ocrModelProfile: 'medium',
+        ocrEngine: 'native_onnx',
+        ocrModelProfile: 'small',
         ocrPreloadOnStartup: false,
       })
       expect(store.apiKey).toBe('new-key')
@@ -150,8 +150,8 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorKey).toBe('new-ms-key')
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
-      expect(store.ocrEngine).toBe('paddleocr')
-      expect(store.ocrModelProfile).toBe('medium')
+      expect(store.ocrEngine).toBe('native_onnx')
+      expect(store.ocrModelProfile).toBe('small')
       expect(store.ocrPreloadOnStartup).toBe(false)
     })
 

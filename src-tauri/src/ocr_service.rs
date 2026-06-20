@@ -206,10 +206,6 @@ pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceSta
     }
 }
 
-pub fn has_packaged_http_ocr_runtime(app: &AppHandle) -> bool {
-    packaged_sidecar_path(app).is_some() || packaged_script_path(app).is_ok()
-}
-
 fn start_process_if_needed(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<(), String> {
     if !matches!(config.engine.as_str(), "paddleocr" | "rapidocr") {
         return Err(format!(

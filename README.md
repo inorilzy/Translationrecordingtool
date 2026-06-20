@@ -8,6 +8,10 @@
 - 推荐安装包：`translation-tool_0.2.0_x64-setup.exe`
 - MSI 安装包：`translation-tool_0.2.0_x64_en-US.msi`
 
+## 产品预览
+
+![产品截图](docs/assets/product-preview.png)
+
 ## 核心能力
 
 - 划词翻译：默认快捷键 `Ctrl+Q`。
@@ -27,6 +31,71 @@
 - 划词翻译新增 Windows UI Automation 读取选区文本，能用时不污染剪贴板。
 - 设置页重构为 `Naive UI + UnoCSS + @lucide/vue`。
 - 截图 OCR 后会继续自动翻译，同时把 OCR 文本放到主界面输入栏。
+
+## 功能结构
+
+```mermaid
+mindmap
+  root((Translation Tool))
+    翻译
+      手动输入
+      划词快捷翻译
+      截图 OCR 翻译
+      弹窗结果卡片
+    OCR
+      区域截图
+      PP-OCRv6 Small
+      ONNX Runtime 本地推理
+      OCR 文本回填
+    翻译服务
+      Microsoft Translator
+      有道翻译
+      本地词典
+      Free Dictionary
+    桌面能力
+      全局快捷键
+      系统托盘
+      开机启动
+      主窗口唤起
+    数据
+      翻译历史
+      收藏
+      SQLite
+      settings.json
+    设置
+      API 密钥
+      快捷键
+      OCR 预热
+      主题
+```
+
+## 架构概览
+
+```mermaid
+flowchart TB
+  User[用户] --> App[Tauri Desktop App]
+
+  App --> Frontend[Vue 3 + TypeScript]
+  Frontend --> UI[Naive UI + UnoCSS]
+  Frontend --> Store[Pinia + Vue Router]
+  Store --> Commands[Tauri Commands]
+
+  Commands --> Shortcut[全局快捷键]
+  Commands --> Selection[选中文本读取]
+  Commands --> Screenshot[截图捕获]
+  Commands --> OCR[Native OCR]
+  Commands --> Translate[翻译流程]
+  Commands --> Storage[本地存储]
+
+  Selection --> UIA[Windows UI Automation]
+  Selection --> Clipboard[剪贴板回退]
+  OCR --> Runtime[ONNX Runtime + PP-OCRv6 Small]
+  Translate --> Microsoft[Microsoft Translator]
+  Translate --> Youdao[有道翻译]
+  Translate --> Dict[本地词典 / Free Dictionary]
+  Storage --> SQLite[SQLite]
+  Storage --> Settings[settings.json]
+```
 
 ## 使用说明
 

@@ -10,18 +10,18 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  FileText,
   Keyboard,
   MonitorCog,
   Palette,
   Play,
   RefreshCw,
-  RotateCcw,
   Settings2,
   ShieldQuestion,
-  Waves,
 } from '@lucide/vue'
 import { useSettingsStore, type OcrServiceStatus } from '../stores/settings'
+
+const FIXED_OCR_ENGINE = 'native_onnx'
+const FIXED_OCR_MODEL_PROFILE = 'small'
 
 const store = useSettingsStore()
 const notify = useMessage()
@@ -45,10 +45,8 @@ const config = ref({
 
 const capturingShortcut = ref<'global' | 'screenshot' | null>(null)
 const autostartLoading = ref(true)
-const ocrCheckLoading = ref(false)
 const ocrStatusLoading = ref(false)
 const ocrWarmupLoading = ref(false)
-const ocrRestartLoading = ref(false)
 const ocrStatus = ref<OcrServiceStatus | null>(null)
 const showYoudaoSecret = ref(false)
 const showMicrosoftKey = ref(false)
@@ -72,19 +70,6 @@ const microsoftRegionOptions: SelectOption[] = [
   { label: 'eastus', value: 'eastus' },
   { label: 'westeurope', value: 'westeurope' },
   { label: 'southeastasia', value: 'southeastasia' },
-]
-
-const ocrEngineOptions: SelectOption[] = [
-  { label: '原生 ONNX Runtime / 推荐实验', value: 'native_onnx' },
-  { label: 'PaddleOCR PP-OCRv6', value: 'paddleocr' },
-  { label: 'RapidOCR / 备用', value: 'rapidocr' },
-  { label: 'Windows OCR / 预留', value: 'windows', disabled: true },
-]
-
-const ocrModelProfileOptions: SelectOption[] = [
-  { label: 'Tiny - 最小最快', value: 'tiny' },
-  { label: 'Small - 推荐平衡', value: 'small' },
-  { label: 'Medium - 更高精度', value: 'medium' },
 ]
 
 const providerName = computed(() => (
@@ -118,29 +103,16 @@ const ocrStatusText = computed(() => {
 })
 
 const ocrVersionText = computed(() => {
-  const engine = ocrStatus.value?.engine || config.value.ocrEngine
-  if (engine === 'native_onnx') {
-    const onnxVersion = ocrStatus.value?.onnxruntimeVersion || '1.20.1'
-    const profile = ocrStatus.value?.modelProfile || config.value.ocrModelProfile
-    return `原生 ONNX Runtime ${onnxVersion} / PP-OCRv6 / CPU / ${profile}`
-  }
-  if (engine === 'rapidocr') {
-    const version = ocrStatus.value?.rapidocrVersion || '1.4.4'
-    return `RapidOCR ${version} / ONNX Runtime / CPU`
-  }
-
-  if (!ocrStatus.value) return 'PaddleOCR 3.7.0 / PP-OCRv6 / ONNXRuntime / CPU'
-  const ppocrVersion = ocrStatus.value.ppocrVersion || 'PP-OCRv6'
-  const onnxVersion = ocrStatus.value.onnxruntimeVersion || '1.27.0'
-  return `PaddleOCR ${ocrStatus.value.paddleocrVersion} / ${ppocrVersion} / ONNXRuntime ${onnxVersion} / ${ocrStatus.value.device.toUpperCase()} / ${ocrStatus.value.modelProfile}`
+  const onnxVersion = ocrStatus.value?.onnxruntimeVersion || '1.20.1'
+  const ppocrVersion = ocrStatus.value?.ppocrVersion || 'PP-OCRv6'
+  const device = ocrStatus.value?.device?.toUpperCase() || 'CPU'
+  return `ONNX Runtime ${onnxVersion} / ${ppocrVersion} Small / ${device}`
 })
 
 const ocrModelText = computed(() => {
-  const engine = ocrStatus.value?.engine || config.value.ocrEngine
-  if (engine === 'native_onnx') return ocrStatus.value?.modelDir ? '使用内置 PP-OCRv6 ONNX 模型，无需 Python OCR 服务' : '未检测到内置模型目录'
-  if (engine === 'rapidocr') return 'RapidOCR 使用内置 ONNX 模型，模型档位仅对 PaddleOCR 生效'
-  if (!ocrStatus.value) return '模型目录未检查'
-  return ocrStatus.value.modelDir ? '已检测到 PP-OCRv6 ONNX 模型目录' : '未检测到内置模型目录，将使用 PaddleOCR 自动缓存'
+  return ocrStatus.value?.modelDir
+    ? '使用内置 PP-OCRv6 Small ONNX 模型，无需 Python OCR 服务'
+    : '未检测到内置 PP-OCRv6 Small 模型目录'
 })
 
 const ocrStatusDetail = computed(() => {
@@ -156,8 +128,8 @@ onMounted(async () => {
   config.value.microsoftTranslatorKey = store.microsoftTranslatorKey
   config.value.microsoftTranslatorRegion = store.microsoftTranslatorRegion
   config.value.ocrEndpoint = store.ocrEndpoint
-  config.value.ocrEngine = store.ocrEngine
-  config.value.ocrModelProfile = store.ocrModelProfile
+  config.value.ocrEngine = FIXED_OCR_ENGINE
+  config.value.ocrModelProfile = FIXED_OCR_MODEL_PROFILE
   config.value.ocrPreloadOnStartup = store.ocrPreloadOnStartup
   config.value.globalShortcut = store.globalShortcut
   config.value.screenshotShortcut = store.screenshotShortcut
@@ -189,7 +161,8 @@ function captureShortcut(event: KeyboardEvent, target: 'global' | 'screenshot') 
     keys.push(mainKey.toUpperCase())
   }
 
-  if (keys.length >= 2) {
+  const isFunctionKey = /^F([1-9]|1[0-9]|2[0-4])$/.test(mainKey.toUpperCase())
+  if (keys.length >= 2 || isFunctionKey) {
     const newShortcut = keys.join('+')
     if (target === 'global') {
       config.value.globalShortcut = newShortcut
@@ -202,10 +175,11 @@ function captureShortcut(event: KeyboardEvent, target: 'global' | 'screenshot') 
 }
 
 async function saveApiConfig() {
-  const ocrEndpointChanged = config.value.ocrEndpoint !== store.ocrEndpoint
-  const ocrRuntimeChanged = ocrEndpointChanged
-    || config.value.ocrEngine !== store.ocrEngine
-    || config.value.ocrModelProfile !== store.ocrModelProfile
+  config.value.ocrEngine = FIXED_OCR_ENGINE
+  config.value.ocrModelProfile = FIXED_OCR_MODEL_PROFILE
+
+  const ocrRuntimeChanged = store.ocrEngine !== FIXED_OCR_ENGINE
+    || store.ocrModelProfile !== FIXED_OCR_MODEL_PROFILE
     || config.value.ocrPreloadOnStartup !== store.ocrPreloadOnStartup
 
   if (
@@ -230,8 +204,8 @@ async function saveApiConfig() {
       microsoftTranslatorKey: config.value.microsoftTranslatorKey,
       microsoftTranslatorRegion: config.value.microsoftTranslatorRegion,
       ocrEndpoint: config.value.ocrEndpoint,
-      ocrEngine: config.value.ocrEngine,
-      ocrModelProfile: config.value.ocrModelProfile,
+      ocrEngine: FIXED_OCR_ENGINE,
+      ocrModelProfile: FIXED_OCR_MODEL_PROFILE,
       ocrPreloadOnStartup: config.value.ocrPreloadOnStartup,
     })
     notify.success('服务配置已保存')
@@ -254,28 +228,6 @@ async function warmupOcrService() {
     notify.error(`OCR 预热失败: ${e}`)
   } finally {
     ocrWarmupLoading.value = false
-  }
-}
-
-async function restartOcrService() {
-  ocrRestartLoading.value = true
-  try {
-    const result = await store.restartOcrService(config.value.ocrEndpoint)
-    await refreshOcrStatus()
-    notify.success(result)
-  } catch (e) {
-    await refreshOcrStatus()
-    notify.error(`OCR 重启失败: ${e}`)
-  } finally {
-    ocrRestartLoading.value = false
-  }
-}
-
-async function revealOcrLog() {
-  try {
-    await store.revealOcrLog()
-  } catch (e) {
-    notify.error(`打开 OCR 日志失败: ${e}`)
   }
 }
 
@@ -341,26 +293,7 @@ async function saveAutostartBehavior() {
   }
 }
 
-async function checkOcrService() {
-  ocrCheckLoading.value = true
-  try {
-    const result = await store.checkOcrService(config.value.ocrEndpoint)
-    await refreshOcrStatus()
-    notify.success(result)
-  } catch (e) {
-    await refreshOcrStatus()
-    notify.error(`OCR 服务检查失败: ${e}`)
-  } finally {
-    ocrCheckLoading.value = false
-  }
-}
-
 async function refreshOcrStatus() {
-  if (!config.value.ocrEndpoint.trim()) {
-    ocrStatus.value = null
-    return
-  }
-
   ocrStatusLoading.value = true
   try {
     ocrStatus.value = await store.getOcrServiceStatus(config.value.ocrEndpoint)
@@ -540,54 +473,19 @@ async function changeTheme() {
       <n-divider />
 
       <div class="settings-grid ocr-grid">
-        <label class="field-label">OCR 引擎</label>
-        <n-select
-          v-model:value="config.ocrEngine"
-          :options="ocrEngineOptions"
-          size="medium"
-          @update:value="saveApiConfig"
-        />
-
-        <label class="field-label">模型档位</label>
-        <n-select
-          v-model:value="config.ocrModelProfile"
-          :options="ocrModelProfileOptions"
-          size="medium"
-          @update:value="saveApiConfig"
-        />
+        <label class="field-label">OCR 运行时</label>
+        <div class="ocr-runtime-card">
+          <div class="ocr-runtime-main">
+            <n-tag type="success" size="small" round>内置</n-tag>
+            <strong>ONNX Runtime + PP-OCRv6 Small</strong>
+          </div>
+          <p>当前版本固定使用原生 ONNX OCR，不启动 Python/PaddleOCR/RapidOCR 服务。</p>
+        </div>
 
         <label class="field-label">启动时预热 OCR</label>
         <div class="switch-inline-row">
           <n-switch v-model:value="config.ocrPreloadOnStartup" @update:value="saveApiConfig" />
-          <span>应用启动后后台拉起 OCR 服务，截图时等待更短。</span>
-        </div>
-
-        <label class="field-label">
-          OCR HTTP 地址
-          <n-tooltip trigger="hover">
-            <template #trigger>
-              <ShieldQuestion :size="15" class="field-help" />
-            </template>
-            截图会以 PNG base64 JSON 发送到该地址，字段名为 image。
-          </n-tooltip>
-        </label>
-        <div class="ocr-row">
-          <n-input
-            v-model:value="config.ocrEndpoint"
-            size="medium"
-            placeholder="例如 http://127.0.0.1:8866/ocr"
-            @blur="saveApiConfig"
-          />
-          <n-button
-            type="primary"
-            size="medium"
-            :loading="ocrCheckLoading"
-            :disabled="!config.ocrEndpoint.trim()"
-            @click="checkOcrService"
-          >
-            <template #icon><Waves :size="16" /></template>
-            启动/测试
-          </n-button>
+          <span>应用启动后后台初始化 OCR，第一次截图等待更短。</span>
         </div>
 
         <div />
@@ -600,7 +498,6 @@ async function changeTheme() {
               circle
               size="small"
               :loading="ocrStatusLoading"
-              :disabled="!config.ocrEndpoint.trim()"
               @click="refreshOcrStatus"
             >
               <template #icon><RefreshCw :size="15" /></template>
@@ -615,25 +512,10 @@ async function changeTheme() {
               size="small"
               secondary
               :loading="ocrWarmupLoading"
-              :disabled="!config.ocrEndpoint.trim()"
               @click="warmupOcrService"
             >
               <template #icon><Play :size="14" /></template>
               预热
-            </n-button>
-            <n-button
-              size="small"
-              secondary
-              :loading="ocrRestartLoading"
-              :disabled="!config.ocrEndpoint.trim()"
-              @click="restartOcrService"
-            >
-              <template #icon><RotateCcw :size="14" /></template>
-              重启
-            </n-button>
-            <n-button size="small" secondary @click="revealOcrLog">
-              <template #icon><FileText :size="14" /></template>
-              日志
             </n-button>
           </div>
         </div>
@@ -861,10 +743,37 @@ async function changeTheme() {
   cursor: pointer;
 }
 
-.ocr-row {
+.ocr-runtime-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
-  gap: 10px;
+  gap: 6px;
+  padding: 11px 12px;
+  border: 1px solid var(--color-app-panel-border);
+  border-radius: 8px;
+  background: var(--color-app-panel-bg);
+}
+
+.ocr-runtime-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ocr-runtime-main strong {
+  color: var(--color-app-text-strong);
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.ocr-runtime-card p {
+  margin: 0;
+  color: var(--color-app-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ocr-runtime-card,
+.ocr-status-card {
+  min-width: 0;
 }
 
 .ocr-status-row {
@@ -994,8 +903,5 @@ async function changeTheme() {
     grid-template-columns: 1fr;
   }
 
-  .ocr-row {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

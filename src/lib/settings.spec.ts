@@ -32,7 +32,7 @@ describe('normalizeSettings', () => {
     expect(result.enableTray).toBe(defaultSettings.enableTray)
   })
 
-  it('preserves valid non-default values', () => {
+  it('preserves valid non-OCR values and fixes OCR runtime', () => {
     const partial = {
       apiKey: 'test-key',
       apiSecret: 'test-secret',
@@ -49,7 +49,11 @@ describe('normalizeSettings', () => {
       theme: 'dark',
     }
     const result = normalizeSettings(partial)
-    expect(result).toEqual(partial)
+    expect(result).toEqual({
+      ...partial,
+      ocrEngine: defaultSettings.ocrEngine,
+      ocrModelProfile: defaultSettings.ocrModelProfile,
+    })
   })
 
   it('handles empty string api credentials as valid', () => {

@@ -26,7 +26,10 @@ use database::{
     open_translations_connection, save_translation_in_connection, toggle_favorite_in_connection,
     Translation,
 };
-use settings::{PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_SCREENSHOT_SHORTCUT};
+use settings::{
+    PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_MODEL_PROFILE,
+    DEFAULT_SCREENSHOT_SHORTCUT,
+};
 use std::sync::{Arc, RwLock};
 use tauri::{
     menu::{Menu, MenuItem},
@@ -83,31 +86,16 @@ fn adapt_ocr_settings_for_packaged_runtime(
     settings: &mut PersistedSettings,
 ) -> bool {
     let (native_profile, native_model_dir) =
-        native_ocr::model_status(app, &settings.ocr_model_profile);
+        native_ocr::model_status(app, DEFAULT_OCR_MODEL_PROFILE);
     if native_model_dir.is_none() {
         return false;
     }
 
-    if native_ocr::is_native_engine(&settings.ocr_engine) {
-        let mut changed = false;
-        if settings.ocr_engine != native_ocr::engine_name() {
-            settings.ocr_engine = native_ocr::engine_name().to_string();
-            changed = true;
-        }
-        if settings.ocr_model_profile != native_profile {
-            settings.ocr_model_profile = native_profile;
-            changed = true;
-        }
-        return changed;
-    }
-
-    if ocr_service::has_packaged_http_ocr_runtime(app) {
-        return false;
-    }
-
+    let changed = settings.ocr_engine != native_ocr::engine_name()
+        || settings.ocr_model_profile != native_profile;
     settings.ocr_engine = native_ocr::engine_name().to_string();
     settings.ocr_model_profile = native_profile;
-    true
+    changed
 }
 
 fn translation_config_from_args(

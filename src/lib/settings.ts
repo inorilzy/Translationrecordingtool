@@ -36,6 +36,8 @@ export function normalizeSettings(settings?: Partial<AppSettings> | null): AppSe
   return {
     ...defaultSettings,
     ...settings,
+    ocrEngine: defaultSettings.ocrEngine,
+    ocrModelProfile: defaultSettings.ocrModelProfile,
   }
 }
 

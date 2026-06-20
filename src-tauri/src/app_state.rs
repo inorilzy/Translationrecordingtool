@@ -154,8 +154,8 @@ pub fn update_and_persist_api_config(
     microsoft_translator_key: String,
     microsoft_translator_region: String,
     ocr_endpoint: String,
-    ocr_engine: String,
-    ocr_model_profile: String,
+    _ocr_engine: String,
+    _ocr_model_profile: String,
     ocr_preload_on_startup: bool,
 ) -> Result<(), String> {
     {
@@ -166,8 +166,8 @@ pub fn update_and_persist_api_config(
         cfg.microsoft_translator_key = microsoft_translator_key;
         cfg.microsoft_translator_region = microsoft_translator_region;
         cfg.ocr_endpoint = ocr_endpoint;
-        cfg.ocr_engine = ocr_engine;
-        cfg.ocr_model_profile = ocr_model_profile;
+        cfg.ocr_engine = DEFAULT_OCR_ENGINE.to_string();
+        cfg.ocr_model_profile = DEFAULT_OCR_MODEL_PROFILE.to_string();
         cfg.ocr_preload_on_startup = ocr_preload_on_startup;
     }
     persist_managed_settings(app, config, tray_behavior)
