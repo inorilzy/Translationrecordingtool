@@ -148,11 +148,9 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function checkOcrService(endpoint = ocrEndpoint.value) {
+  async function checkOcrService() {
     try {
-      return await invoke<string>('check_ocr_service', {
-        ocrEndpoint: endpoint,
-      })
+      return await invoke<string>('check_ocr_service')
     } catch (e) {
       error.value = `OCR 服务检查失败: ${e}`
       throw e
@@ -172,33 +170,27 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function getOcrServiceStatus(endpoint = ocrEndpoint.value) {
+  async function getOcrServiceStatus() {
     try {
-      return await invoke<OcrServiceStatus>('get_ocr_service_status', {
-        ocrEndpoint: endpoint,
-      })
+      return await invoke<OcrServiceStatus>('get_ocr_service_status')
     } catch (e) {
       error.value = `读取 OCR 服务状态失败: ${e}`
       throw e
     }
   }
 
-  async function warmupOcrService(endpoint = ocrEndpoint.value) {
+  async function warmupOcrService() {
     try {
-      return await invoke<string>('warmup_ocr_service', {
-        ocrEndpoint: endpoint,
-      })
+      return await invoke<string>('warmup_ocr_service')
     } catch (e) {
       error.value = `预热 OCR 服务失败: ${e}`
       throw e
     }
   }
 
-  async function restartOcrService(endpoint = ocrEndpoint.value) {
+  async function restartOcrService() {
     try {
-      return await invoke<string>('restart_ocr_service', {
-        ocrEndpoint: endpoint,
-      })
+      return await invoke<string>('restart_ocr_service')
     } catch (e) {
       error.value = `重启 OCR 服务失败: ${e}`
       throw e

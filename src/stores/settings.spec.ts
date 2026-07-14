@@ -256,17 +256,15 @@ describe('useSettingsStore', () => {
   })
 
   describe('checkOcrService', () => {
-    it('checks OCR service with the configured endpoint', async () => {
+    it('checks OCR service using backend-managed settings', async () => {
       invokeMock.mockResolvedValue('PaddleOCR 服务正常')
 
       const store = useSettingsStore()
-      store.ocrEndpoint = 'http://127.0.0.1:8866/ocr'
+      store.ocrEndpoint = 'http://must-not-be-sent/ocr'
 
       const result = await store.checkOcrService()
 
-      expect(invokeMock).toHaveBeenCalledWith('check_ocr_service', {
-        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-      })
+      expect(invokeMock).toHaveBeenCalledWith('check_ocr_service')
       expect(result).toBe('PaddleOCR 服务正常')
     })
 
@@ -332,9 +330,7 @@ describe('useSettingsStore', () => {
       const store = useSettingsStore()
       const result = await store.getOcrServiceStatus()
 
-      expect(invokeMock).toHaveBeenCalledWith('get_ocr_service_status', {
-        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-      })
+      expect(invokeMock).toHaveBeenCalledWith('get_ocr_service_status')
       expect(result).toEqual(status)
     })
 
@@ -349,27 +345,23 @@ describe('useSettingsStore', () => {
   })
 
   describe('OCR service controls', () => {
-    it('warms up OCR service with configured endpoint', async () => {
+    it('warms up OCR service using backend-managed settings', async () => {
       invokeMock.mockResolvedValue('OCR 预热完成')
 
       const store = useSettingsStore()
       const result = await store.warmupOcrService()
 
-      expect(invokeMock).toHaveBeenCalledWith('warmup_ocr_service', {
-        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-      })
+      expect(invokeMock).toHaveBeenCalledWith('warmup_ocr_service')
       expect(result).toBe('OCR 预热完成')
     })
 
-    it('restarts OCR service with configured endpoint', async () => {
+    it('restarts OCR service using backend-managed settings', async () => {
       invokeMock.mockResolvedValue('OCR 预热完成')
 
       const store = useSettingsStore()
       const result = await store.restartOcrService()
 
-      expect(invokeMock).toHaveBeenCalledWith('restart_ocr_service', {
-        ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-      })
+      expect(invokeMock).toHaveBeenCalledWith('restart_ocr_service')
       expect(result).toBe('OCR 预热完成')
     })
 

@@ -11,14 +11,15 @@ use std::{
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tracing::{info, warn};
+use serde_json::Value;
+
+use crate::ocr_contracts::{
+    engine_label, normalize_engine, OcrHealthStatus, OcrRuntimeConfig, OcrServiceStatus,
+    OCR_DEVICE, OCR_LANG, PADDLE_OCR_VERSION, PPOCR_VERSION, RAPID_OCR_VERSION,
+    SIDECAR_ONNXRUNTIME_VERSION,
+};
 
 const OCR_HOST: &str = "127.0.0.1";
-const OCR_LANG: &str = "ch";
-const OCR_DEVICE: &str = "cpu";
-const PADDLE_OCR_VERSION: &str = "3.7.0";
-const PPOCR_VERSION: &str = "PP-OCRv6";
-const ONNXRUNTIME_VERSION: &str = "1.27.0";
-const RAPID_OCR_VERSION: &str = "1.4.4";
 const OCR_SIDECAR_STEM: &str = "paddle-ocr-server";
 const OCR_MODEL_RESOURCE_DIR: &str = "ocr-models";
 
@@ -28,67 +29,10 @@ pub struct OcrServiceState {
     last_error: RwLock<Option<String>>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OcrServiceStatus {
-    pub running: bool,
-    pub endpoint: String,
-    pub message: String,
-    pub last_error: Option<String>,
-    pub engine: String,
-    pub model_profile: String,
-    pub model_dir: Option<String>,
-    pub sidecar_path: Option<String>,
-    pub log_path: Option<String>,
-    pub preload_on_startup: bool,
-    pub rapidocr_version: &'static str,
-    pub paddleocr_version: &'static str,
-    pub ppocr_version: &'static str,
-    pub onnxruntime_version: &'static str,
-    pub lang: &'static str,
-    pub device: &'static str,
-}
-
-#[derive(Debug, Clone)]
-pub struct OcrRuntimeConfig {
-    pub endpoint: String,
-    pub engine: String,
-    pub model_profile: String,
-    pub preload_on_startup: bool,
-}
-
-pub fn spawn_startup_check(app: AppHandle, config: OcrRuntimeConfig) {
-    tauri::async_runtime::spawn(async move {
-        if !config.preload_on_startup {
-            info!("OCR 启动预热已关闭");
-            return;
-        }
-
-        if let Err(error) = ensure_running(&app, &config).await {
-            set_last_error(&app, error.clone());
-            warn!("自动启动 OCR 服务失败: {}", error);
-            return;
-        }
-
-        if let Err(error) = warmup(&app, &config).await {
-            set_last_error(&app, error.clone());
-            warn!("自动预热 OCR 服务失败: {}", error);
-        }
-    });
-}
 
 pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
-    if crate::native_ocr::is_native_engine(&config.engine) {
-        let app = app.clone();
-        let config = config.clone();
-        return tauri::async_runtime::spawn_blocking(move || {
-            crate::native_ocr::ensure_initialized(&app, &config)
-        })
-        .await
-        .map_err(|error| format!("原生 OCR 初始化任务失败: {}", error))?;
-    }
 
-    if let Ok(message) = crate::ocr::check_service_engine(&config.endpoint, &config.engine).await {
+    if let Ok(message) = check_service_engine(&config.endpoint, &config.engine).await {
         clear_last_error(app);
         return Ok(message);
     }
@@ -113,60 +57,23 @@ pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Resul
 }
 
 pub async fn warmup(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
-    if crate::native_ocr::is_native_engine(&config.engine) {
-        return ensure_running(app, config).await;
-    }
 
     ensure_running(app, config).await?;
-    crate::ocr::warmup_service(&config.endpoint).await
+    warmup_service(&config.endpoint).await
 }
 
 pub async fn restart(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
     stop_process(app)?;
-    if crate::native_ocr::is_native_engine(&config.engine) {
-        return ensure_running(app, config).await;
-    }
     ensure_running(app, config).await?;
     warmup(app, config).await
 }
 
 pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus {
-    if crate::native_ocr::is_native_engine(&config.engine) {
-        let (model_profile, model_dir) =
-            crate::native_ocr::model_status(app, &config.model_profile);
-        let running = model_dir.is_some();
-        return OcrServiceStatus {
-            running,
-            endpoint: "in-process".to_string(),
-            message: if running {
-                "原生 ONNX OCR 可用，无需 Python sidecar".to_string()
-            } else {
-                "未找到 PP-OCRv6 ONNX 模型目录".to_string()
-            },
-            last_error: if running {
-                None
-            } else {
-                Some("请先下载 PP-OCRv6 ONNX 模型".to_string())
-            },
-            engine: crate::native_ocr::engine_name().to_string(),
-            model_profile,
-            model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
-            sidecar_path: None,
-            log_path: None,
-            preload_on_startup: config.preload_on_startup,
-            rapidocr_version: RAPID_OCR_VERSION,
-            paddleocr_version: "-",
-            ppocr_version: PPOCR_VERSION,
-            onnxruntime_version: crate::native_ocr::onnx_runtime_version(),
-            lang: OCR_LANG,
-            device: OCR_DEVICE,
-        };
-    }
 
     let (model_profile, model_dir) = packaged_model_config(app, &config.model_profile);
     let sidecar_path = packaged_sidecar_path(app);
     let log_path = log_path(app).ok();
-    match crate::ocr::check_service_engine(&config.endpoint, &config.engine).await {
+    match check_service_engine(&config.endpoint, &config.engine).await {
         Ok(message) => OcrServiceStatus {
             running: true,
             endpoint: config.endpoint.clone(),
@@ -181,7 +88,7 @@ pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceSta
             rapidocr_version: RAPID_OCR_VERSION,
             paddleocr_version: PADDLE_OCR_VERSION,
             ppocr_version: PPOCR_VERSION,
-            onnxruntime_version: ONNXRUNTIME_VERSION,
+            onnxruntime_version: SIDECAR_ONNXRUNTIME_VERSION,
             lang: OCR_LANG,
             device: OCR_DEVICE,
         },
@@ -199,7 +106,7 @@ pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceSta
             rapidocr_version: RAPID_OCR_VERSION,
             paddleocr_version: PADDLE_OCR_VERSION,
             ppocr_version: PPOCR_VERSION,
-            onnxruntime_version: ONNXRUNTIME_VERSION,
+            onnxruntime_version: SIDECAR_ONNXRUNTIME_VERSION,
             lang: OCR_LANG,
             device: OCR_DEVICE,
         },
@@ -257,7 +164,7 @@ fn start_process_if_needed(app: &AppHandle, config: &OcrRuntimeConfig) -> Result
     Ok(())
 }
 
-fn stop_process(app: &AppHandle) -> Result<(), String> {
+pub(crate) fn stop_process(app: &AppHandle) -> Result<(), String> {
     stop_process_if_managed(app)
 }
 
@@ -641,7 +548,7 @@ async fn wait_until_healthy(
     let mut last_error = None;
 
     while started.elapsed() < timeout {
-        match crate::ocr::check_service_engine(endpoint, engine).await {
+        match check_service_engine(endpoint, engine).await {
             Ok(message) => return Ok(message),
             Err(error) => last_error = Some(error),
         }
@@ -679,6 +586,163 @@ fn clear_last_error(app: &AppHandle) {
 fn last_error(app: &AppHandle) -> Option<String> {
     app.try_state::<Arc<OcrServiceState>>()
         .and_then(|state| state.last_error.read().ok().and_then(|error| error.clone()))
+}
+
+#[derive(Debug, Serialize)]
+struct OcrRequest<'a> {
+    image: &'a str,
+}
+
+pub async fn recognize_text(endpoint: &str, image_base64: &str) -> Result<String, String> {
+    validate_endpoint(endpoint)?;
+    let payload = image_base64
+        .split_once(',')
+        .map(|(_, data)| data)
+        .unwrap_or(image_base64);
+
+    let response = crate::translator::http_client()
+        .post(endpoint)
+        .header("Content-Type", "application/json")
+        .json(&OcrRequest { image: payload })
+        .send()
+        .await
+        .map_err(|error| format!("OCR 请求失败: {}", error))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("OCR 返回错误: {} {}", status, body));
+    }
+
+    let value: Value = response
+        .json()
+        .await
+        .map_err(|error| format!("OCR 响应解析失败: {}", error))?;
+    extract_text(&value).ok_or_else(|| "OCR 未返回可识别文本".to_string())
+}
+
+pub async fn check_service_engine(
+    endpoint: &str,
+    expected_engine: &str,
+) -> Result<String, String> {
+    let health = check_service_health(endpoint).await?;
+    let actual_engine = health.engine.unwrap_or_else(|| "unknown".to_string());
+    if normalize_engine(&actual_engine) != normalize_engine(expected_engine) {
+        return Err(format!(
+            "OCR 服务引擎不匹配：当前为 {}，设置中选择的是 {}",
+            engine_label(&actual_engine),
+            engine_label(expected_engine)
+        ));
+    }
+
+    Ok(format!(
+        "{} 服务正常: {}",
+        engine_label(expected_engine),
+        health_url_from_endpoint(endpoint)?
+    ))
+}
+
+pub async fn check_service_health(endpoint: &str) -> Result<OcrHealthStatus, String> {
+    validate_endpoint(endpoint)?;
+    let health_url = health_url_from_endpoint(endpoint)?;
+    let response = crate::translator::http_client()
+        .get(&health_url)
+        .send()
+        .await
+        .map_err(|error| format!("OCR 服务连接失败: {}", error))?;
+
+    if !response.status().is_success() {
+        return Err(format!("OCR 服务健康检查失败: {}", response.status()));
+    }
+
+    response
+        .json::<OcrHealthStatus>()
+        .await
+        .map_err(|error| format!("OCR 服务健康检查响应解析失败: {}", error))
+}
+
+pub async fn warmup_service(endpoint: &str) -> Result<String, String> {
+    validate_endpoint(endpoint)?;
+    let warmup_url = sibling_url_from_endpoint(endpoint, "/warmup")?;
+    let response = crate::translator::http_client()
+        .post(&warmup_url)
+        .send()
+        .await
+        .map_err(|error| format!("OCR 预热请求失败: {}", error))?;
+
+    if !response.status().is_success() {
+        return Err(format!("OCR 预热失败: {}", response.status()));
+    }
+
+    Ok(format!("OCR 预热完成: {}", warmup_url))
+}
+
+fn validate_endpoint(endpoint: &str) -> Result<(), String> {
+    let endpoint = endpoint.trim();
+    if endpoint.is_empty() {
+        return Err("请先在设置中配置 OCR HTTP 地址".to_string());
+    }
+    if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+        return Err("OCR HTTP 地址必须以 http:// 或 https:// 开头".to_string());
+    }
+    Ok(())
+}
+
+fn health_url_from_endpoint(endpoint: &str) -> Result<String, String> {
+    sibling_url_from_endpoint(endpoint, "/health")
+}
+
+fn sibling_url_from_endpoint(endpoint: &str, path: &str) -> Result<String, String> {
+    let mut url =
+        reqwest::Url::parse(endpoint.trim()).map_err(|error| format!("OCR HTTP 地址无效: {}", error))?;
+    url.set_path(path);
+    url.set_query(None);
+    Ok(url.to_string())
+}
+
+fn extract_text(value: &Value) -> Option<String> {
+    value
+        .get("text")
+        .and_then(Value::as_str)
+        .and_then(clean_text)
+        .or_else(|| value.get("result").and_then(extract_text_from_node))
+        .or_else(|| value.get("data").and_then(extract_text_from_node))
+        .or_else(|| extract_text_from_node(value))
+}
+
+fn extract_text_from_node(value: &Value) -> Option<String> {
+    if let Some(text) = value.as_str().and_then(clean_text) {
+        return Some(text);
+    }
+
+    if let Some(items) = value.as_array() {
+        let lines = items
+            .iter()
+            .filter_map(extract_text_from_node)
+            .collect::<Vec<_>>();
+        if !lines.is_empty() {
+            return Some(lines.join("\n"));
+        }
+    }
+
+    if let Some(object) = value.as_object() {
+        for key in ["text", "transcription", "label", "value", "result", "data"] {
+            if let Some(text) = object.get(key).and_then(extract_text_from_node) {
+                return Some(text);
+            }
+        }
+    }
+
+    None
+}
+
+fn clean_text(text: &str) -> Option<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
 }
 
 #[cfg(test)]

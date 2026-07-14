@@ -1,5 +1,6 @@
 /// Popup window management: creation, positioning, showing/hiding.
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::{Emitter, Listener, Manager};
@@ -424,7 +425,7 @@ pub fn show_popup_translation(
     popup_state: &Arc<RwLock<PopupRuntimeState>>,
     request_id: u64,
     event_name: &'static str,
-    translation: crate::database::Translation,
+    translation: crate::database::TranslationRecord,
     anchor: PopupAnchor,
     should_show: bool,
 ) -> Result<(), String> {

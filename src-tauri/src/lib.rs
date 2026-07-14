@@ -4,6 +4,7 @@ mod clipboard;
 mod database;
 pub mod local_dictionary;
 mod logger;
+mod ocr_contracts;
 mod native_ocr;
 mod ocr;
 mod ocr_service;
@@ -12,7 +13,9 @@ mod screenshot;
 mod selection_reader;
 mod settings;
 mod shortcut_handler;
+mod translation_domain;
 mod translation_flow;
+mod translation_workflow;
 mod translator;
 
 use app_state::{
@@ -23,14 +26,16 @@ use app_state::{
 };
 use database::{
     get_translation_by_id_in_connection, load_favorites_in_connection, load_history_in_connection,
-    open_translations_connection, save_translation_in_connection, toggle_favorite_in_connection,
-    Translation,
+    open_translations_connection, toggle_favorite_in_connection, TranslationRecord,
 };
+use ocr_contracts::{OcrRuntimeConfig, OcrServiceStatus};
+use translation_workflow::AppTranslationWorkflow;
 use settings::{
     PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_MODEL_PROFILE,
     DEFAULT_SCREENSHOT_SHORTCUT,
 };
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -71,13 +76,13 @@ fn update_api_config(
     )
 }
 
-fn ocr_runtime_config_from_state(config: &Arc<RwLock<AppConfig>>) -> ocr_service::OcrRuntimeConfig {
-    let cfg = config.read().unwrap();
-    ocr_service::OcrRuntimeConfig {
-        endpoint: cfg.ocr_endpoint.clone(),
-        engine: cfg.ocr_engine.clone(),
-        model_profile: cfg.ocr_model_profile.clone(),
-        preload_on_startup: cfg.ocr_preload_on_startup,
+fn ocr_runtime_config_from_state(config: &Arc<RwLock<AppConfig>>) -> OcrRuntimeConfig {
+    let config = config.read();
+    OcrRuntimeConfig {
+        endpoint: config.ocr_endpoint.clone(),
+        engine: config.ocr_engine.clone(),
+        model_profile: config.ocr_model_profile.clone(),
+        preload_on_startup: config.ocr_preload_on_startup,
     }
 }
 
@@ -98,21 +103,6 @@ fn adapt_ocr_settings_for_packaged_runtime(
     changed
 }
 
-fn translation_config_from_args(
-    app_key: String,
-    app_secret: String,
-    translation_provider: String,
-    microsoft_translator_key: String,
-    microsoft_translator_region: String,
-) -> translation_flow::TranslationConfig {
-    translation_flow::TranslationConfig {
-        provider: translation_provider,
-        youdao_app_key: app_key,
-        youdao_app_secret: app_secret,
-        microsoft_key: microsoft_translator_key,
-        microsoft_region: microsoft_translator_region,
-    }
-}
 
 #[tauri::command]
 fn update_global_shortcut(
@@ -124,13 +114,13 @@ fn update_global_shortcut(
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
     let config = app.state::<Arc<RwLock<AppConfig>>>();
-    let screenshot_shortcut = config.read().unwrap().screenshot_shortcut.clone();
+    let screenshot_shortcut = config.read().screenshot_shortcut.clone();
     if new_shortcut == screenshot_shortcut {
         return Err("两个快捷键不能相同".to_string());
     }
 
     let previous_shortcut = if old_shortcut.trim().is_empty() {
-        config.read().unwrap().global_shortcut.clone()
+        config.read().global_shortcut.clone()
     } else {
         old_shortcut
     };
@@ -139,27 +129,24 @@ fn update_global_shortcut(
         let _ = app.global_shortcut().unregister(old);
     }
 
-    let config_clone = config.inner().clone();
     let popup_state = app.state::<Arc<RwLock<PopupRuntimeState>>>();
     let popup_state_clone = popup_state.inner().clone();
 
     if let Err(error) = shortcut_handler::register_shortcut_handler(
         &app,
         &new_shortcut,
-        config_clone.clone(),
         popup_state_clone.clone(),
     ) {
         return restore_global_shortcut(
             &app,
             &previous_shortcut,
-            config_clone,
             popup_state_clone,
             format!("注册新快捷键失败: {}", error),
         );
     }
 
     {
-        let mut config_state = config.write().unwrap();
+        let mut config_state = config.write();
         config_state.global_shortcut = new_shortcut.clone();
     }
 
@@ -168,13 +155,12 @@ fn update_global_shortcut(
             let _ = app.global_shortcut().unregister(new);
         }
         {
-            let mut config_state = config.write().unwrap();
+            let mut config_state = config.write();
             config_state.global_shortcut = previous_shortcut.clone();
         }
         return restore_global_shortcut(
             &app,
             &previous_shortcut,
-            config_clone,
             popup_state_clone,
             format!("保存快捷键失败: {}", error),
         );
@@ -193,13 +179,13 @@ fn update_screenshot_shortcut(
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
     let config = app.state::<Arc<RwLock<AppConfig>>>();
-    let global_shortcut = config.read().unwrap().global_shortcut.clone();
+    let global_shortcut = config.read().global_shortcut.clone();
     if new_shortcut == global_shortcut {
         return Err("两个快捷键不能相同".to_string());
     }
 
     let previous_shortcut = if old_shortcut.trim().is_empty() {
-        config.read().unwrap().screenshot_shortcut.clone()
+        config.read().screenshot_shortcut.clone()
     } else {
         old_shortcut
     };
@@ -208,27 +194,24 @@ fn update_screenshot_shortcut(
         let _ = app.global_shortcut().unregister(old);
     }
 
-    let config_clone = config.inner().clone();
     let popup_state = app.state::<Arc<RwLock<PopupRuntimeState>>>();
     let popup_state_clone = popup_state.inner().clone();
 
     if let Err(error) = shortcut_handler::register_screenshot_shortcut_handler(
         &app,
         &new_shortcut,
-        config_clone.clone(),
         popup_state_clone.clone(),
     ) {
         return restore_screenshot_shortcut(
             &app,
             &previous_shortcut,
-            config_clone,
             popup_state_clone,
             format!("注册新截图快捷键失败: {}", error),
         );
     }
 
     {
-        let mut config_state = config.write().unwrap();
+        let mut config_state = config.write();
         config_state.screenshot_shortcut = new_shortcut.clone();
     }
 
@@ -237,13 +220,12 @@ fn update_screenshot_shortcut(
             let _ = app.global_shortcut().unregister(new);
         }
         {
-            let mut config_state = config.write().unwrap();
+            let mut config_state = config.write();
             config_state.screenshot_shortcut = previous_shortcut.clone();
         }
         return restore_screenshot_shortcut(
             &app,
             &previous_shortcut,
-            config_clone,
             popup_state_clone,
             format!("保存截图快捷键失败: {}", error),
         );
@@ -255,11 +237,10 @@ fn update_screenshot_shortcut(
 fn restore_global_shortcut(
     app: &tauri::AppHandle,
     previous_shortcut: &str,
-    config: Arc<RwLock<AppConfig>>,
     popup_state: Arc<RwLock<PopupRuntimeState>>,
     original_error: String,
 ) -> Result<(), String> {
-    match shortcut_handler::register_shortcut_handler(app, previous_shortcut, config, popup_state) {
+    match shortcut_handler::register_shortcut_handler(app, previous_shortcut, popup_state) {
         Ok(()) => Err(format!(
             "{}，已恢复旧快捷键 {}",
             original_error, previous_shortcut
@@ -274,14 +255,12 @@ fn restore_global_shortcut(
 fn restore_screenshot_shortcut(
     app: &tauri::AppHandle,
     previous_shortcut: &str,
-    config: Arc<RwLock<AppConfig>>,
     popup_state: Arc<RwLock<PopupRuntimeState>>,
     original_error: String,
 ) -> Result<(), String> {
     match shortcut_handler::register_screenshot_shortcut_handler(
         app,
         previous_shortcut,
-        config,
         popup_state,
     ) {
         Ok(()) => Err(format!(
@@ -320,132 +299,85 @@ fn get_settings(
     state: tauri::State<Arc<RwLock<AppConfig>>>,
     tray_behavior: tauri::State<Arc<RwLock<TrayBehaviorConfig>>>,
 ) -> PersistedSettings {
-    let config = state.read().unwrap();
-    let tray_behavior = tray_behavior.read().unwrap();
+    let config = state.read();
+    let tray_behavior = tray_behavior.read();
     app_state::to_persisted_settings(&config, &tray_behavior)
 }
 
 #[tauri::command]
 async fn translate_from_clipboard(
     app: tauri::AppHandle,
-    app_key: String,
-    app_secret: String,
-    translation_provider: String,
-    microsoft_translator_key: String,
-    microsoft_translator_region: String,
-) -> Result<Translation, String> {
-    let text = translation_flow::read_current_clipboard_text(&app)?;
-    let config = translation_config_from_args(
-        app_key,
-        app_secret,
-        translation_provider,
-        microsoft_translator_key,
-        microsoft_translator_region,
-    );
-    translation_flow::resolve_translation(&app, &text, &config).await
+    workflow: tauri::State<'_, AppTranslationWorkflow>,
+) -> Result<TranslationRecord, String> {
+    let text = clipboard::read_clipboard(&app)?;
+    if text.trim().is_empty() {
+        return Err("剪贴板为空".to_string());
+    }
+
+    workflow
+        .translate_text(text.trim(), &mut |_| {}, &|| false)
+        .await
 }
 
 #[tauri::command]
 async fn translate_text(
-    app: tauri::AppHandle,
+    workflow: tauri::State<'_, AppTranslationWorkflow>,
     text: String,
-    app_key: String,
-    app_secret: String,
-    translation_provider: String,
-    microsoft_translator_key: String,
-    microsoft_translator_region: String,
-) -> Result<Translation, String> {
-    let text = text.trim();
-    if text.is_empty() {
-        return Err("输入文本为空".to_string());
-    }
-    let config = translation_config_from_args(
-        app_key,
-        app_secret,
-        translation_provider,
-        microsoft_translator_key,
-        microsoft_translator_region,
-    );
-    translation_flow::resolve_translation(&app, text, &config).await
+) -> Result<TranslationRecord, String> {
+    workflow
+        .translate_text(&text, &mut |_| {}, &|| false)
+        .await
 }
 
 #[tauri::command]
 async fn translate_image(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
+    workflow: tauri::State<'_, AppTranslationWorkflow>,
     image_base64: String,
-    ocr_endpoint: String,
-    app_key: String,
-    app_secret: String,
-    translation_provider: String,
-    microsoft_translator_key: String,
-    microsoft_translator_region: String,
-) -> Result<Translation, String> {
-    let mut ocr_config = ocr_runtime_config_from_state(state.inner());
-    ocr_config.endpoint = ocr_endpoint.clone();
-    let text = ocr::recognize_text_with_config(&app, &ocr_config, &image_base64).await?;
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return Err("OCR 未识别到文本".to_string());
-    }
-
-    let config = translation_config_from_args(
-        app_key,
-        app_secret,
-        translation_provider,
-        microsoft_translator_key,
-        microsoft_translator_region,
-    );
-    translation_flow::resolve_translation(&app, trimmed, &config).await
+) -> Result<TranslationRecord, String> {
+    workflow
+        .translate_image(&image_base64, &mut |_| {}, &|| false)
+        .await
 }
 
 #[tauri::command]
 async fn check_ocr_service(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
-    ocr_endpoint: String,
 ) -> Result<String, String> {
-    let mut config = ocr_runtime_config_from_state(state.inner());
-    config.endpoint = ocr_endpoint;
-    ocr_service::ensure_running(&app, &config).await
+    let config = ocr_runtime_config_from_state(state.inner());
+    ocr::ensure_running(&app, &config).await
 }
 
 #[tauri::command]
 async fn get_ocr_service_status(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
-    ocr_endpoint: String,
-) -> Result<ocr_service::OcrServiceStatus, String> {
-    let mut config = ocr_runtime_config_from_state(state.inner());
-    config.endpoint = ocr_endpoint;
-    Ok(ocr_service::status(&app, &config).await)
+) -> Result<OcrServiceStatus, String> {
+    let config = ocr_runtime_config_from_state(state.inner());
+    Ok(ocr::status(&app, &config).await)
 }
 
 #[tauri::command]
 async fn warmup_ocr_service(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
-    ocr_endpoint: String,
 ) -> Result<String, String> {
-    let mut config = ocr_runtime_config_from_state(state.inner());
-    config.endpoint = ocr_endpoint;
-    ocr_service::warmup(&app, &config).await
+    let config = ocr_runtime_config_from_state(state.inner());
+    ocr::warmup(&app, &config).await
 }
 
 #[tauri::command]
 async fn restart_ocr_service(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
-    ocr_endpoint: String,
 ) -> Result<String, String> {
-    let mut config = ocr_runtime_config_from_state(state.inner());
-    config.endpoint = ocr_endpoint;
-    ocr_service::restart(&app, &config).await
+    let config = ocr_runtime_config_from_state(state.inner());
+    ocr::restart(&app, &config).await
 }
 
 #[tauri::command]
 fn get_ocr_log_path(app: tauri::AppHandle) -> Result<String, String> {
-    ocr_service::log_path(&app).map(|path| path.display().to_string())
+    ocr::log_path(&app).map(|path| path.display().to_string())
 }
 
 #[tauri::command]
@@ -481,19 +413,6 @@ fn open_main_translate_window(app: tauri::AppHandle) -> Result<(), String> {
     window.set_focus().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-async fn save_translation(
-    app: tauri::AppHandle,
-    translation: Translation,
-    increment_access_count: Option<bool>,
-) -> Result<Translation, String> {
-    let connection = open_translations_connection(&app)?;
-    save_translation_in_connection(
-        &connection,
-        &translation,
-        increment_access_count.unwrap_or(true),
-    )
-}
 
 #[tauri::command]
 async fn toggle_favorite(app: tauri::AppHandle, id: i64, is_favorite: bool) -> Result<(), String> {
@@ -502,19 +421,19 @@ async fn toggle_favorite(app: tauri::AppHandle, id: i64, is_favorite: bool) -> R
 }
 
 #[tauri::command]
-async fn load_favorites(app: tauri::AppHandle) -> Result<Vec<Translation>, String> {
+async fn load_favorites(app: tauri::AppHandle) -> Result<Vec<TranslationRecord>, String> {
     let connection = open_translations_connection(&app)?;
     load_favorites_in_connection(&connection)
 }
 
 #[tauri::command]
-async fn load_history(app: tauri::AppHandle) -> Result<Vec<Translation>, String> {
+async fn load_history(app: tauri::AppHandle) -> Result<Vec<TranslationRecord>, String> {
     let connection = open_translations_connection(&app)?;
     load_history_in_connection(&connection)
 }
 
 #[tauri::command]
-async fn get_translation_by_id(app: tauri::AppHandle, id: i64) -> Result<Translation, String> {
+async fn get_translation_by_id(app: tauri::AppHandle, id: i64) -> Result<TranslationRecord, String> {
     let connection = open_translations_connection(&app)?;
     get_translation_by_id_in_connection(&connection, id)
 }
@@ -589,6 +508,9 @@ pub fn run() {
                 theme: persisted_settings.theme.clone(),
             }));
             app.manage(config.clone());
+            let translation_workflow =
+                translation_workflow::create_app_workflow(app.handle().clone(), config.clone());
+            app.manage(translation_workflow);
 
             let tray_behavior = Arc::new(RwLock::new(TrayBehaviorConfig {
                 enabled: persisted_settings.enable_tray,
@@ -606,9 +528,9 @@ pub fn run() {
                 error!("迁移旧版应用数据失败: {}", error);
             }
 
-            ocr_service::spawn_startup_check(
+            ocr::spawn_startup_check(
                 app.handle().clone(),
-                ocr_service::OcrRuntimeConfig {
+                OcrRuntimeConfig {
                     endpoint: persisted_settings.ocr_endpoint.clone(),
                     engine: persisted_settings.ocr_engine.clone(),
                     model_profile: persisted_settings.ocr_model_profile.clone(),
@@ -679,7 +601,7 @@ pub fn run() {
                 let tray_behavior = tray_behavior.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        if tray_behavior.read().unwrap().enabled {
+                        if tray_behavior.read().enabled {
                             let _ = window_clone.hide();
                             api.prevent_close();
                         } else {
@@ -690,28 +612,24 @@ pub fn run() {
             }
 
             // 注册快捷键
-            let config_clone = config.clone();
-            let popup_state_clone = popup_state.clone();
-            let desired_shortcut = config.read().unwrap().global_shortcut.clone();
-            let desired_screenshot_shortcut = config.read().unwrap().screenshot_shortcut.clone();
+            let desired_shortcut = config.read().global_shortcut.clone();
+            let desired_screenshot_shortcut = config.read().screenshot_shortcut.clone();
 
             if let Err(error) = shortcut_handler::register_shortcut_handler(
                 &app.handle().clone(),
                 &desired_shortcut,
-                config_clone,
-                popup_state_clone,
+                popup_state.clone(),
             ) {
                 warn!("注册持久化快捷键失败，回退到默认快捷键: {}", error);
                 shortcut_handler::register_shortcut_handler(
                     &app.handle().clone(),
                     DEFAULT_GLOBAL_SHORTCUT,
-                    config.clone(),
                     popup_state.clone(),
                 )
                 .map_err(|e| e.to_string())?;
 
                 {
-                    let mut config_state = config.write().unwrap();
+                    let mut config_state = config.write();
                     config_state.global_shortcut = DEFAULT_GLOBAL_SHORTCUT.to_string();
                 }
 
@@ -725,14 +643,12 @@ pub fn run() {
             if let Err(error) = shortcut_handler::register_screenshot_shortcut_handler(
                 &app.handle().clone(),
                 &desired_screenshot_shortcut,
-                config.clone(),
                 popup_state.clone(),
             ) {
                 warn!("注册持久化截图快捷键失败，回退到默认快捷键: {}", error);
                 if let Err(default_error) = shortcut_handler::register_screenshot_shortcut_handler(
                     &app.handle().clone(),
                     DEFAULT_SCREENSHOT_SHORTCUT,
-                    config.clone(),
                     popup_state.clone(),
                 ) {
                     warn!(
@@ -742,7 +658,7 @@ pub fn run() {
                     return Ok(());
                 }
 
-                let global_shortcut = config.read().unwrap().global_shortcut.clone();
+                let global_shortcut = config.read().global_shortcut.clone();
                 if let Err(error) = update_and_persist_global_shortcuts(
                     &app.handle().clone(),
                     &config,
@@ -768,7 +684,6 @@ pub fn run() {
             warmup_ocr_service,
             restart_ocr_service,
             get_ocr_log_path,
-            save_translation,
             toggle_favorite,
             load_favorites,
             load_history,

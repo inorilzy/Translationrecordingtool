@@ -2,6 +2,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs, path::PathBuf};
 use tauri::{AppHandle, Manager};
+use crate::translation_domain::TranslationResult;
 
 const TRANSLATIONS_DB_FILE_NAME: &str = "translations.db";
 
@@ -15,7 +16,7 @@ const REQUIRED_COLUMNS: [(&str, &str); 6] = [
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Translation {
+pub struct TranslationRecord {
     pub id: Option<i64>,
     pub source_text: String,
     pub translated_text: String,
@@ -32,6 +33,67 @@ pub struct Translation {
     pub created_at: i64,
     pub access_count: i32,
     pub is_favorite: i32,
+}
+
+impl TranslationRecord {
+    pub fn from_result(result: TranslationResult, created_at: i64) -> Self {
+        Self {
+            id: None,
+            source_text: result.source_text,
+            translated_text: result.translated_text,
+            phonetic: result.phonetic,
+            us_phonetic: result.us_phonetic,
+            uk_phonetic: result.uk_phonetic,
+            audio_url: result.audio_url,
+            explains: result.explains,
+            examples: result.examples,
+            synonyms: result.synonyms,
+            source_lang: result.source_lang,
+            target_lang: result.target_lang,
+            word_type: result.word_type,
+            created_at,
+            access_count: 1,
+            is_favorite: 0,
+        }
+    }
+
+    pub fn with_result(&self, result: TranslationResult) -> Self {
+        Self {
+            id: self.id,
+            source_text: result.source_text,
+            translated_text: result.translated_text,
+            phonetic: result.phonetic,
+            us_phonetic: result.us_phonetic,
+            uk_phonetic: result.uk_phonetic,
+            audio_url: result.audio_url,
+            explains: result.explains,
+            examples: result.examples,
+            synonyms: result.synonyms,
+            source_lang: result.source_lang,
+            target_lang: result.target_lang,
+            word_type: result.word_type,
+            created_at: self.created_at,
+            access_count: self.access_count,
+            is_favorite: self.is_favorite,
+        }
+    }
+
+    pub fn to_result(&self) -> TranslationResult {
+        TranslationResult {
+            source_text: self.source_text.clone(),
+            translated_text: self.translated_text.clone(),
+            phonetic: self.phonetic.clone(),
+            us_phonetic: self.us_phonetic.clone(),
+            uk_phonetic: self.uk_phonetic.clone(),
+            audio_url: self.audio_url.clone(),
+            explains: self.explains.clone(),
+            examples: self.examples.clone(),
+            synonyms: self.synonyms.clone(),
+            source_lang: self.source_lang.clone(),
+            target_lang: self.target_lang.clone(),
+            word_type: self.word_type.clone(),
+        }
+    }
 }
 
 pub const INIT_SQL: &str = r#"
@@ -145,8 +207,8 @@ fn translation_record_row_from_row(
     })
 }
 
-fn translation_from_record_row(row: TranslationRecordRow) -> Result<Translation, String> {
-    Ok(Translation {
+fn translation_from_record_row(row: TranslationRecordRow) -> Result<TranslationRecord, String> {
+    Ok(TranslationRecord {
         id: row.id,
         source_text: row.source_text,
         translated_text: row.translated_text,
@@ -223,7 +285,7 @@ pub fn get_translation_by_lookup_key_in_connection(
     source_text: &str,
     source_lang: &str,
     target_lang: &str,
-) -> Result<Option<Translation>, String> {
+) -> Result<Option<TranslationRecord>, String> {
     let row = connection
         .query_row(
             "SELECT id, source_text, translated_text, phonetic, us_phonetic, uk_phonetic, audio_url, explains, examples, synonyms, source_lang, target_lang, word_type, created_at, access_count, is_favorite FROM translations WHERE source_text = ?1 AND source_lang = ?2 AND target_lang = ?3",
@@ -238,9 +300,9 @@ pub fn get_translation_by_lookup_key_in_connection(
 
 pub fn save_translation_in_connection(
     connection: &Connection,
-    translation: &Translation,
+    translation: &TranslationRecord,
     increment_access_count: bool,
-) -> Result<Translation, String> {
+) -> Result<TranslationRecord, String> {
     let explains = serialize_string_list(&translation.explains)?;
     let examples = serialize_string_list(&translation.examples)?;
     let synonyms = serialize_string_list(&translation.synonyms)?;
@@ -316,7 +378,7 @@ pub fn toggle_favorite_in_connection(
     Ok(())
 }
 
-pub fn load_favorites_in_connection(connection: &Connection) -> Result<Vec<Translation>, String> {
+pub fn load_favorites_in_connection(connection: &Connection) -> Result<Vec<TranslationRecord>, String> {
     let mut statement = connection
         .prepare(
             "SELECT id, source_text, translated_text, phonetic, us_phonetic, uk_phonetic, audio_url, explains, examples, synonyms, source_lang, target_lang, word_type, created_at, access_count, is_favorite FROM translations WHERE is_favorite = 1 ORDER BY created_at DESC",
@@ -337,7 +399,7 @@ pub fn load_favorites_in_connection(connection: &Connection) -> Result<Vec<Trans
     Ok(translations)
 }
 
-pub fn load_history_in_connection(connection: &Connection) -> Result<Vec<Translation>, String> {
+pub fn load_history_in_connection(connection: &Connection) -> Result<Vec<TranslationRecord>, String> {
     let mut statement = connection
         .prepare(
             "SELECT id, source_text, translated_text, phonetic, us_phonetic, uk_phonetic, audio_url, explains, examples, synonyms, source_lang, target_lang, word_type, created_at, access_count, is_favorite FROM translations ORDER BY created_at DESC LIMIT 100",
@@ -361,7 +423,7 @@ pub fn load_history_in_connection(connection: &Connection) -> Result<Vec<Transla
 pub fn get_translation_by_id_in_connection(
     connection: &Connection,
     id: i64,
-) -> Result<Translation, String> {
+) -> Result<TranslationRecord, String> {
     let row = connection
         .query_row(
             "SELECT id, source_text, translated_text, phonetic, us_phonetic, uk_phonetic, audio_url, explains, examples, synonyms, source_lang, target_lang, word_type, created_at, access_count, is_favorite FROM translations WHERE id = ?1",
@@ -379,8 +441,8 @@ pub fn get_translation_by_id_in_connection(
 mod tests {
     use super::*;
 
-    fn sample_translation(source_text: &str, created_at: i64) -> Translation {
-        Translation {
+    fn sample_translation(source_text: &str, created_at: i64) -> TranslationRecord {
+        TranslationRecord {
             id: None,
             source_text: source_text.to_string(),
             translated_text: format!("{}-translated", source_text),
@@ -404,6 +466,37 @@ mod tests {
         let connection = Connection::open_in_memory().unwrap();
         ensure_translations_schema(&connection).unwrap();
         connection
+    }
+
+    #[test]
+    fn result_record_mapping_round_trips_content_without_persistence_metadata() {
+        let result = sample_translation("mapping", 100).to_result();
+
+        let record = TranslationRecord::from_result(result.clone(), 321);
+
+        assert_eq!(record.to_result(), result);
+        assert_eq!(record.id, None);
+        assert_eq!(record.created_at, 321);
+        assert_eq!(record.access_count, 1);
+        assert_eq!(record.is_favorite, 0);
+    }
+
+    #[test]
+    fn enrichment_mapping_preserves_existing_record_identity_and_counters() {
+        let mut existing = sample_translation("mapping", 100);
+        existing.id = Some(42);
+        existing.access_count = 7;
+        existing.is_favorite = 1;
+        let mut enriched = existing.to_result();
+        enriched.examples = Some(vec!["new example".to_string()]);
+
+        let updated = existing.with_result(enriched);
+
+        assert_eq!(updated.id, Some(42));
+        assert_eq!(updated.created_at, 100);
+        assert_eq!(updated.access_count, 7);
+        assert_eq!(updated.is_favorite, 1);
+        assert_eq!(updated.examples, Some(vec!["new example".to_string()]));
     }
 
     #[test]

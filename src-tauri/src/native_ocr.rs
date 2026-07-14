@@ -12,7 +12,7 @@ use ppocr_rs::{OcrLite, OcrOptions};
 use tauri::{AppHandle, Manager};
 use tracing::{info, warn};
 
-use crate::ocr_service::OcrRuntimeConfig;
+use crate::ocr_contracts::OcrRuntimeConfig;
 
 const OCR_MODEL_RESOURCE_DIR: &str = "ocr-models";
 const DEFAULT_PACKAGED_MODEL_PROFILE: &str = "small";
@@ -26,12 +26,6 @@ struct NativeOcrRuntime {
 
 static RUNTIME: Lazy<Mutex<Option<NativeOcrRuntime>>> = Lazy::new(|| Mutex::new(None));
 
-pub fn is_native_engine(engine: &str) -> bool {
-    matches!(
-        engine.trim().to_ascii_lowercase().as_str(),
-        "native" | "native_onnx" | "onnx" | "onnxruntime" | "ppocr-rs"
-    )
-}
 
 pub fn engine_name() -> &'static str {
     "native_onnx"

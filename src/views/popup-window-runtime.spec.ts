@@ -1,414 +1,187 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from '@vue/reactivity'
+// @vitest-environment jsdom
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// ─── Fake window (must exist before controls module loads) ──────────────────
+import type { TranslationRecord } from '../stores/translation-records'
 
-const fakeWindow = vi.hoisted(() => {
-  const listeners: Map<string, Set<EventListener>> = new Map()
-  return {
-    addEventListener: vi.fn((event: string, handler: EventListener) => {
-      if (!listeners.has(event)) listeners.set(event, new Set())
-      listeners.get(event)!.add(handler)
-    }),
-    removeEventListener: vi.fn((event: string, handler: EventListener) => {
-      listeners.get(event)?.delete(handler)
-    }),
-    dispatchEvent: vi.fn((event: Event) => {
-      const handlers = listeners.get(event.type)
-      if (handlers) {
-        for (const h of handlers) {
-          h(event)
-        }
-      }
-      return true
-    }),
-    _getListeners: (event: string) => listeners.get(event) ?? new Set(),
-    _clear: () => {
-      listeners.clear()
-    },
-  }
-})
+interface MockEvent {
+  payload: unknown
+}
 
-vi.hoisted(() => {
-  // @ts-ignore - we're deliberately setting a global
-  globalThis.window = fakeWindow
-})
+type MockEventHandler = (event: MockEvent) => unknown
+type MockUnlisten = () => void
 
-// ─── Tauri API Mocks ────────────────────────────────────────────────────────
-
-const tauriMocks = vi.hoisted(() => ({
+const windowMocks = vi.hoisted(() => ({
   hide: vi.fn().mockResolvedValue(undefined),
   startDragging: vi.fn().mockResolvedValue(undefined),
   emit: vi.fn().mockResolvedValue(undefined),
+}))
+
+const eventMocks = vi.hoisted(() => {
+  const handlers: Record<string, MockEventHandler | undefined> = {}
+  const unlisteners: Record<string, MockUnlisten | undefined> = {}
+  const listen = vi.fn(async (eventName: string, handler: MockEventHandler) => {
+    handlers[eventName] = handler
+    const unlisten = vi.fn()
+    unlisteners[eventName] = unlisten
+    return unlisten
+  })
+
+  return { handlers, unlisteners, listen }
+})
+
+const coreMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
-  listen: vi.fn().mockResolvedValue(vi.fn()),
+}))
+
+const settingsMocks = vi.hoisted(() => ({
+  applyTheme: vi.fn(),
+  getSettingsSnapshot: vi.fn().mockResolvedValue({ theme: 'light' }),
 }))
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
   getCurrentWebviewWindow: () => ({
-    hide: tauriMocks.hide,
-    startDragging: tauriMocks.startDragging,
-    emit: tauriMocks.emit,
+    hide: windowMocks.hide,
+    startDragging: windowMocks.startDragging,
+    emit: windowMocks.emit,
   }),
 }))
 
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: tauriMocks.listen,
+  listen: eventMocks.listen,
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: (...args: unknown[]) => tauriMocks.invoke(...args),
+  invoke: coreMocks.invoke,
 }))
 
-// ─── Settings & theme mock ──────────────────────────────────────────────────
-
-const settingsMocks = vi.hoisted(() => ({
-  applyThemeCalls: [] as string[],
+vi.mock('../lib/settings', () => ({
+  applyTheme: settingsMocks.applyTheme,
   defaultSettings: { theme: 'light' },
+  getSettingsSnapshot: settingsMocks.getSettingsSnapshot,
 }))
 
-vi.mock('../lib/settings', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../lib/settings')>()
-  return {
-    ...actual,
-    applyTheme: (theme: string) => settingsMocks.applyThemeCalls.push(theme),
-    getSettingsSnapshot: vi.fn().mockResolvedValue({ theme: 'light' }),
-    defaultSettings: { ...actual.defaultSettings },
-  }
-})
+import PopupWindow from './PopupWindow.vue'
 
-// ─── Vue lifecycle mock ─────────────────────────────────────────────────────
-
-vi.mock('vue', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('vue')>()
-  return {
-    ...actual,
-    onMounted: (fn: () => Promise<void> | void) => {
-      // Store for manual invocation in tests
-      onMountedCallbacks.push(fn)
-    },
-    onUnmounted: vi.fn(),
-    nextTick: () => Promise.resolve(),
-  }
-})
-
-const onMountedCallbacks: Array<() => Promise<void> | void> = []
-
-// ─── Import under test ──────────────────────────────────────────────────────
-
-import { createPopupControls } from './popup-window-controls'
-
-// ─── Testable extraction of applyTranslation behavior ───────────────────────
-
-/**
- * Mirrors the applyTranslation logic from PopupWindow.vue in a testable form.
- * This lets us verify the runtime contract (loading → result → persisted state)
- * without needing @vue/test-utils or a full component mount.
- */
-function applyTranslation(
-  payload: Record<string, unknown>,
-  incrementAccessCount: boolean,
-  currentTranslation: { value: Record<string, unknown> | null },
-  loading: { value: boolean },
-  error: { value: string },
-  persistFn: (t: Record<string, unknown>, inc: boolean) => Promise<Record<string, unknown>>,
-) {
-  let nextTranslation: Record<string, unknown> = { ...payload }
-
-  return persistFn(nextTranslation, incrementAccessCount)
-    .then((persisted) => {
-      currentTranslation.value = persisted
-      loading.value = false
-      error.value = ''
-      return persisted
-    })
-    .catch((e: unknown) => {
-      // Component catches and logs; state still updates with original payload
-      console.error('保存翻译失败:', e)
-      currentTranslation.value = nextTranslation
-      loading.value = false
-      error.value = ''
-      return nextTranslation
-    })
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function makeTranslationRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function translationRecord(overrides: Partial<TranslationRecord> = {}): TranslationRecord {
   return {
     id: 1,
     source_text: 'hello',
     translated_text: '你好',
-    phonetic: '/həˈloʊ/',
-    us_phonetic: '/həˈloʊ/',
-    uk_phonetic: '/həˈləʊ/',
-    audio_url: 'https://example.com/audio.mp3',
-    explains: ['int. 你好', 'n. 打招呼'],
-    examples: ['Hello, world!'],
-    synonyms: ['hi', 'hey'],
+    phonetic: null,
+    us_phonetic: null,
+    uk_phonetic: null,
+    audio_url: null,
+    explains: ['int. 你好'],
+    examples: [],
+    synonyms: [],
     source_lang: 'en',
     target_lang: 'zh',
     word_type: 'int.',
-    created_at: Date.now(),
-    access_count: 0,
+    created_at: 100,
+    access_count: 1,
     is_favorite: 0,
     ...overrides,
   }
 }
 
-function captureListenCalls() {
-  return (tauriMocks.listen as ReturnType<typeof vi.fn>).mock.calls
+async function mountPopup() {
+  const wrapper = mount(PopupWindow)
+  await vi.waitFor(() => {
+    expect(eventMocks.listen).toHaveBeenCalledTimes(4)
+  })
+  return wrapper
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+async function emitPopupEvent(eventName: string, payload: unknown) {
+  const handler = eventMocks.handlers[eventName]
+  expect(handler).toBeDefined()
+  await handler?.({ payload })
+  await flushPromises()
+}
 
-describe('popup-window-runtime: loading / result / update / theme / favorite contract', () => {
+describe('PopupWindow runtime contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    settingsMocks.applyThemeCalls.length = 0
-    onMountedCallbacks.length = 0
-    fakeWindow._clear()
-  })
-
-  afterEach(() => {
-    vi.resetModules()
-  })
-
-  // ─── applyTranslation behavior (extracted runtime logic) ───────────────────
-
-  describe('applyTranslation runtime contract', () => {
-    it('sets currentTranslation and clears loading on success with incrementAccessCount=true', async () => {
-      const payload = makeTranslationRecord()
-      const persisted = { ...payload, id: 1, access_count: 1 }
-      const persistFn = vi.fn().mockResolvedValue(persisted)
-      const currentTranslation = shallowRef<Record<string, unknown> | null>(null)
-      const loading = shallowRef(true)
-      const error = shallowRef('')
-
-      await applyTranslation(payload, true, currentTranslation, loading, error, persistFn)
-
-      expect(currentTranslation.value).toEqual(persisted)
-      expect(loading.value).toBe(false)
-      expect(error.value).toBe('')
+    for (const key of Object.keys(eventMocks.handlers)) {
+      delete eventMocks.handlers[key]
+    }
+    for (const key of Object.keys(eventMocks.unlisteners)) {
+      delete eventMocks.unlisteners[key]
+    }
+    document.documentElement.removeAttribute('data-theme')
+    Object.defineProperty(window, 'scrollTo', {
+      configurable: true,
+      value: vi.fn(),
     })
-
-    it('updates state even when persistFn rejects (graceful degradation)', async () => {
-      const payload = makeTranslationRecord()
-      const persistFn = vi.fn().mockRejectedValue(new Error('save failed'))
-      const currentTranslation = shallowRef<Record<string, unknown> | null>(null)
-      const loading = shallowRef(true)
-      const error = shallowRef('initial error')
-
-      await applyTranslation(payload, false, currentTranslation, loading, error, persistFn)
-
-      expect(currentTranslation.value).toEqual(payload)
-      expect(loading.value).toBe(false)
-      expect(error.value).toBe('')
-    })
-
-    it('does not increment access count when incrementAccessCount=false', async () => {
-      const payload = makeTranslationRecord()
-      const persisted = { ...payload, access_count: 0 }
-      const persistFn = vi.fn().mockResolvedValue(persisted)
-      const currentTranslation = shallowRef<Record<string, unknown> | null>(null)
-      const loading = shallowRef(true)
-      const error = shallowRef('')
-
-      await applyTranslation(payload, false, currentTranslation, loading, error, persistFn)
-
-      expect(persistFn).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), false)
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      value: vi.fn(),
     })
   })
 
-  // ─── Event listener registration (via popup-window-controls) ───────────────
+  it('owns each theme and translation listener exactly once', async () => {
+    const wrapper = await mountPopup()
 
-  describe('event listener registration', () => {
-    it('subscribes to theme-changed, translation-started, translation-result, translation-update on controls creation', async () => {
-      createPopupControls()
+    expect(eventMocks.listen.mock.calls.map(([eventName]) => eventName)).toEqual([
+      'theme-changed',
+      'translation-started',
+      'translation-result',
+      'translation-update',
+    ])
 
-      await vi.waitFor(() => {
-        const calls = captureListenCalls()
-        const events = calls.map((c) => c[0])
-        expect(events).toContain('theme-changed')
-        expect(events).toContain('translation-started')
-        expect(events).toContain('translation-result')
-        expect(events).toContain('translation-update')
-      })
-    })
-
-    it('emits popup-ready on controls creation', () => {
-      createPopupControls()
-
-      expect(tauriMocks.emit).toHaveBeenCalledWith('popup-ready', {})
-    })
+    wrapper.unmount()
+    for (const eventName of [
+      'theme-changed',
+      'translation-started',
+      'translation-result',
+      'translation-update',
+    ]) {
+      expect(eventMocks.unlisteners[eventName]).toHaveBeenCalledTimes(1)
+    }
   })
 
-  // ─── theme-changed event handling ─────────────────────────────────────────
+  it('renders loading, initial result, and enrichment as one popup state', async () => {
+    const wrapper = await mountPopup()
 
-  describe('theme-changed', () => {
-    it('controls register theme-changed listener to keep subscription alive', async () => {
-      createPopupControls()
+    await emitPopupEvent('translation-started', { message: 'OCR 识别中...' })
+    expect(wrapper.text()).toContain('OCR 识别中...')
 
-      await vi.waitFor(() => {
-        expect(tauriMocks.listen).toHaveBeenCalledWith(
-          'theme-changed',
-          expect.any(Function),
-        )
-      })
-    })
+    await emitPopupEvent('translation-result', translationRecord())
+    expect(wrapper.find('.word').text()).toBe('hello')
+    expect(wrapper.text()).toContain('int. 你好')
 
-    it('applyTheme applies theme string to document', () => {
-      settingsMocks.applyThemeCalls.length = 0
-      // applyTheme is already mocked to push to applyThemeCalls
-      // Simulate what PopupWindow.vue does on theme-changed:
-      //   applyTheme(event.payload.theme)
-      settingsMocks.applyThemeCalls.push('dark')
-
-      expect(settingsMocks.applyThemeCalls).toContain('dark')
-    })
+    await emitPopupEvent('translation-update', translationRecord({
+      examples: ['Hello, world!'],
+      synonyms: ['hi'],
+    }))
+    expect(wrapper.findAll('.word')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Hello, world!')
+    expect(wrapper.text()).toContain('hi')
+    expect(coreMocks.invoke).not.toHaveBeenCalledWith('save_translation', expect.anything())
   })
 
-  // ─── translation-started event handling ────────────────────────────────────
+  it('applies theme changes while the popup is open', async () => {
+    await mountPopup()
 
-  describe('translation-started', () => {
-    it('resets to loading state when translation-started fires', async () => {
-      const currentTranslation = shallowRef<Record<string, unknown> | null>(
-        makeTranslationRecord(),
-      )
-      const loading = shallowRef(false)
-      const loadingMessage = shallowRef('old message')
-      const error = shallowRef('previous error')
+    await emitPopupEvent('theme-changed', { theme: 'dark' })
 
-      // Simulate what the component does on translation-started
-      settingsMocks.applyThemeCalls.length = 0
-
-      // Mimic the component's translation-started handler
-      settingsMocks.applyThemeCalls.push('fallback-theme')
-      loading.value = true
-      loadingMessage.value = 'OCR 识别中...'
-      error.value = ''
-      currentTranslation.value = null
-
-      expect(loading.value).toBe(true)
-      expect(loadingMessage.value).toBe('OCR 识别中...')
-      expect(error.value).toBe('')
-      expect(currentTranslation.value).toBeNull()
-    })
-
-    it('falls back to translation loading text when translation-started has no message', async () => {
-      const loadingMessage = shallowRef('old message')
-
-      // Mimic the component's translation-started payload handling.
-      const payload = {} as { message?: string }
-      loadingMessage.value = payload.message || '翻译中...'
-
-      expect(loadingMessage.value).toBe('翻译中...')
-    })
+    expect(settingsMocks.applyTheme).toHaveBeenLastCalledWith('dark')
   })
 
-  // ─── Negative: malformed / empty translation payload ───────────────────────
+  it('keeps favorite and main-window actions on their existing commands', async () => {
+    coreMocks.invoke.mockResolvedValue(undefined)
+    const wrapper = await mountPopup()
+    await emitPopupEvent('translation-result', translationRecord())
 
-  describe('negative: malformed translation payload', () => {
-    it('handles empty translation payload without crashing', async () => {
-      const emptyPayload = {}
-      const persistFn = vi.fn().mockResolvedValue({ ...emptyPayload, id: 0 })
-      const currentTranslation = shallowRef<Record<string, unknown> | null>(null)
-      const loading = shallowRef(true)
-      const error = shallowRef('')
-
-      await applyTranslation(emptyPayload, true, currentTranslation, loading, error, persistFn)
-
-      expect(currentTranslation.value).not.toBeNull()
-      expect(loading.value).toBe(false)
+    await wrapper.find('.favorite-btn').trigger('click')
+    expect(coreMocks.invoke).toHaveBeenCalledWith('toggle_favorite', {
+      id: 1,
+      isFavorite: true,
     })
 
-    it('handles null-like payload gracefully', async () => {
-      const payload = { id: null, source_text: '', translated_text: '' }
-      const persistFn = vi.fn().mockRejectedValue(new Error('invalid payload'))
-      const currentTranslation = shallowRef<Record<string, unknown> | null>(null)
-      const loading = shallowRef(true)
-      const error = shallowRef('')
-
-      await applyTranslation(payload, false, currentTranslation, loading, error, persistFn)
-
-      // Should not throw; state is updated
-      expect(currentTranslation.value).toEqual(payload)
-      expect(loading.value).toBe(false)
-    })
-  })
-
-  // ─── Negative: settings snapshot reject ────────────────────────────────────
-
-  describe('negative: settings snapshot reject', () => {
-    it('falls back to default theme when getSettingsSnapshot rejects', async () => {
-      vi.mocked(
-        (await import('../lib/settings')).getSettingsSnapshot,
-      ).mockRejectedValueOnce(new Error('settings unavailable'))
-
-      const controls = createPopupControls()
-      expect(controls).toBeDefined()
-
-      // Controls should still be created even if settings load fails
-      expect(tauriMocks.emit).toHaveBeenCalledWith('popup-ready', {})
-    })
-  })
-
-  // ─── Boundary: event order (started before result) ─────────────────────────
-
-  describe('boundary: event ordering', () => {
-    it('handles translation-started before translation-result in sequence', async () => {
-      const currentTranslation = shallowRef<Record<string, unknown> | null>(null)
-      const loading = shallowRef(false)
-      const error = shallowRef('')
-
-      // Step 1: translation-started
-      loading.value = true
-      error.value = ''
-      currentTranslation.value = null
-
-      expect(loading.value).toBe(true)
-      expect(currentTranslation.value).toBeNull()
-
-      // Step 2: translation-result
-      const result = makeTranslationRecord()
-      await applyTranslation(result, true, currentTranslation, loading, error,
-        vi.fn().mockResolvedValue({ ...result, access_count: 1 }))
-
-      expect(loading.value).toBe(false)
-      expect(currentTranslation.value).not.toBeNull()
-      expect((currentTranslation.value as unknown as Record<string, unknown>)?.source_text).toBe('hello')
-    })
-
-    it('handles translation-update after translation-result (non-incrementing)', async () => {
-      const currentTranslation = shallowRef<Record<string, unknown> | null>(null)
-      const loading = shallowRef(false)
-      const error = shallowRef('')
-
-      // First: result with increment
-      const initial = makeTranslationRecord()
-      await applyTranslation(initial, true, currentTranslation, loading, error,
-        vi.fn().mockResolvedValue({ ...initial, access_count: 1 }))
-
-      expect(currentTranslation.value?.access_count).toBe(1)
-
-      // Then: update without increment
-      const update = makeTranslationRecord({ translated_text: '你好 (updated)' })
-      await applyTranslation(update, false, currentTranslation, loading, error,
-        vi.fn().mockResolvedValue({ ...update, access_count: 1 }))
-
-      expect(currentTranslation.value?.translated_text).toBe('你好 (updated)')
-      expect(loading.value).toBe(false)
-    })
-  })
-
-  // ─── Non-popup window label should not interfere ───────────────────────────
-
-  describe('non-popup window label', () => {
-    it('controls still register listeners regardless of window context', () => {
-      createPopupControls()
-
-      // Even in non-popup context, controls should function
-      expect(tauriMocks.emit).toHaveBeenCalledWith('popup-ready', {})
-    })
+    await wrapper.find('.main-entry-btn').trigger('click')
+    expect(coreMocks.invoke).toHaveBeenCalledWith('open_main_translate_window')
+    expect(windowMocks.hide).toHaveBeenCalledTimes(1)
   })
 })

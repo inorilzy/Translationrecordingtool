@@ -68,35 +68,20 @@ describe('useTranslationStore', () => {
   })
 
   describe('translateText', () => {
-    it('translates text and persists result on success', async () => {
-      const translated = createTranslationRecord({ sourceText: 'hello' })
-      const persisted = { ...translated, id: 1, access_count: 1 }
-
-      invokeMock
-        .mockResolvedValueOnce(translated)
-        .mockResolvedValueOnce(persisted)
+    it('delegates text-only input to the backend workflow and uses its persisted record', async () => {
+      const persisted = createTranslationRecord({ sourceText: 'hello' })
+      invokeMock.mockResolvedValueOnce(persisted)
 
       const settings = useSettingsStore()
-      settings.apiKey = 'fake-key'
-      settings.apiSecret = 'fake-secret'
-      settings.translationProvider = 'youdao'
-      settings.microsoftTranslatorKey = 'ms-key'
-      settings.microsoftTranslatorRegion = 'eastasia'
+      settings.apiKey = 'must-not-be-sent'
+      settings.translationProvider = 'microsoft'
 
       const store = useTranslationStore()
       await store.translateText('hello')
 
-      expect(invokeMock).toHaveBeenNthCalledWith(1, 'translate_text', {
+      expect(invokeMock).toHaveBeenCalledTimes(1)
+      expect(invokeMock).toHaveBeenCalledWith('translate_text', {
         text: 'hello',
-        appKey: 'fake-key',
-        appSecret: 'fake-secret',
-        translationProvider: 'youdao',
-        microsoftTranslatorKey: 'ms-key',
-        microsoftTranslatorRegion: 'eastasia',
-      })
-      expect(invokeMock).toHaveBeenNthCalledWith(2, 'save_translation', {
-        translation: translated,
-        incrementAccessCount: true,
       })
       expect(store.currentTranslation).toEqual(persisted)
       expect(store.history).toEqual([persisted])
@@ -122,95 +107,21 @@ describe('useTranslationStore', () => {
       expect(store.loading).toBe(false)
       expect(store.currentTranslation).toBeNull()
     })
-
-    it('sets error state when save_translation rejects', async () => {
-      const translated = createTranslationRecord({ sourceText: 'hello' })
-      invokeMock
-        .mockResolvedValueOnce(translated)
-        .mockRejectedValueOnce(new Error('save failed'))
-
-      const store = useTranslationStore()
-      await store.translateText('hello')
-
-      expect(store.error).toContain('翻译失败')
-      expect(store.loading).toBe(false)
-    })
-
-    it('reads credentials from settings store at call time', async () => {
-      const translated = createTranslationRecord({ sourceText: 'test' })
-      invokeMock.mockResolvedValue(translated)
-
-      const settings = useSettingsStore()
-      settings.apiKey = 'dynamic-key'
-      settings.apiSecret = 'dynamic-secret'
-      settings.translationProvider = 'microsoft'
-      settings.microsoftTranslatorKey = 'dynamic-ms-key'
-      settings.microsoftTranslatorRegion = 'global'
-
-      const store = useTranslationStore()
-      await store.translateText('test')
-
-      expect(invokeMock).toHaveBeenCalledWith('translate_text', {
-        text: 'test',
-        appKey: 'dynamic-key',
-        appSecret: 'dynamic-secret',
-        translationProvider: 'microsoft',
-        microsoftTranslatorKey: 'dynamic-ms-key',
-        microsoftTranslatorRegion: 'global',
-      })
-    })
-
-    it('still translates when settings credentials are empty', async () => {
-      const translated = createTranslationRecord({ sourceText: 'test' })
-      invokeMock
-        .mockResolvedValueOnce(translated)
-        .mockResolvedValueOnce({ ...translated, id: 1, access_count: 1 })
-
-      const store = useTranslationStore()
-      await store.translateText('test')
-
-      expect(invokeMock).toHaveBeenCalledWith('translate_text', {
-        text: 'test',
-        appKey: '',
-        appSecret: '',
-        translationProvider: 'youdao',
-        microsoftTranslatorKey: '',
-        microsoftTranslatorRegion: '',
-      })
-      expect(store.currentTranslation).not.toBeNull()
-    })
   })
 
   describe('translateFromClipboard', () => {
-    it('translates from clipboard and persists result on success', async () => {
-      const translated = createTranslationRecord({ sourceText: 'clipboard text' })
-      const persisted = { ...translated, id: 2, access_count: 1 }
-
-      invokeMock
-        .mockResolvedValueOnce(translated)
-        .mockResolvedValueOnce(persisted)
+    it('delegates clipboard acquisition and persistence to the backend workflow', async () => {
+      const persisted = createTranslationRecord({ id: 2, sourceText: 'clipboard text' })
+      invokeMock.mockResolvedValueOnce(persisted)
 
       const settings = useSettingsStore()
-      settings.apiKey = 'clip-key'
-      settings.apiSecret = 'clip-secret'
-      settings.translationProvider = 'microsoft'
-      settings.microsoftTranslatorKey = 'clip-ms-key'
-      settings.microsoftTranslatorRegion = 'eastasia'
+      settings.apiSecret = 'must-not-be-sent'
 
       const store = useTranslationStore()
       await store.translateFromClipboard()
 
-      expect(invokeMock).toHaveBeenNthCalledWith(1, 'translate_from_clipboard', {
-        appKey: 'clip-key',
-        appSecret: 'clip-secret',
-        translationProvider: 'microsoft',
-        microsoftTranslatorKey: 'clip-ms-key',
-        microsoftTranslatorRegion: 'eastasia',
-      })
-      expect(invokeMock).toHaveBeenNthCalledWith(2, 'save_translation', {
-        translation: translated,
-        incrementAccessCount: true,
-      })
+      expect(invokeMock).toHaveBeenCalledTimes(1)
+      expect(invokeMock).toHaveBeenCalledWith('translate_from_clipboard')
       expect(store.currentTranslation).toEqual(persisted)
       expect(store.history).toEqual([persisted])
       expect(store.loading).toBe(false)
@@ -228,22 +139,15 @@ describe('useTranslationStore', () => {
   })
 
   describe('translateScreenshot', () => {
-    it('selects a native screenshot area, translates the image, and persists the result', async () => {
-      const translated = createTranslationRecord({ sourceText: 'screen text' })
-      const persisted = { ...translated, id: 3, access_count: 1 }
-
+    it('sends only the selected image and uses the backend-persisted record', async () => {
+      const persisted = createTranslationRecord({ id: 3, sourceText: 'screen text' })
       invokeMock
         .mockResolvedValueOnce('data:image/png;base64,fake-image')
-        .mockResolvedValueOnce(translated)
         .mockResolvedValueOnce(persisted)
 
       const settings = useSettingsStore()
-      settings.apiKey = 'screen-key'
-      settings.apiSecret = 'screen-secret'
-      settings.translationProvider = 'microsoft'
-      settings.microsoftTranslatorKey = 'screen-ms-key'
-      settings.microsoftTranslatorRegion = 'global'
-      settings.ocrEndpoint = 'http://127.0.0.1:8000/ocr'
+      settings.ocrEndpoint = 'http://must-not-be-sent/ocr'
+      settings.apiKey = 'must-not-be-sent'
 
       const store = useTranslationStore()
       await store.translateScreenshot()
@@ -251,17 +155,8 @@ describe('useTranslationStore', () => {
       expect(invokeMock).toHaveBeenNthCalledWith(1, 'select_screenshot_area')
       expect(invokeMock).toHaveBeenNthCalledWith(2, 'translate_image', {
         imageBase64: 'data:image/png;base64,fake-image',
-        ocrEndpoint: 'http://127.0.0.1:8000/ocr',
-        appKey: 'screen-key',
-        appSecret: 'screen-secret',
-        translationProvider: 'microsoft',
-        microsoftTranslatorKey: 'screen-ms-key',
-        microsoftTranslatorRegion: 'global',
       })
-      expect(invokeMock).toHaveBeenNthCalledWith(3, 'save_translation', {
-        translation: translated,
-        incrementAccessCount: true,
-      })
+      expect(invokeMock).toHaveBeenCalledTimes(2)
       expect(store.currentTranslation).toEqual(persisted)
       expect(store.history).toEqual([persisted])
       expect(store.manualInputText).toBe('screen text')
@@ -281,7 +176,7 @@ describe('useTranslationStore', () => {
       expect(invokeMock).toHaveBeenCalledWith('select_screenshot_area')
     })
 
-    it('does not persist when OCR translation rejects after a native screenshot', async () => {
+    it('does not make another request when OCR translation rejects', async () => {
       invokeMock
         .mockResolvedValueOnce('data:image/png;base64,fake-image')
         .mockRejectedValueOnce(new Error('OCR 未识别到文本'))

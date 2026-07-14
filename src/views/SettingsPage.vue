@@ -220,7 +220,7 @@ async function saveApiConfig() {
 async function warmupOcrService() {
   ocrWarmupLoading.value = true
   try {
-    const result = await store.warmupOcrService(config.value.ocrEndpoint)
+    const result = await store.warmupOcrService()
     await refreshOcrStatus()
     notify.success(result)
   } catch (e) {
@@ -296,7 +296,7 @@ async function saveAutostartBehavior() {
 async function refreshOcrStatus() {
   ocrStatusLoading.value = true
   try {
-    ocrStatus.value = await store.getOcrServiceStatus(config.value.ocrEndpoint)
+    ocrStatus.value = await store.getOcrServiceStatus()
   } catch (e) {
     console.warn('读取 OCR 服务状态失败:', e)
   } finally {

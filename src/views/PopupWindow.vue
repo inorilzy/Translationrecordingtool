@@ -29,29 +29,13 @@ function applyTheme(theme = currentThemeFallback()) {
   applyDocumentTheme(theme)
 }
 
-async function persistTranslation(nextTranslation: Translation, incrementAccessCount: boolean) {
-  return invoke<Translation>('save_translation', {
-    translation: nextTranslation,
-    incrementAccessCount,
-  })
-}
 
-async function applyTranslation(payload: Translation, incrementAccessCount: boolean) {
-  let nextTranslation: Translation = {
-    ...payload
-  }
-
-  try {
-    nextTranslation = await persistTranslation(nextTranslation, incrementAccessCount)
-  } catch (e) {
-    console.error('保存翻译失败:', e)
-  }
-
-  currentTranslation.value = nextTranslation
+async function applyTranslation(payload: Translation, resetScroll: boolean) {
+  currentTranslation.value = { ...payload }
   loading.value = false
   error.value = ''
 
-  if (incrementAccessCount) {
+  if (resetScroll) {
     await nextTick()
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
     contentRef.value?.scrollTo({ top: 0, left: 0, behavior: 'auto' })

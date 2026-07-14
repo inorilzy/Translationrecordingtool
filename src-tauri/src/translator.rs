@@ -1,4 +1,7 @@
-use crate::local_dictionary::FreeDictionarySupplement;
+use crate::{
+    local_dictionary::FreeDictionarySupplement,
+    translation_domain::TranslationContent,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -10,27 +13,6 @@ use tracing::{debug, error, info};
 pub(crate) const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
-#[derive(Debug, Clone, Default)]
-pub struct TranslationContent {
-    pub translated_text: String,
-    pub phonetic: Option<String>,
-    pub us_phonetic: Option<String>,
-    pub uk_phonetic: Option<String>,
-    pub audio_url: Option<String>,
-    pub explains: Vec<String>,
-    pub examples: Vec<String>,
-    pub synonyms: Vec<String>,
-    pub word_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct TranslationConfig {
-    pub provider: String,
-    pub youdao_app_key: String,
-    pub youdao_app_secret: String,
-    pub microsoft_key: String,
-    pub microsoft_region: String,
-}
 
 // 有道翻译 API 响应
 #[derive(Debug, Serialize, Deserialize)]

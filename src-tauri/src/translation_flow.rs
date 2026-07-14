@@ -1,28 +1,313 @@
-/// Translation resolution pipeline: local dictionary → Free Dictionary → configured remote API.
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{future::Future, pin::Pin};
 
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::{
-    database::Translation,
-    local_dictionary::{self, OfflineDictionaryEntry},
-    translator,
+    local_dictionary::{
+        merge_free_dictionary_supplement, FreeDictionarySupplement, OfflineDictionaryEntry,
+    },
+    translation_domain::{TranslationConfig, TranslationContent, TranslationResult},
 };
 
-pub use translator::TranslationConfig;
+pub type TranslationFuture<'a, T> =
+    Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
 
-// ─── Translation Builders ────────────────────────────────────────────────────
+pub trait DictionaryGateway: Send + Sync {
+    fn lookup_local(&self, text: &str) -> Result<Option<OfflineDictionaryEntry>, String>;
 
-pub fn some_if_not_empty(items: Vec<String>) -> Option<Vec<String>> {
-    if items.is_empty() {
-        None
-    } else {
-        Some(items)
+    fn fetch_supplement<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> TranslationFuture<'a, Option<FreeDictionarySupplement>>;
+}
+
+pub trait ProviderGateway: Send + Sync {
+    fn translate_youdao<'a>(
+        &'a self,
+        text: &'a str,
+        app_key: &'a str,
+        app_secret: &'a str,
+    ) -> TranslationFuture<'a, TranslationContent>;
+
+    fn translate_microsoft<'a>(
+        &'a self,
+        text: &'a str,
+        key: &'a str,
+        region: &'a str,
+    ) -> TranslationFuture<'a, TranslationContent>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolutionStage {
+    InputAccepted { text: String },
+    LocalResultAvailable(TranslationResult),
+    EnrichmentAvailable(TranslationResult),
+    RemoteTranslationInProgress,
+    Completed(TranslationResult),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolutionError {
+    Cancelled,
+    Failed(String),
+}
+
+impl ResolutionError {
+    pub fn into_message(self) -> String {
+        match self {
+            Self::Cancelled => "翻译请求已取消".to_string(),
+            Self::Failed(message) => message,
+        }
     }
 }
 
-pub fn to_translation_content(entry: OfflineDictionaryEntry) -> translator::TranslationContent {
-    translator::TranslationContent {
+pub async fn resolve_translation<D, P, F, C>(
+    dictionary: &D,
+    providers: &P,
+    config: &TranslationConfig,
+    text: &str,
+    mut report: F,
+    is_cancelled: C,
+) -> Result<TranslationResult, ResolutionError>
+where
+    D: DictionaryGateway,
+    P: ProviderGateway,
+    F: FnMut(ResolutionStage) -> Result<(), String>,
+    C: Fn() -> bool,
+{
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(ResolutionError::Failed("输入文本为空".to_string()));
+    }
+
+    report_stage(
+        &mut report,
+        &is_cancelled,
+        ResolutionStage::InputAccepted {
+            text: text.to_string(),
+        },
+    )?;
+
+    let is_word = is_single_word(text);
+    info!(
+        "翻译文本: {}, 类型: {}",
+        text,
+        if is_word { "单词" } else { "句子" }
+    );
+
+    if is_word {
+        if let Some(entry) = lookup_local(dictionary, text)? {
+            let local_result = TranslationResult::from_content(
+                text.to_string(),
+                content_from_dictionary_entry(entry.clone()),
+            );
+            report_stage(
+                &mut report,
+                &is_cancelled,
+                ResolutionStage::LocalResultAvailable(local_result.clone()),
+            )?;
+
+            let supplement = dictionary.fetch_supplement(text).await;
+            ensure_active(&is_cancelled)?;
+
+            let final_result = match supplement {
+                Ok(supplement) => {
+                    let merged = merge_free_dictionary_supplement(entry, supplement);
+                    let enriched = local_result
+                        .with_content(content_from_dictionary_entry(merged));
+                    if enriched != local_result {
+                        report_stage(
+                            &mut report,
+                            &is_cancelled,
+                            ResolutionStage::EnrichmentAvailable(enriched.clone()),
+                        )?;
+                        enriched
+                    } else {
+                        local_result
+                    }
+                }
+                Err(error) => {
+                    warn!("Free Dictionary 补全失败: {}", error);
+                    local_result
+                }
+            };
+
+            report_stage(
+                &mut report,
+                &is_cancelled,
+                ResolutionStage::Completed(final_result.clone()),
+            )?;
+            return Ok(final_result);
+        }
+
+        info!("本地词典未命中，尝试 Free Dictionary");
+        let dictionary_error = match dictionary.fetch_supplement(text).await {
+            Ok(Some(supplement)) => {
+                ensure_active(&is_cancelled)?;
+                let result = TranslationResult::from_content(
+                    text.to_string(),
+                    content_from_supplement(text, supplement),
+                );
+                report_stage(
+                    &mut report,
+                    &is_cancelled,
+                    ResolutionStage::Completed(result.clone()),
+                )?;
+                return Ok(result);
+            }
+            Ok(None) => format!("未找到单词 \"{}\" 的释义", text),
+            Err(error) => format!("查询单词失败: {}", error),
+        };
+
+        return resolve_remote(
+            providers,
+            config,
+            text,
+            Some(dictionary_error),
+            report,
+            is_cancelled,
+        )
+        .await;
+    }
+
+    resolve_remote(
+        providers,
+        config,
+        text,
+        None,
+        report,
+        is_cancelled,
+    )
+    .await
+}
+
+async fn resolve_remote<P, F, C>(
+    providers: &P,
+    config: &TranslationConfig,
+    text: &str,
+    dictionary_error: Option<String>,
+    mut report: F,
+    is_cancelled: C,
+) -> Result<TranslationResult, ResolutionError>
+where
+    P: ProviderGateway,
+    F: FnMut(ResolutionStage) -> Result<(), String>,
+    C: Fn() -> bool,
+{
+    report_stage(
+        &mut report,
+        &is_cancelled,
+        ResolutionStage::RemoteTranslationInProgress,
+    )?;
+
+    let content = match config.provider.trim().to_ascii_lowercase().as_str() {
+        "microsoft" => {
+            providers
+                .translate_microsoft(text, &config.microsoft_key, &config.microsoft_region)
+                .await
+        }
+        _ => {
+            providers
+                .translate_youdao(
+                    text,
+                    &config.youdao_app_key,
+                    &config.youdao_app_secret,
+                )
+                .await
+        }
+    };
+    ensure_active(&is_cancelled)?;
+
+    let content = content.map_err(|remote_error| {
+        ResolutionError::Failed(match dictionary_error {
+            Some(dictionary_error) => format!(
+                "{}；在线翻译回退失败: {}",
+                dictionary_error, remote_error
+            ),
+            None => remote_error,
+        })
+    })?;
+
+    let result = TranslationResult::from_content(text.to_string(), content);
+    report_stage(
+        &mut report,
+        &is_cancelled,
+        ResolutionStage::Completed(result.clone()),
+    )?;
+    Ok(result)
+}
+
+fn report_stage<F, C>(
+    report: &mut F,
+    is_cancelled: &C,
+    stage: ResolutionStage,
+) -> Result<(), ResolutionError>
+where
+    F: FnMut(ResolutionStage) -> Result<(), String>,
+    C: Fn() -> bool,
+{
+    ensure_active(is_cancelled)?;
+    report(stage).map_err(ResolutionError::Failed)
+}
+
+fn ensure_active<C>(is_cancelled: &C) -> Result<(), ResolutionError>
+where
+    C: Fn() -> bool,
+{
+    if is_cancelled() {
+        Err(ResolutionError::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
+fn lookup_local<D>(
+    dictionary: &D,
+    text: &str,
+) -> Result<Option<OfflineDictionaryEntry>, ResolutionError>
+where
+    D: DictionaryGateway,
+{
+    if !is_local_dictionary_candidate(text) {
+        return Ok(None);
+    }
+
+    dictionary
+        .lookup_local(text)
+        .map_err(ResolutionError::Failed)
+}
+
+pub fn is_local_dictionary_candidate(text: &str) -> bool {
+    !text.contains(' ')
+        && !text.contains(',')
+        && !text.contains('.')
+        && text.chars().all(|ch| ch.is_ascii_alphabetic())
+}
+
+pub fn is_single_word(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty()
+        || trimmed.contains(' ')
+        || trimmed.contains(',')
+        || trimmed.contains('.')
+        || trimmed.contains('!')
+        || trimmed.contains('?')
+    {
+        return false;
+    }
+
+    let has_internal_uppercase = trimmed.chars().skip(1).any(char::is_uppercase);
+    if has_internal_uppercase {
+        return false;
+    }
+
+    trimmed
+        .chars()
+        .all(|character| character.is_alphabetic() || character == '\'' || character == '-')
+}
+
+fn content_from_dictionary_entry(entry: OfflineDictionaryEntry) -> TranslationContent {
+    TranslationContent {
         translated_text: entry.translated_text,
         phonetic: entry.phonetic,
         us_phonetic: entry.us_phonetic,
@@ -35,274 +320,129 @@ pub fn to_translation_content(entry: OfflineDictionaryEntry) -> translator::Tran
     }
 }
 
-pub fn build_translation_with_timestamp(
-    text: String,
-    content: translator::TranslationContent,
-    created_at: i64,
-) -> Translation {
-    Translation {
-        id: None,
-        source_text: text,
-        translated_text: content.translated_text,
-        phonetic: content.phonetic,
-        us_phonetic: content.us_phonetic,
-        uk_phonetic: content.uk_phonetic,
-        audio_url: content.audio_url,
-        explains: some_if_not_empty(content.explains),
-        examples: some_if_not_empty(content.examples),
-        synonyms: some_if_not_empty(content.synonyms),
-        source_lang: "en".to_string(),
-        target_lang: "zh".to_string(),
-        word_type: content.word_type,
-        created_at,
-        access_count: 1,
-        is_favorite: 0,
-    }
-}
+fn content_from_supplement(
+    source_text: &str,
+    supplement: FreeDictionarySupplement,
+) -> TranslationContent {
+    let translated_text = supplement
+        .explains
+        .first()
+        .and_then(|explanation| explanation.split(". ").nth(1))
+        .unwrap_or(source_text)
+        .to_string();
 
-pub fn build_translation(text: String, content: translator::TranslationContent) -> Translation {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-
-    build_translation_with_timestamp(text, content, now)
-}
-
-pub fn build_translation_from_existing(
-    base: &Translation,
-    content: translator::TranslationContent,
-) -> Translation {
-    Translation {
-        id: base.id,
-        source_text: base.source_text.clone(),
-        translated_text: content.translated_text,
-        phonetic: content.phonetic,
-        us_phonetic: content.us_phonetic,
-        uk_phonetic: content.uk_phonetic,
-        audio_url: content.audio_url,
-        explains: some_if_not_empty(content.explains),
-        examples: some_if_not_empty(content.examples),
-        synonyms: some_if_not_empty(content.synonyms),
-        source_lang: base.source_lang.clone(),
-        target_lang: base.target_lang.clone(),
-        word_type: content.word_type,
-        created_at: base.created_at,
-        access_count: base.access_count,
-        is_favorite: base.is_favorite,
-    }
-}
-
-// ─── Word Detection ──────────────────────────────────────────────────────────
-
-/// Whether text looks like a single word suitable for local dictionary lookup.
-pub fn is_local_dictionary_candidate(text: &str) -> bool {
-    !text.contains(' ')
-        && !text.contains(',')
-        && !text.contains('.')
-        && text.chars().all(|ch| ch.is_ascii_alphabetic())
-}
-
-/// Broader word detection: allows apostrophes (don't) and hyphens (well-known),
-/// rejects camelCase identifiers.
-pub fn is_single_word(text: &str) -> bool {
-    let trimmed = text.trim();
-
-    if trimmed.contains(' ')
-        || trimmed.contains(',')
-        || trimmed.contains('.')
-        || trimmed.contains('!')
-        || trimmed.contains('?')
-    {
-        return false;
-    }
-
-    // camelCase → not a regular word
-    let has_internal_uppercase = trimmed.chars().skip(1).any(|c| c.is_uppercase());
-    if has_internal_uppercase {
-        return false;
-    }
-
-    trimmed
-        .chars()
-        .all(|c| c.is_alphabetic() || c == '\'' || c == '-')
-}
-
-// ─── Local Dictionary Lookup ─────────────────────────────────────────────────
-
-pub fn lookup_local_translation(
-    app: &tauri::AppHandle,
-    text: &str,
-) -> Result<Option<(OfflineDictionaryEntry, Translation)>, String> {
-    if !is_local_dictionary_candidate(text) {
-        return Ok(None);
-    }
-
-    let Some(entry) = local_dictionary::lookup_word(app, text)? else {
-        info!("本地词典未命中: {}", text);
-        return Ok(None);
-    };
-
-    info!("本地词典命中: {}", text);
-    let translation = build_translation(text.to_string(), to_translation_content(entry.clone()));
-    Ok(Some((entry, translation)))
-}
-
-// ─── Clipboard ───────────────────────────────────────────────────────────────
-
-pub fn read_current_clipboard_text(app: &tauri::AppHandle) -> Result<String, String> {
-    use crate::clipboard;
-    let text = clipboard::read_clipboard(app)?;
-    let trimmed = text.trim();
-
-    if trimmed.is_empty() {
-        return Err("剪贴板为空".to_string());
-    }
-
-    Ok(trimmed.to_string())
-}
-
-// ─── Translation Resolution ──────────────────────────────────────────────────
-
-/// Full resolution: word → local + Free Dict; sentence → configured remote provider.
-pub async fn resolve_translation(
-    app: &tauri::AppHandle,
-    text: &str,
-    config: &TranslationConfig,
-) -> Result<Translation, String> {
-    let is_word = is_single_word(text);
-    info!(
-        "翻译文本: {}, 类型: {}",
-        text,
-        if is_word { "单词" } else { "句子" }
-    );
-
-    if is_word {
-        // 1. 本地词典
-        if let Some((entry, base_translation)) = lookup_local_translation(app, text)? {
-            let supplement = match translator::fetch_free_dictionary_supplement(text).await {
-                Ok(supplement) => supplement,
-                Err(error) => {
-                    warn!("Free Dictionary 补全失败: {}", error);
-                    None
-                }
-            };
-            let merged = local_dictionary::merge_free_dictionary_supplement(entry, supplement);
-            return Ok(build_translation_from_existing(
-                &base_translation,
-                to_translation_content(merged),
-            ));
-        }
-
-        // 2. Free Dictionary 回退
-        info!("本地词典未命中，尝试 Free Dictionary");
-        match translator::fetch_free_dictionary_supplement(text).await {
-            Ok(Some(supplement)) => {
-                info!("Free Dictionary 查询成功");
-                let content = translator::TranslationContent {
-                    translated_text: supplement
-                        .explains
-                        .first()
-                        .and_then(|s| s.split(". ").nth(1))
-                        .unwrap_or(text)
-                        .to_string(),
-                    phonetic: supplement.phonetic.clone(),
-                    us_phonetic: supplement.phonetic.clone(),
-                    uk_phonetic: None,
-                    audio_url: supplement.audio_url,
-                    explains: supplement.explains,
-                    examples: supplement.examples,
-                    synonyms: supplement.synonyms,
-                    word_type: None,
-                };
-                return Ok(build_translation(text.to_string(), content));
-            }
-            Ok(None) => {
-                warn!("Free Dictionary 未找到单词: {}", text);
-                return resolve_word_remote_fallback(
-                    text,
-                    config,
-                    format!("未找到单词 \"{}\" 的释义", text),
-                )
-                .await;
-            }
-            Err(e) => {
-                error!("Free Dictionary 查询失败: {}", e);
-                return resolve_word_remote_fallback(text, config, format!("查询单词失败: {}", e))
-                    .await;
-            }
-        }
-    }
-
-    // 句子使用有道翻译
-    resolve_remote_provider_translation(text, config).await
-}
-
-/// Youdao-only translation (for sentence fallback).
-pub async fn resolve_youdao_translation(
-    text: &str,
-    app_key: &str,
-    app_secret: &str,
-) -> Result<Translation, String> {
-    if app_key.is_empty() || app_secret.is_empty() {
-        return Err("翻译句子需要配置有道翻译 API，请在设置中配置".to_string());
-    }
-
-    info!("使用有道翻译 API");
-    let content = translator::translate_text(text, app_key, app_secret).await?;
-    Ok(build_translation(text.to_string(), content))
-}
-
-pub async fn resolve_microsoft_translation(
-    text: &str,
-    key: &str,
-    region: &str,
-) -> Result<Translation, String> {
-    info!("使用微软翻译 API");
-    let content = translator::translate_with_microsoft(text, key, region).await?;
-    Ok(build_translation(text.to_string(), content))
-}
-
-pub async fn resolve_remote_provider_translation(
-    text: &str,
-    config: &TranslationConfig,
-) -> Result<Translation, String> {
-    match config.provider.trim().to_lowercase().as_str() {
-        "microsoft" => {
-            resolve_microsoft_translation(text, &config.microsoft_key, &config.microsoft_region)
-                .await
-        }
-        _ => {
-            resolve_youdao_translation(text, &config.youdao_app_key, &config.youdao_app_secret)
-                .await
-        }
-    }
-}
-
-async fn resolve_word_remote_fallback(
-    text: &str,
-    config: &TranslationConfig,
-    dictionary_error: String,
-) -> Result<Translation, String> {
-    info!("单词查询失败，回退到当前配置的在线翻译服务");
-    match resolve_remote_provider_translation(text, config).await {
-        Ok(translation) => Ok(translation),
-        Err(remote_error) => Err(format!(
-            "{}；在线翻译回退失败: {}",
-            dictionary_error, remote_error
-        )),
+    TranslationContent {
+        translated_text,
+        phonetic: supplement.phonetic.clone(),
+        us_phonetic: supplement.phonetic,
+        uk_phonetic: None,
+        audio_url: supplement.audio_url,
+        explains: supplement.explains,
+        examples: supplement.examples,
+        synonyms: supplement.synonyms,
+        word_type: None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use parking_lot::Mutex;
+    use std::collections::VecDeque;
 
-    #[test]
-    fn http_timeouts_are_short_enough_for_popup_flows() {
-        assert_eq!(translator::HTTP_CONNECT_TIMEOUT, Duration::from_secs(5));
-        assert_eq!(translator::HTTP_REQUEST_TIMEOUT, Duration::from_secs(15));
+    #[derive(Default)]
+    struct FakeDictionary {
+        local: Option<OfflineDictionaryEntry>,
+        supplements: Mutex<VecDeque<Result<Option<FreeDictionarySupplement>, String>>>,
+    }
+
+    impl DictionaryGateway for FakeDictionary {
+        fn lookup_local(&self, _text: &str) -> Result<Option<OfflineDictionaryEntry>, String> {
+            Ok(self.local.clone())
+        }
+
+        fn fetch_supplement<'a>(
+            &'a self,
+            _text: &'a str,
+        ) -> TranslationFuture<'a, Option<FreeDictionarySupplement>> {
+            let result = self
+                .supplements
+                .lock()
+                .pop_front()
+                .unwrap_or(Ok(None));
+            Box::pin(async move { result })
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeProviders {
+        calls: Mutex<Vec<String>>,
+        youdao: Mutex<VecDeque<Result<TranslationContent, String>>>,
+        microsoft: Mutex<VecDeque<Result<TranslationContent, String>>>,
+    }
+
+    impl ProviderGateway for FakeProviders {
+        fn translate_youdao<'a>(
+            &'a self,
+            _text: &'a str,
+            _app_key: &'a str,
+            _app_secret: &'a str,
+        ) -> TranslationFuture<'a, TranslationContent> {
+            self.calls.lock().push("youdao".to_string());
+            let result = self
+                .youdao
+                .lock()
+                .pop_front()
+                .unwrap_or_else(|| Err("unexpected youdao call".to_string()));
+            Box::pin(async move { result })
+        }
+
+        fn translate_microsoft<'a>(
+            &'a self,
+            _text: &'a str,
+            _key: &'a str,
+            _region: &'a str,
+        ) -> TranslationFuture<'a, TranslationContent> {
+            self.calls.lock().push("microsoft".to_string());
+            let result = self
+                .microsoft
+                .lock()
+                .pop_front()
+                .unwrap_or_else(|| Err("unexpected microsoft call".to_string()));
+            Box::pin(async move { result })
+        }
+    }
+
+    fn local_entry() -> OfflineDictionaryEntry {
+        OfflineDictionaryEntry {
+            word: "hello".to_string(),
+            translated_text: "你好".to_string(),
+            phonetic: None,
+            us_phonetic: None,
+            uk_phonetic: None,
+            audio_url: None,
+            explains: vec!["int. 你好".to_string()],
+            examples: Vec::new(),
+            synonyms: Vec::new(),
+            word_type: Some("int.".to_string()),
+        }
+    }
+
+    fn supplement() -> FreeDictionarySupplement {
+        FreeDictionarySupplement {
+            phonetic: Some("/həˈloʊ/".to_string()),
+            audio_url: Some("https://example.com/hello.mp3".to_string()),
+            explains: vec!["interjection. greeting".to_string()],
+            examples: vec!["Hello, world!".to_string()],
+            synonyms: vec!["hi".to_string()],
+        }
+    }
+
+    fn remote_content(text: &str) -> TranslationContent {
+        TranslationContent {
+            translated_text: text.to_string(),
+            ..TranslationContent::default()
+        }
     }
 
     #[test]
@@ -312,60 +452,109 @@ mod tests {
         assert!(is_single_word("don't"));
         assert!(!is_single_word("hello world"));
         assert!(!is_single_word("camelCase"));
-    }
-}
-
-/// Remote-only resolution (used by shortcut handler when local dict misses).
-pub async fn resolve_remote_translation(
-    text: &str,
-    config: &TranslationConfig,
-) -> Result<Translation, String> {
-    let is_word = is_single_word(text);
-    info!(
-        "翻译文本: {}, 类型: {}",
-        text,
-        if is_word { "单词" } else { "句子" }
-    );
-
-    if is_word {
-        info!("尝试 Free Dictionary");
-        match translator::fetch_free_dictionary_supplement(text).await {
-            Ok(Some(supplement)) => {
-                info!("Free Dictionary 查询成功");
-                let content = translator::TranslationContent {
-                    translated_text: supplement
-                        .explains
-                        .first()
-                        .and_then(|s| s.split(". ").nth(1))
-                        .unwrap_or(text)
-                        .to_string(),
-                    phonetic: supplement.phonetic.clone(),
-                    us_phonetic: supplement.phonetic.clone(),
-                    uk_phonetic: None,
-                    audio_url: supplement.audio_url,
-                    explains: supplement.explains,
-                    examples: supplement.examples,
-                    synonyms: supplement.synonyms,
-                    word_type: None,
-                };
-                return Ok(build_translation(text.to_string(), content));
-            }
-            Ok(None) => {
-                warn!("Free Dictionary 未找到单词: {}", text);
-                return resolve_word_remote_fallback(
-                    text,
-                    config,
-                    format!("未找到单词 \"{}\" 的释义", text),
-                )
-                .await;
-            }
-            Err(e) => {
-                error!("Free Dictionary 查询失败: {}", e);
-                return resolve_word_remote_fallback(text, config, format!("查询单词失败: {}", e))
-                    .await;
-            }
-        }
+        assert!(!is_single_word(""));
     }
 
-    resolve_remote_provider_translation(text, config).await
+    #[test]
+    fn local_result_is_reported_before_enrichment() {
+        tauri::async_runtime::block_on(async {
+            let dictionary = FakeDictionary {
+                local: Some(local_entry()),
+                supplements: Mutex::new(VecDeque::from([Ok(Some(supplement()))])),
+            };
+            let providers = FakeProviders::default();
+            let mut stages = Vec::new();
+
+            let result = resolve_translation(
+                &dictionary,
+                &providers,
+                &TranslationConfig::default(),
+                "hello",
+                |stage| {
+                    stages.push(stage);
+                    Ok(())
+                },
+                || false,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(result.examples, Some(vec!["Hello, world!".to_string()]));
+            assert!(matches!(stages[0], ResolutionStage::InputAccepted { .. }));
+            assert!(matches!(
+                stages[1],
+                ResolutionStage::LocalResultAvailable(_)
+            ));
+            assert!(matches!(
+                stages[2],
+                ResolutionStage::EnrichmentAvailable(_)
+            ));
+            assert!(matches!(stages[3], ResolutionStage::Completed(_)));
+            assert!(providers.calls.lock().is_empty());
+        });
+    }
+
+    #[test]
+    fn local_miss_uses_current_configured_provider() {
+        tauri::async_runtime::block_on(async {
+            let dictionary = FakeDictionary {
+                local: None,
+                supplements: Mutex::new(VecDeque::from([Ok(None)])),
+            };
+            let providers = FakeProviders {
+                microsoft: Mutex::new(VecDeque::from([Ok(remote_content("你好"))])),
+                ..FakeProviders::default()
+            };
+            let config = TranslationConfig {
+                provider: "microsoft".to_string(),
+                microsoft_key: "key".to_string(),
+                ..TranslationConfig::default()
+            };
+
+            let result = resolve_translation(
+                &dictionary,
+                &providers,
+                &config,
+                "hello",
+                |_| Ok(()),
+                || false,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(result.translated_text, "你好");
+            assert_eq!(providers.calls.lock().as_slice(), ["microsoft"]);
+        });
+    }
+
+    #[test]
+    fn provider_failure_keeps_dictionary_context() {
+        tauri::async_runtime::block_on(async {
+            let dictionary = FakeDictionary {
+                local: None,
+                supplements: Mutex::new(VecDeque::from([Ok(None)])),
+            };
+            let providers = FakeProviders {
+                youdao: Mutex::new(VecDeque::from([Err("provider unavailable".to_string())])),
+                ..FakeProviders::default()
+            };
+
+            let error = resolve_translation(
+                &dictionary,
+                &providers,
+                &TranslationConfig::default(),
+                "hello",
+                |_| Ok(()),
+                || false,
+            )
+            .await
+            .unwrap_err()
+            .into_message();
+
+            assert_eq!(
+                error,
+                "未找到单词 \"hello\" 的释义；在线翻译回退失败: provider unavailable"
+            );
+        });
+    }
 }

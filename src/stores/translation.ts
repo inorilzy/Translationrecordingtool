@@ -6,7 +6,6 @@ import {
   updateHistoryFavoriteState,
   type TranslationRecord as Translation,
 } from './translation-records'
-import { useSettingsStore } from './settings'
 
 export type { Translation }
 
@@ -79,24 +78,11 @@ export const useTranslationStore = defineStore('translation', () => {
   }
 
   async function translateFromClipboard() {
-    const settings = useSettingsStore()
     loading.value = true
     error.value = ''
 
     try {
-      const result = await invoke<Translation>('translate_from_clipboard', {
-        appKey: settings.apiKey,
-        appSecret: settings.apiSecret,
-        translationProvider: settings.translationProvider,
-        microsoftTranslatorKey: settings.microsoftTranslatorKey,
-        microsoftTranslatorRegion: settings.microsoftTranslatorRegion,
-      })
-
-      const persisted = await invoke<Translation>('save_translation', {
-        translation: result,
-        incrementAccessCount: true,
-      })
-
+      const persisted = await invoke<Translation>('translate_from_clipboard')
       currentTranslation.value = persisted
       history.value = mergeTranslationIntoHistory(history.value, persisted)
       return persisted
@@ -109,25 +95,11 @@ export const useTranslationStore = defineStore('translation', () => {
   }
 
   async function translateText(text: string) {
-    const settings = useSettingsStore()
     loading.value = true
     error.value = ''
 
     try {
-      const result = await invoke<Translation>('translate_text', {
-        text,
-        appKey: settings.apiKey,
-        appSecret: settings.apiSecret,
-        translationProvider: settings.translationProvider,
-        microsoftTranslatorKey: settings.microsoftTranslatorKey,
-        microsoftTranslatorRegion: settings.microsoftTranslatorRegion,
-      })
-
-      const persisted = await invoke<Translation>('save_translation', {
-        translation: result,
-        incrementAccessCount: true,
-      })
-
+      const persisted = await invoke<Translation>('translate_text', { text })
       currentTranslation.value = persisted
       history.value = mergeTranslationIntoHistory(history.value, persisted)
       return persisted
@@ -140,27 +112,12 @@ export const useTranslationStore = defineStore('translation', () => {
   }
 
   async function translateScreenshot() {
-    const settings = useSettingsStore()
     loading.value = true
     error.value = ''
 
     try {
       const imageBase64 = await invoke<string>('select_screenshot_area')
-      const result = await invoke<Translation>('translate_image', {
-        imageBase64,
-        ocrEndpoint: settings.ocrEndpoint,
-        appKey: settings.apiKey,
-        appSecret: settings.apiSecret,
-        translationProvider: settings.translationProvider,
-        microsoftTranslatorKey: settings.microsoftTranslatorKey,
-        microsoftTranslatorRegion: settings.microsoftTranslatorRegion,
-      })
-
-      const persisted = await invoke<Translation>('save_translation', {
-        translation: result,
-        incrementAccessCount: true,
-      })
-
+      const persisted = await invoke<Translation>('translate_image', { imageBase64 })
       currentTranslation.value = persisted
       manualInputText.value = persisted.source_text
       history.value = mergeTranslationIntoHistory(history.value, persisted)

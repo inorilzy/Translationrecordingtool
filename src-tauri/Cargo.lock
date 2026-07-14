@@ -5908,6 +5908,7 @@ dependencies = [
  "image 0.25.9",
  "mouse_position",
  "once_cell",
+ "parking_lot",
  "ppocr-rs",
  "reqwest",
  "rusqlite",

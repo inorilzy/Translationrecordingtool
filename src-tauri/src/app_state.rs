@@ -2,11 +2,8 @@
 ///
 /// Contains all mutable state held in `Arc<RwLock<T>>` and persisted settings
 /// (JSON config file).
-use std::{
-    fs,
-    path::Path,
-    sync::{Arc, RwLock},
-};
+use std::{fs, path::Path, sync::Arc};
+use parking_lot::RwLock;
 use tauri::Manager;
 
 use crate::settings::{
@@ -74,21 +71,21 @@ pub struct PopupRuntimeState {
 // ─── Popup State Helpers ─────────────────────────────────────────────────────
 
 pub fn next_popup_request_id(state: &Arc<RwLock<PopupRuntimeState>>) -> u64 {
-    let mut popup_state = state.write().unwrap();
+    let mut popup_state = state.write();
     popup_state.active_request_id += 1;
     popup_state.active_request_id
 }
 
 pub fn is_active_popup_request(state: &Arc<RwLock<PopupRuntimeState>>, request_id: u64) -> bool {
-    state.read().unwrap().active_request_id == request_id
+    state.read().active_request_id == request_id
 }
 
 pub fn is_popup_ready(state: &Arc<RwLock<PopupRuntimeState>>) -> bool {
-    state.read().unwrap().ready
+    state.read().ready
 }
 
 pub fn mark_popup_ready(state: &Arc<RwLock<PopupRuntimeState>>, ready: bool) {
-    state.write().unwrap().ready = ready;
+    state.write().ready = ready;
 }
 
 // ─── Settings Persistence ────────────────────────────────────────────────────
@@ -132,8 +129,8 @@ pub fn persist_managed_settings(
     config: &Arc<RwLock<AppConfig>>,
     tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
 ) -> Result<(), String> {
-    let config_snapshot = config.read().unwrap().clone();
-    let tray_snapshot = tray_behavior.read().unwrap().clone();
+    let config_snapshot = config.read().clone();
+    let tray_snapshot = tray_behavior.read().clone();
     let settings = to_persisted_settings(&config_snapshot, &tray_snapshot);
     save_persisted_settings(app, &settings)
 }
@@ -159,7 +156,7 @@ pub fn update_and_persist_api_config(
     ocr_preload_on_startup: bool,
 ) -> Result<(), String> {
     {
-        let mut cfg = config.write().unwrap();
+        let mut cfg = config.write();
         cfg.api_key = api_key;
         cfg.api_secret = api_secret;
         cfg.translation_provider = translation_provider;
@@ -180,7 +177,7 @@ pub fn update_and_persist_theme(
     theme: String,
 ) -> Result<(), String> {
     {
-        let mut cfg = config.write().unwrap();
+        let mut cfg = config.write();
         cfg.theme = theme;
     }
     persist_managed_settings(app, config, tray_behavior)
@@ -194,7 +191,7 @@ pub fn update_and_persist_global_shortcuts(
     screenshot_shortcut: String,
 ) -> Result<(), String> {
     {
-        let mut cfg = config.write().unwrap();
+        let mut cfg = config.write();
         cfg.global_shortcut = global_shortcut;
         cfg.screenshot_shortcut = screenshot_shortcut;
     }
@@ -208,7 +205,7 @@ pub fn update_and_persist_tray_behavior(
     enabled: bool,
 ) -> Result<(), String> {
     {
-        let mut tb = tray_behavior.write().unwrap();
+        let mut tb = tray_behavior.write();
         tb.enabled = enabled;
     }
     persist_managed_settings(app, config, tray_behavior)

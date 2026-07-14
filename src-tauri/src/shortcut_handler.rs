@@ -1,17 +1,19 @@
-/// Global shortcut registration and translation flow orchestration.
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
+use parking_lot::RwLock;
 use tauri::{Emitter, Manager};
 use tracing::{error, info, warn};
 
-use crate::app_state::{
-    is_active_popup_request, next_popup_request_id, AppConfig, PopupRuntimeState,
+use crate::{
+    app_state::{
+        is_active_popup_request, next_popup_request_id, PopupRuntimeState,
+    },
+    popup_window::{
+        close_popup_window, get_cursor_position, point_anchor, rect_anchor,
+        show_loading_popup_with_message, show_popup_translation, PopupAnchor,
+    },
+    translation_workflow::{AppTranslationWorkflow, WorkflowStage},
 };
-use crate::popup_window::{
-    close_popup_window, get_cursor_position, point_anchor, rect_anchor, show_loading_popup,
-    show_loading_popup_with_message, show_popup_translation,
-};
-use crate::translation_flow;
 
 #[derive(Debug, PartialEq, Eq)]
 enum SelectionTextSource {
@@ -19,221 +21,274 @@ enum SelectionTextSource {
     ClipboardFallback,
 }
 
-// ─── Shortcut Registration ───────────────────────────────────────────────────
-
 pub fn register_shortcut_handler(
     app: &tauri::AppHandle,
     shortcut_value: &str,
-    config: Arc<RwLock<AppConfig>>,
     popup_state: Arc<RwLock<PopupRuntimeState>>,
 ) -> Result<(), String> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
     let shortcut: Shortcut = shortcut_value
         .parse()
-        .map_err(|e| format!("无效的快捷键格式: {}", e))?;
+        .map_err(|error| format!("无效的快捷键格式: {}", error))?;
 
     app.global_shortcut()
         .on_shortcut(shortcut, move |app, _shortcut, event| {
-            if event.state() != ShortcutState::Pressed {
-                return;
+            if event.state() == ShortcutState::Pressed {
+                handle_shortcut(app.clone(), popup_state.clone());
             }
-            handle_shortcut(app.clone(), config.clone(), popup_state.clone());
         })
-        .map_err(|e| format!("注册快捷键失败: {}", e))
+        .map_err(|error| format!("注册快捷键失败: {}", error))
 }
 
 pub fn register_screenshot_shortcut_handler(
     app: &tauri::AppHandle,
     shortcut_value: &str,
-    config: Arc<RwLock<AppConfig>>,
     popup_state: Arc<RwLock<PopupRuntimeState>>,
 ) -> Result<(), String> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
     let shortcut: Shortcut = shortcut_value
         .parse()
-        .map_err(|e| format!("无效的截图快捷键格式: {}", e))?;
+        .map_err(|error| format!("无效的截图快捷键格式: {}", error))?;
 
     app.global_shortcut()
         .on_shortcut(shortcut, move |app, _shortcut, event| {
-            if event.state() != ShortcutState::Pressed {
-                return;
+            if event.state() == ShortcutState::Pressed {
+                handle_screenshot_shortcut(app.clone(), popup_state.clone());
             }
-            handle_screenshot_shortcut(app.clone(), config.clone(), popup_state.clone());
         })
-        .map_err(|e| format!("注册截图快捷键失败: {}", e))
+        .map_err(|error| format!("注册截图快捷键失败: {}", error))
 }
-
-// ─── Shortcut Handler ────────────────────────────────────────────────────────
 
 pub fn handle_shortcut(
     app: tauri::AppHandle,
-    config: Arc<RwLock<AppConfig>>,
     popup_state: Arc<RwLock<PopupRuntimeState>>,
 ) {
     tauri::async_runtime::spawn(async move {
-        info!("开始执行翻译流程");
+        info!("开始执行选中文本翻译流程");
         let request_id = next_popup_request_id(&popup_state);
-
-        // 1. 获取鼠标位置（复制前获取）
-        let cursor_pos = get_cursor_position();
+        let anchor = point_anchor(get_cursor_position());
         let text = match read_selected_text_with_fallback(&app) {
             Ok((text, source)) => {
                 info!("读取到选中文本({:?}): {}", source, text);
                 text
             }
-            Err(e) => {
-                error!("读取选中文本失败: {:?}", e);
-                if is_active_popup_request(&popup_state, request_id) {
-                    let _ = close_popup_window(&app);
-                }
+            Err(error) => {
+                error!("读取选中文本失败: {}", error);
+                close_if_active(&app, &popup_state, request_id);
                 return;
             }
         };
 
-        if text.is_empty() {
-            warn!("剪贴板内容为空");
-            if is_active_popup_request(&popup_state, request_id) {
-                let _ = close_popup_window(&app);
-            }
-            return;
-        }
-
-        // 4. 先查本地词典（快速路径）
-        if let Some((local_entry, local_translation)) =
-            match translation_flow::lookup_local_translation(&app, &text) {
-                Ok(result) => result,
-                Err(error) => {
-                    error!("本地词典查询失败: {}", error);
-                    None
-                }
-            }
-        {
-            if !is_active_popup_request(&popup_state, request_id) {
-                return;
-            }
-
-            let _ = show_popup_translation(
+        let workflow = app.state::<AppTranslationWorkflow>();
+        let mut visible_result = false;
+        let mut report = |stage| {
+            present_popup_stage(
                 &app,
                 &popup_state,
                 request_id,
-                "translation-result",
-                local_translation.clone(),
-                point_anchor(cursor_pos),
-                true,
+                anchor,
+                &mut visible_result,
+                stage,
+                false,
             );
+        };
+        let is_cancelled = || !is_active_popup_request(&popup_state, request_id);
 
-            // 异步补全 Free Dictionary
-            let app_clone = app.clone();
-            let popup_state_clone = popup_state.clone();
-            let text_clone = text.clone();
-            tauri::async_runtime::spawn(async move {
-                let supplement =
-                    match crate::translator::fetch_free_dictionary_supplement(&text_clone).await {
-                        Ok(Some(supplement)) => supplement,
-                        Ok(None) => return,
-                        Err(error) => {
-                            warn!("Free Dictionary 补全失败: {}", error);
-                            return;
-                        }
-                    };
-
-                if !is_active_popup_request(&popup_state_clone, request_id) {
-                    return;
-                }
-
-                let merged = crate::local_dictionary::merge_free_dictionary_supplement(
-                    local_entry,
-                    Some(supplement),
-                );
-                let enriched_translation = translation_flow::build_translation_from_existing(
-                    &local_translation,
-                    translation_flow::to_translation_content(merged),
-                );
-
-                if enriched_translation != local_translation {
-                    let _ = show_popup_translation(
-                        &app_clone,
-                        &popup_state_clone,
-                        request_id,
-                        "translation-update",
-                        enriched_translation,
-                        point_anchor(cursor_pos),
-                        false,
-                    );
-                }
-            });
-
-            return;
+        if let Err(error) = workflow
+            .translate_text(&text, &mut report, &is_cancelled)
+            .await
+        {
+            if is_active_popup_request(&popup_state, request_id) {
+                error!("选中文本翻译失败: {}", error);
+            }
         }
+    });
+}
 
-        // 5. 本地未命中 → 查询远程翻译
-        let translation_config = {
-            let cfg = config.read().unwrap();
-            translation_flow::TranslationConfig {
-                provider: cfg.translation_provider.clone(),
-                youdao_app_key: cfg.api_key.clone(),
-                youdao_app_secret: cfg.api_secret.clone(),
-                microsoft_key: cfg.microsoft_translator_key.clone(),
-                microsoft_region: cfg.microsoft_translator_region.clone(),
+pub fn handle_screenshot_shortcut(
+    app: tauri::AppHandle,
+    popup_state: Arc<RwLock<PopupRuntimeState>>,
+) {
+    tauri::async_runtime::spawn(async move {
+        info!("开始执行截图 OCR 翻译流程");
+        let request_id = next_popup_request_id(&popup_state);
+        let capture = match crate::screenshot::select_and_capture_with_area(app.clone()).await {
+            Ok(capture) => capture,
+            Err(error) => {
+                warn!("截图选择取消或失败: {}", error);
+                close_if_active(&app, &popup_state, request_id);
+                return;
             }
         };
-
-        info!("开始查询翻译");
-        let _ = show_loading_popup(&app, &popup_state, request_id, point_anchor(cursor_pos));
-
-        let result =
-            match translation_flow::resolve_remote_translation(&text, &translation_config).await {
-                Ok(translation) => {
-                    info!("翻译成功: {} -> {}", text, translation.translated_text);
-                    translation
-                }
-                Err(error) => {
-                    error!("翻译失败: {:?}", error);
-                    if is_active_popup_request(&popup_state, request_id) {
-                        let _ = close_popup_window(&app);
-                    }
-                    return;
-                }
-            };
 
         if !is_active_popup_request(&popup_state, request_id) {
             return;
         }
 
-        let _ = show_popup_translation(
+        let anchor = rect_anchor(capture.area);
+        let _ = show_loading_popup_with_message(
             &app,
             &popup_state,
             request_id,
-            "translation-result",
-            result,
-            point_anchor(cursor_pos),
-            true,
+            anchor,
+            "正在准备 OCR...",
         );
+
+        let workflow = app.state::<AppTranslationWorkflow>();
+        let mut visible_result = false;
+        let mut report = |stage| {
+            present_popup_stage(
+                &app,
+                &popup_state,
+                request_id,
+                anchor,
+                &mut visible_result,
+                stage,
+                true,
+            );
+        };
+        let is_cancelled = || !is_active_popup_request(&popup_state, request_id);
+
+        if let Err(error) = workflow
+            .translate_image(&capture.image_base64, &mut report, &is_cancelled)
+            .await
+        {
+            if is_active_popup_request(&popup_state, request_id) {
+                error!("截图 OCR 翻译失败: {}", error);
+            }
+        }
     });
+}
+
+fn present_popup_stage(
+    app: &tauri::AppHandle,
+    popup_state: &Arc<RwLock<PopupRuntimeState>>,
+    request_id: u64,
+    anchor: PopupAnchor,
+    visible_result: &mut bool,
+    stage: WorkflowStage,
+    backfill_ocr_text: bool,
+) {
+    if !is_active_popup_request(popup_state, request_id) {
+        return;
+    }
+
+    match stage {
+        WorkflowStage::OcrInProgress => {
+            let _ = show_loading_popup_with_message(
+                app,
+                popup_state,
+                request_id,
+                anchor,
+                "OCR 识别中...",
+            );
+        }
+        WorkflowStage::InputAccepted { text } => {
+            if backfill_ocr_text {
+                if let Some(main_window) = app.get_webview_window("main") {
+                    let _ = main_window.emit("ocr-source-text", text);
+                }
+            }
+        }
+        WorkflowStage::LocalResultAvailable(record) => {
+            *visible_result = true;
+            let _ = show_popup_translation(
+                app,
+                popup_state,
+                request_id,
+                "translation-result",
+                record,
+                anchor,
+                true,
+            );
+        }
+        WorkflowStage::EnrichmentAvailable(record) => {
+            *visible_result = true;
+            let _ = show_popup_translation(
+                app,
+                popup_state,
+                request_id,
+                "translation-update",
+                record,
+                anchor,
+                false,
+            );
+        }
+        WorkflowStage::RemoteTranslationInProgress => {
+            if !*visible_result {
+                let _ = show_loading_popup_with_message(
+                    app,
+                    popup_state,
+                    request_id,
+                    anchor,
+                    "翻译中...",
+                );
+            }
+        }
+        WorkflowStage::Completed(record) => {
+            if !*visible_result {
+                *visible_result = true;
+                let _ = show_popup_translation(
+                    app,
+                    popup_state,
+                    request_id,
+                    "translation-result",
+                    record,
+                    anchor,
+                    true,
+                );
+            }
+        }
+        WorkflowStage::Cancelled | WorkflowStage::Failed { .. } => {
+            close_if_active(app, popup_state, request_id);
+        }
+    }
 }
 
 fn read_selected_text_with_fallback(
     app: &tauri::AppHandle,
 ) -> Result<(String, SelectionTextSource), String> {
-    match crate::selection_reader::read_selected_text() {
-        Ok(text) if !text.trim().is_empty() => {
-            return Ok((text.trim().to_string(), SelectionTextSource::UiAutomation));
-        }
+    select_text_source(crate::selection_reader::read_selected_text(), || {
+        copy_selection_and_read_clipboard(app)
+    })
+}
+
+fn select_text_source<F>(
+    ui_automation_result: Result<String, String>,
+    clipboard_fallback: F,
+) -> Result<(String, SelectionTextSource), String>
+where
+    F: FnOnce() -> Result<String, String>,
+{
+    match ui_automation_result {
+        Ok(text) if !text.trim().is_empty() => Ok((
+            text.trim().to_string(),
+            SelectionTextSource::UiAutomation,
+        )),
         Ok(_) => {
             warn!("UI Automation 未读取到选中文本，回退到剪贴板复制");
+            clipboard_fallback().map(|text| {
+                (
+                    text.trim().to_string(),
+                    SelectionTextSource::ClipboardFallback,
+                )
+            })
         }
         Err(error) => {
             warn!(
                 "UI Automation 读取选中文本失败，回退到剪贴板复制: {}",
                 error
             );
+            clipboard_fallback().map(|text| {
+                (
+                    text.trim().to_string(),
+                    SelectionTextSource::ClipboardFallback,
+                )
+            })
         }
     }
-
-    copy_selection_and_read_clipboard(app)
-        .map(|text| (text, SelectionTextSource::ClipboardFallback))
 }
 
 fn copy_selection_and_read_clipboard(app: &tauri::AppHandle) -> Result<String, String> {
@@ -241,8 +296,6 @@ fn copy_selection_and_read_clipboard(app: &tauri::AppHandle) -> Result<String, S
     let baseline_clipboard_sequence = crate::clipboard::clipboard_sequence_number();
 
     std::thread::sleep(std::time::Duration::from_millis(50));
-    info!("正在模拟 Ctrl+C 复制");
-
     use enigo::{Enigo, Key, Keyboard, Settings};
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|error| format!("初始化键盘模拟失败: {}", error))?;
@@ -250,7 +303,6 @@ fn copy_selection_and_read_clipboard(app: &tauri::AppHandle) -> Result<String, S
     enigo.key(Key::Unicode('c'), enigo::Direction::Click).ok();
     enigo.key(Key::Control, enigo::Direction::Release).ok();
 
-    info!("复制完成，等待剪贴板更新");
     let selected_text =
         crate::clipboard::read_clipboard_after_update(app, baseline_clipboard_sequence, 6, 80);
 
@@ -263,128 +315,58 @@ fn copy_selection_and_read_clipboard(app: &tauri::AppHandle) -> Result<String, S
     selected_text
 }
 
-pub fn handle_screenshot_shortcut(
-    app: tauri::AppHandle,
-    config: Arc<RwLock<AppConfig>>,
-    popup_state: Arc<RwLock<PopupRuntimeState>>,
+fn close_if_active(
+    app: &tauri::AppHandle,
+    popup_state: &Arc<RwLock<PopupRuntimeState>>,
+    request_id: u64,
 ) {
-    tauri::async_runtime::spawn(async move {
-        info!("开始执行截图 OCR 翻译流程");
-        let request_id = next_popup_request_id(&popup_state);
+    if is_active_popup_request(popup_state, request_id) {
+        let _ = close_popup_window(app);
+    }
+}
 
-        let capture = match crate::screenshot::select_and_capture_with_area(app.clone()).await {
-            Ok(capture) => capture,
-            Err(error) => {
-                warn!("截图选择取消或失败: {}", error);
-                if is_active_popup_request(&popup_state, request_id) {
-                    let _ = close_popup_window(&app);
-                }
-                return;
-            }
-        };
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-        if !is_active_popup_request(&popup_state, request_id) {
-            return;
-        }
+    #[test]
+    fn ui_automation_result_is_preferred_without_touching_clipboard() {
+        let fallback_calls = AtomicUsize::new(0);
 
-        let result_anchor = rect_anchor(capture.area);
+        let result = select_text_source(Ok("  direct text  ".to_string()), || {
+            fallback_calls.fetch_add(1, Ordering::SeqCst);
+            Ok("clipboard text".to_string())
+        })
+        .unwrap();
 
-        let _ = show_loading_popup_with_message(
-            &app,
-            &popup_state,
-            request_id,
-            result_anchor,
-            "正在准备 OCR...",
-        );
+        assert_eq!(result, ("direct text".to_string(), SelectionTextSource::UiAutomation));
+        assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+    }
 
-        let (ocr_runtime_config, translation_config) = {
-            let cfg = config.read().unwrap();
-            (
-                crate::ocr_service::OcrRuntimeConfig {
-                    endpoint: cfg.ocr_endpoint.clone(),
-                    engine: cfg.ocr_engine.clone(),
-                    model_profile: cfg.ocr_model_profile.clone(),
-                    preload_on_startup: cfg.ocr_preload_on_startup,
-                },
-                translation_flow::TranslationConfig {
-                    provider: cfg.translation_provider.clone(),
-                    youdao_app_key: cfg.api_key.clone(),
-                    youdao_app_secret: cfg.api_secret.clone(),
-                    microsoft_key: cfg.microsoft_translator_key.clone(),
-                    microsoft_region: cfg.microsoft_translator_region.clone(),
-                },
-            )
-        };
+    #[test]
+    fn empty_ui_automation_result_uses_clipboard_fallback() {
+        let result = select_text_source(Ok("   ".to_string()), || {
+            Ok("  clipboard text  ".to_string())
+        })
+        .unwrap();
 
-        let _ = show_loading_popup_with_message(
-            &app,
-            &popup_state,
-            request_id,
-            result_anchor,
-            "OCR 识别中...",
-        );
-
-        let text = match crate::ocr::recognize_text_with_config(
-            &app,
-            &ocr_runtime_config,
-            &capture.image_base64,
-        )
-        .await
-        {
-            Ok(text) => text.trim().to_string(),
-            Err(error) => {
-                error!("OCR 识别失败: {}", error);
-                if is_active_popup_request(&popup_state, request_id) {
-                    let _ = close_popup_window(&app);
-                }
-                return;
-            }
-        };
-
-        if text.is_empty() {
-            warn!("OCR 未识别到文本");
-            if is_active_popup_request(&popup_state, request_id) {
-                let _ = close_popup_window(&app);
-            }
-            return;
-        }
-
-        if let Some(main_window) = app.get_webview_window("main") {
-            let _ = main_window.emit("ocr-source-text", &text);
-        }
-
-        let _ = show_loading_popup_with_message(
-            &app,
-            &popup_state,
-            request_id,
-            result_anchor,
-            "翻译中...",
-        );
-
-        let result =
-            match translation_flow::resolve_translation(&app, &text, &translation_config).await {
-                Ok(translation) => translation,
-                Err(error) => {
-                    error!("截图 OCR 翻译失败: {}", error);
-                    if is_active_popup_request(&popup_state, request_id) {
-                        let _ = close_popup_window(&app);
-                    }
-                    return;
-                }
-            };
-
-        if !is_active_popup_request(&popup_state, request_id) {
-            return;
-        }
-
-        let _ = show_popup_translation(
-            &app,
-            &popup_state,
-            request_id,
-            "translation-result",
+        assert_eq!(
             result,
-            result_anchor,
-            true,
+            (
+                "clipboard text".to_string(),
+                SelectionTextSource::ClipboardFallback
+            )
         );
-    });
+    }
+
+    #[test]
+    fn ui_automation_failure_uses_clipboard_fallback() {
+        let result = select_text_source(Err("unsupported".to_string()), || {
+            Ok("clipboard text".to_string())
+        })
+        .unwrap();
+
+        assert_eq!(result.1, SelectionTextSource::ClipboardFallback);
+    }
 }

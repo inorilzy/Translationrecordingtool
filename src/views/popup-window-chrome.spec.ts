@@ -187,16 +187,12 @@ describe('popup-window-controls: ready / close / ESC / drag contract', () => {
     })
   })
 
-  describe('Tauri event subscriptions', () => {
-    it('subscribes to theme-changed, translation-started, translation-result, translation-update', async () => {
+  describe('Tauri event ownership', () => {
+    it('does not subscribe to theme or translation events', async () => {
       createPopupControls()
 
-      await vi.waitFor(() => {
-        expect(mocks.listen).toHaveBeenCalledWith('theme-changed', expect.any(Function))
-        expect(mocks.listen).toHaveBeenCalledWith('translation-started', expect.any(Function))
-        expect(mocks.listen).toHaveBeenCalledWith('translation-result', expect.any(Function))
-        expect(mocks.listen).toHaveBeenCalledWith('translation-update', expect.any(Function))
-      })
+      await Promise.resolve()
+      expect(mocks.listen).not.toHaveBeenCalled()
     })
   })
 })
