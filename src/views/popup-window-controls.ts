@@ -7,6 +7,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
  */
 export interface PopupControls {
   close: () => void
+  signalReady: () => Promise<void>
   startDragging: () => void
   handleKeyDown: (event: KeyboardEvent) => void
   cleanup: () => void
@@ -23,6 +24,14 @@ export function createPopupControls(): PopupControls {
     appWindow.startDragging()
   }
 
+  async function signalReady() {
+    try {
+      await appWindow.emit('popup-ready', {})
+    } catch (error) {
+      console.error('Failed to emit popup-ready:', error)
+    }
+  }
+
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       close()
@@ -36,9 +45,6 @@ export function createPopupControls(): PopupControls {
   window.addEventListener('keydown', handleKeyDown)
   onUnmounted(cleanup)
 
-  appWindow.emit('popup-ready', {}).catch((error: unknown) => {
-    console.error('Failed to emit popup-ready:', error)
-  })
 
-  return { close, startDragging, handleKeyDown, cleanup }
+  return { close, signalReady, startDragging, handleKeyDown, cleanup }
 }

@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin};
+use std::future::Future;
 
 use tracing::{info, warn};
 
@@ -9,16 +9,13 @@ use crate::{
     translation_domain::{TranslationConfig, TranslationContent, TranslationResult},
 };
 
-pub type TranslationFuture<'a, T> =
-    Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
-
 pub trait DictionaryGateway: Send + Sync {
     fn lookup_local(&self, text: &str) -> Result<Option<OfflineDictionaryEntry>, String>;
 
     fn fetch_supplement<'a>(
         &'a self,
         text: &'a str,
-    ) -> TranslationFuture<'a, Option<FreeDictionarySupplement>>;
+    ) -> impl Future<Output = Result<Option<FreeDictionarySupplement>, String>> + Send + 'a;
 }
 
 pub trait ProviderGateway: Send + Sync {
@@ -27,14 +24,14 @@ pub trait ProviderGateway: Send + Sync {
         text: &'a str,
         app_key: &'a str,
         app_secret: &'a str,
-    ) -> TranslationFuture<'a, TranslationContent>;
+    ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a;
 
     fn translate_microsoft<'a>(
         &'a self,
         text: &'a str,
         key: &'a str,
         region: &'a str,
-    ) -> TranslationFuture<'a, TranslationContent>;
+    ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,7 +93,17 @@ where
     );
 
     if is_word {
-        if let Some(entry) = lookup_local(dictionary, text)? {
+        let mut local_error = None;
+        let local_entry = match lookup_local(dictionary, text) {
+            Ok(entry) => entry,
+            Err(error) => {
+                warn!("本地词典查询失败，继续在线回退: {}", error);
+                local_error = Some(error);
+                None
+            }
+        };
+
+        if let Some(entry) = local_entry {
             let local_result = TranslationResult::from_content(
                 text.to_string(),
                 content_from_dictionary_entry(entry.clone()),
@@ -113,8 +120,7 @@ where
             let final_result = match supplement {
                 Ok(supplement) => {
                     let merged = merge_free_dictionary_supplement(entry, supplement);
-                    let enriched = local_result
-                        .with_content(content_from_dictionary_entry(merged));
+                    let enriched = local_result.with_content(content_from_dictionary_entry(merged));
                     if enriched != local_result {
                         report_stage(
                             &mut report,
@@ -155,8 +161,13 @@ where
                 )?;
                 return Ok(result);
             }
-            Ok(None) => format!("未找到单词 \"{}\" 的释义", text),
-            Err(error) => format!("查询单词失败: {}", error),
+            Ok(None) => local_error.unwrap_or_else(|| format!("未找到单词 \"{}\" 的释义", text)),
+            Err(error) => match local_error {
+                Some(local_error) => {
+                    format!("{}；Free Dictionary 查询失败: {}", local_error, error)
+                }
+                None => format!("查询单词失败: {}", error),
+            },
         };
 
         return resolve_remote(
@@ -170,15 +181,7 @@ where
         .await;
     }
 
-    resolve_remote(
-        providers,
-        config,
-        text,
-        None,
-        report,
-        is_cancelled,
-    )
-    .await
+    resolve_remote(providers, config, text, None, report, is_cancelled).await
 }
 
 async fn resolve_remote<P, F, C>(
@@ -207,23 +210,23 @@ where
                 .await
         }
         _ => {
-            providers
-                .translate_youdao(
-                    text,
-                    &config.youdao_app_key,
-                    &config.youdao_app_secret,
-                )
-                .await
+            if config.youdao_app_key.trim().is_empty() || config.youdao_app_secret.trim().is_empty()
+            {
+                Err("翻译句子需要配置有道翻译 API，请在设置中配置".to_string())
+            } else {
+                providers
+                    .translate_youdao(text, &config.youdao_app_key, &config.youdao_app_secret)
+                    .await
+            }
         }
     };
     ensure_active(&is_cancelled)?;
 
     let content = content.map_err(|remote_error| {
         ResolutionError::Failed(match dictionary_error {
-            Some(dictionary_error) => format!(
-                "{}；在线翻译回退失败: {}",
-                dictionary_error, remote_error
-            ),
+            Some(dictionary_error) => {
+                format!("{}；在线翻译回退失败: {}", dictionary_error, remote_error)
+            }
             None => remote_error,
         })
     })?;
@@ -261,10 +264,7 @@ where
     }
 }
 
-fn lookup_local<D>(
-    dictionary: &D,
-    text: &str,
-) -> Result<Option<OfflineDictionaryEntry>, ResolutionError>
+fn lookup_local<D>(dictionary: &D, text: &str) -> Result<Option<OfflineDictionaryEntry>, String>
 where
     D: DictionaryGateway,
 {
@@ -272,9 +272,7 @@ where
         return Ok(None);
     }
 
-    dictionary
-        .lookup_local(text)
-        .map_err(ResolutionError::Failed)
+    dictionary.lookup_local(text)
 }
 
 pub fn is_local_dictionary_candidate(text: &str) -> bool {
@@ -353,24 +351,25 @@ mod tests {
     #[derive(Default)]
     struct FakeDictionary {
         local: Option<OfflineDictionaryEntry>,
+        local_error: Option<String>,
         supplements: Mutex<VecDeque<Result<Option<FreeDictionarySupplement>, String>>>,
     }
 
     impl DictionaryGateway for FakeDictionary {
         fn lookup_local(&self, _text: &str) -> Result<Option<OfflineDictionaryEntry>, String> {
-            Ok(self.local.clone())
+            match self.local_error.as_ref() {
+                Some(error) => Err(error.clone()),
+                None => Ok(self.local.clone()),
+            }
         }
 
         fn fetch_supplement<'a>(
             &'a self,
             _text: &'a str,
-        ) -> TranslationFuture<'a, Option<FreeDictionarySupplement>> {
-            let result = self
-                .supplements
-                .lock()
-                .pop_front()
-                .unwrap_or(Ok(None));
-            Box::pin(async move { result })
+        ) -> impl Future<Output = Result<Option<FreeDictionarySupplement>, String>> + Send + 'a
+        {
+            let result = self.supplements.lock().pop_front().unwrap_or(Ok(None));
+            async move { result }
         }
     }
 
@@ -387,14 +386,14 @@ mod tests {
             _text: &'a str,
             _app_key: &'a str,
             _app_secret: &'a str,
-        ) -> TranslationFuture<'a, TranslationContent> {
+        ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
             self.calls.lock().push("youdao".to_string());
             let result = self
                 .youdao
                 .lock()
                 .pop_front()
                 .unwrap_or_else(|| Err("unexpected youdao call".to_string()));
-            Box::pin(async move { result })
+            async move { result }
         }
 
         fn translate_microsoft<'a>(
@@ -402,14 +401,14 @@ mod tests {
             _text: &'a str,
             _key: &'a str,
             _region: &'a str,
-        ) -> TranslationFuture<'a, TranslationContent> {
+        ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
             self.calls.lock().push("microsoft".to_string());
             let result = self
                 .microsoft
                 .lock()
                 .pop_front()
                 .unwrap_or_else(|| Err("unexpected microsoft call".to_string()));
-            Box::pin(async move { result })
+            async move { result }
         }
     }
 
@@ -461,6 +460,7 @@ mod tests {
             let dictionary = FakeDictionary {
                 local: Some(local_entry()),
                 supplements: Mutex::new(VecDeque::from([Ok(Some(supplement()))])),
+                local_error: None,
             };
             let providers = FakeProviders::default();
             let mut stages = Vec::new();
@@ -485,10 +485,7 @@ mod tests {
                 stages[1],
                 ResolutionStage::LocalResultAvailable(_)
             ));
-            assert!(matches!(
-                stages[2],
-                ResolutionStage::EnrichmentAvailable(_)
-            ));
+            assert!(matches!(stages[2], ResolutionStage::EnrichmentAvailable(_)));
             assert!(matches!(stages[3], ResolutionStage::Completed(_)));
             assert!(providers.calls.lock().is_empty());
         });
@@ -499,6 +496,41 @@ mod tests {
         tauri::async_runtime::block_on(async {
             let dictionary = FakeDictionary {
                 local: None,
+                supplements: Mutex::new(VecDeque::from([Ok(None)])),
+                local_error: None,
+            };
+            let providers = FakeProviders {
+                microsoft: Mutex::new(VecDeque::from([Ok(remote_content("你好"))])),
+                ..FakeProviders::default()
+            };
+            let config = TranslationConfig {
+                provider: "microsoft".to_string(),
+                microsoft_key: "key".to_string(),
+                ..TranslationConfig::default()
+            };
+
+            let result = resolve_translation(
+                &dictionary,
+                &providers,
+                &config,
+                "hello",
+                |_| Ok(()),
+                || false,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(result.translated_text, "你好");
+            assert_eq!(providers.calls.lock().as_slice(), ["microsoft"]);
+        });
+    }
+
+    #[test]
+    fn local_lookup_error_still_uses_remote_provider() {
+        tauri::async_runtime::block_on(async {
+            let dictionary = FakeDictionary {
+                local: None,
+                local_error: Some("local database unavailable".to_string()),
                 supplements: Mutex::new(VecDeque::from([Ok(None)])),
             };
             let providers = FakeProviders {
@@ -528,21 +560,51 @@ mod tests {
     }
 
     #[test]
+    fn missing_youdao_credentials_fail_before_provider_call() {
+        tauri::async_runtime::block_on(async {
+            let dictionary = FakeDictionary::default();
+            let providers = FakeProviders::default();
+
+            let error = resolve_translation(
+                &dictionary,
+                &providers,
+                &TranslationConfig::default(),
+                "hello world",
+                |_| Ok(()),
+                || false,
+            )
+            .await
+            .unwrap_err()
+            .into_message();
+
+            assert_eq!(error, "翻译句子需要配置有道翻译 API，请在设置中配置");
+            assert!(providers.calls.lock().is_empty());
+        });
+    }
+
+    #[test]
     fn provider_failure_keeps_dictionary_context() {
         tauri::async_runtime::block_on(async {
             let dictionary = FakeDictionary {
                 local: None,
                 supplements: Mutex::new(VecDeque::from([Ok(None)])),
+                local_error: None,
             };
             let providers = FakeProviders {
                 youdao: Mutex::new(VecDeque::from([Err("provider unavailable".to_string())])),
                 ..FakeProviders::default()
             };
 
+            let config = TranslationConfig {
+                youdao_app_key: "key".to_string(),
+                youdao_app_secret: "secret".to_string(),
+                ..TranslationConfig::default()
+            };
+
             let error = resolve_translation(
                 &dictionary,
                 &providers,
-                &TranslationConfig::default(),
+                &config,
                 "hello",
                 |_| Ok(()),
                 || false,

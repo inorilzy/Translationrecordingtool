@@ -81,7 +81,7 @@ def result_to_jsonable(result: Any) -> Any:
 
 def run_ocr(ocr: Any, image_path: Path) -> list[Any]:
     if hasattr(ocr, "ocr"):
-        return ocr.ocr(str(image_path), cls=False)
+        return ocr.ocr(str(image_path))
     if hasattr(ocr, "predict"):
         return ocr.predict(str(image_path))
     raise RuntimeError("PaddleOCR instance has neither ocr() nor predict()")
@@ -248,11 +248,6 @@ def build_paddle_ocr(args: argparse.Namespace) -> Any:
         for key, path in model_candidates.items():
             if key in init_params and path.exists():
                 kwargs[key] = str(path)
-    elif "text_detection_model_name" in init_params:
-        raise SystemExit(
-            "未找到 PP-OCRv6 ONNX 模型目录。请先运行: "
-            f"npm run ocr:models:win -- -Profile {profile}"
-        )
 
     return PaddleOCR(**kwargs)
 

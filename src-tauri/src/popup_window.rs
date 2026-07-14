@@ -419,6 +419,30 @@ pub fn show_loading_popup_with_message(
     })
 }
 
+/// Show the terminal error for an active popup request.
+pub fn show_popup_failure(
+    app: &tauri::AppHandle,
+    popup_state: &Arc<RwLock<PopupRuntimeState>>,
+    request_id: u64,
+    anchor: PopupAnchor,
+    message: impl Into<String>,
+) -> Result<(), String> {
+    use crate::app_state::is_active_popup_request;
+
+    if !is_active_popup_request(popup_state, request_id) {
+        return Ok(());
+    }
+
+    let payload = LoadingPopupPayload {
+        message: message.into(),
+    };
+
+    with_popup_ready(app, popup_state, request_id, anchor, move |window| {
+        let _ = window.emit("translation-failed", &payload);
+        let _ = window.show();
+    })
+}
+
 /// Emit a translation result/update to the popup and optionally show it.
 pub fn show_popup_translation(
     app: &tauri::AppHandle,

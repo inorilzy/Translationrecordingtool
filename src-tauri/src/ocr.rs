@@ -6,8 +6,8 @@ use tracing::{info, warn};
 use crate::{
     native_ocr,
     ocr_contracts::{
-        is_native_engine, OcrRuntimeConfig, OcrServiceStatus, OCR_DEVICE, OCR_LANG,
-        PPOCR_VERSION, RAPID_OCR_VERSION,
+        is_native_engine, OcrRuntimeConfig, OcrServiceStatus, OCR_DEVICE, OCR_LANG, PPOCR_VERSION,
+        RAPID_OCR_VERSION,
     },
     ocr_service,
 };
@@ -67,10 +67,7 @@ pub async fn recognize_text_with_config(
     }
 }
 
-pub async fn ensure_running(
-    app: &AppHandle,
-    config: &OcrRuntimeConfig,
-) -> Result<String, String> {
+pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
     match adapter_kind(&config.engine) {
         OcrAdapterKind::Native => {
             let app = app.clone();
@@ -158,10 +155,7 @@ mod tests {
     #[test]
     fn selects_compatibility_sidecar_for_paddle_and_rapid() {
         for engine in ["paddleocr", "rapidocr"] {
-            assert_eq!(
-                adapter_kind(engine),
-                OcrAdapterKind::CompatibilitySidecar
-            );
+            assert_eq!(adapter_kind(engine), OcrAdapterKind::CompatibilitySidecar);
         }
     }
 }

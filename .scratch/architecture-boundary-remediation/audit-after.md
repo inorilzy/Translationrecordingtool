@@ -2,10 +2,10 @@
 
 **Mode:** Architecture Audit
 **Scope:** Entire project: Vue frontend, Tauri/Rust backend, and OCR/build support scripts; generated binaries, models, caches, and assets excluded
-**Health Score:** 84/100
-**Trend:** 54 → 84 (+30) since the baseline audit
+**Health Score:** 89/100
+**Trend:** 84 → 89 (+5) since the previous audit; 54 → 89 (+35) from the baseline
 
-The two baseline Critical dependency findings are eliminated: translation entry points now converge on one testable workflow, and OCR dependencies flow through neutral contracts without a cycle.
+The two baseline Critical dependency findings remain eliminated: translation entry points converge on one testable workflow, OCR dependencies flow through neutral contracts without a cycle, and shared HTTP policy now lives in a source-neutral infrastructure module.
 
 ---
 
@@ -44,6 +44,7 @@ graph TD
     TranslatorProviders
     NativeOcr
     SidecarOcr
+    SharedHttp
     SettingsPersistence
   end
 
@@ -68,20 +69,21 @@ graph TD
   TranslationFlow --> TranslationDomain
   TranslationFlow --> LocalDictionary
   TranslationFlow --> TranslatorProviders
+  TranslatorProviders --> SharedHttp
   Database --> TranslationDomain
   OcrFacade --> OcrContracts
   OcrFacade --> NativeOcr
   OcrFacade --> SidecarOcr
   NativeOcr --> OcrContracts
   SidecarOcr --> OcrContracts
-  SidecarOcr --> TranslatorProviders
+  SidecarOcr --> SharedHttp
 
   classDef critical fill:#ff6b6b,stroke:#c92a2a,color:#fff
   classDef warning fill:#ffd43b,stroke:#e67700
   classDef clean fill:#51cf66,stroke:#2b8a3e,color:#fff
 
-  class ScreenshotAdapter,SidecarOcr,SettingsPersistence warning
-  class Views,TranslationStore,SettingsStore,PopupView,CompositionRoot,ShortcutHandler,PopupAdapter,OcrFacade,TranslationWorkflow,TranslationFlow,TranslationDomain,OcrContracts,Database,LocalDictionary,TranslatorProviders,NativeOcr clean
+  class ScreenshotAdapter,SettingsPersistence warning
+  class Views,TranslationStore,SettingsStore,PopupView,CompositionRoot,ShortcutHandler,PopupAdapter,OcrFacade,TranslationWorkflow,TranslationFlow,TranslationDomain,OcrContracts,Database,LocalDictionary,TranslatorProviders,NativeOcr,SidecarOcr,SharedHttp clean
 ```
 
 ---
@@ -96,14 +98,8 @@ Source: Fowler — Refactoring — Divergent Change; McConnell — Code Complete
 Consequence: Platform-specific capture changes and shared selection-contract changes collide in the same module, increasing review surface and making regressions harder to isolate.
 Remedy: Split the existing behavior without changing its public API: keep selection contracts and orchestration in `screenshot`, move Windows-native selection to `screenshot/windows.rs`, and move non-Windows WebView selection to its own adapter.
 
-**Dependency Disorder — OCR sidecar HTTP uses the translation-provider module as infrastructure**
-Symptom: `src-tauri/src/ocr_service.rs:603`, `:648`, and `:667` call `crate::translator::http_client()`, so the OCR sidecar adapter depends on a module named and otherwise used for translation providers.
-Source: Martin — Clean Architecture — Stable Dependencies Principle; Brooks — The Mythical Man-Month — Conceptual Integrity
-Consequence: HTTP policy changes made for translation providers can affect OCR health, warmup, and recognition calls; the dependency graph also obscures which module owns shared HTTP configuration.
-Remedy: Move the configured `reqwest::Client` constructor into a neutral infrastructure module such as `http_client`, then depend on it from both `translator` and `ocr_service`.
-
 **Knowledge Duplication — Settings schema and defaults have three synchronized representations**
-Symptom: the same runtime fields and defaults appear in `settings::PersistedSettings` (`src-tauri/src/settings.rs:15-49`), `app_state::AppConfig` (`src-tauri/src/app_state.rs:16-49`), and frontend `AppSettings/defaultSettings` (`src/lib/settings.ts:3-33`), with explicit field-by-field mapping in `app_state.rs:93-111`.
+Symptom: the same runtime fields and defaults appear in `settings::PersistedSettings` (`src-tauri/src/settings.rs:15-50`), `app_state::AppConfig` (`src-tauri/src/app_state.rs:21-65`), and frontend `AppSettings/defaultSettings` (`src/lib/settings.ts:3-33`), with explicit field-by-field mapping in `app_state.rs:108-127`.
 Source: Hunt & Thomas — The Pragmatic Programmer — DRY; Ousterhout — A Philosophy of Software Design — Information Leakage
 Consequence: adding or renaming one setting requires coordinated edits across persistence, runtime state, serialization, and frontend fallback defaults; a missed edit can create silent startup drift.
 Remedy: Make `PersistedSettings` the single Rust settings record and store it directly as managed runtime state, separating only truly independent mutable state such as popup/tray lifecycle. Keep the TypeScript boundary shape, but add one serialization-contract fixture generated from Rust instead of repeating defaults manually.
@@ -111,7 +107,7 @@ Remedy: Make `PersistedSettings` the single Rust settings record and store it di
 ### 🟢 Suggestion
 
 **Accidental Complexity — The composition root also owns all command adapters**
-Symptom: `src-tauri/src/lib.rs` is 703 lines: command implementations occupy `lib.rs:46-439`, while `run()` owns application assembly, migration, OCR startup, dictionary initialization, popup prewarming, tray behavior, window events, shortcut registration, and command registration (`lib.rs:443-703`).
+Symptom: `src-tauri/src/lib.rs` is 751 lines: command implementations occupy `lib.rs:49-456`, while `run()` owns application assembly, migration, OCR startup, dictionary initialization, popup prewarming, tray behavior, window events, shortcut registration, and command registration (`lib.rs:458-751`).
 Source: Fowler — Refactoring — Divergent Change; Ousterhout — A Philosophy of Software Design — Deep Modules
 Consequence: the high fan-out is valid for a composition root, but unrelated command-policy edits and application assembly still share one file, creating avoidable merge and navigation cost.
 Remedy: Keep `run()` as the only composition root, but move thin Tauri command adapters into cohesive modules (`translation_commands`, `settings_commands`, `ocr_commands`). Do not introduce another service layer or move business policy out of the workflow.
@@ -120,4 +116,4 @@ Remedy: Keep `run()` as the only composition root, but move thin Tauri command a
 
 ## Summary
 
-The remediation achieved its architectural target: there are no observed module cycles, translation policy is centralized behind explicit gateway seams, persistence records are separated from translation content, and popup domain-event ownership is singular. The remaining risks are bounded rather than load-bearing: split the screenshot platform adapters first, then remove the OCR-to-translator infrastructure dependency; settings representation can be consolidated when that area next changes. The solo-owner repository has no Conway's Law mismatch to report, and the workflow/OCR gateway seams support isolated tests without replacing global infrastructure.
+The remediation achieved its architectural target: there are no observed module cycles, translation policy is centralized behind explicit gateway seams, persistence records are separated from translation content, popup domain-event ownership is singular, and OCR/provider HTTP policy depends on the neutral `http_client` module. The remaining risks are bounded rather than load-bearing: split the screenshot platform adapters first, then consolidate the duplicated settings representation when that area next changes. The solo-owner repository has no Conway's Law mismatch to report, and the workflow/OCR gateway seams support isolated tests without replacing global infrastructure.

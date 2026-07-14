@@ -5,12 +5,10 @@ use tauri::{Emitter, Manager};
 use tracing::{error, info, warn};
 
 use crate::{
-    app_state::{
-        is_active_popup_request, next_popup_request_id, PopupRuntimeState,
-    },
+    app_state::{is_active_popup_request, next_popup_request_id, PopupRuntimeState},
     popup_window::{
         close_popup_window, get_cursor_position, point_anchor, rect_anchor,
-        show_loading_popup_with_message, show_popup_translation, PopupAnchor,
+        show_loading_popup_with_message, show_popup_failure, show_popup_translation, PopupAnchor,
     },
     translation_workflow::{AppTranslationWorkflow, WorkflowStage},
 };
@@ -61,10 +59,7 @@ pub fn register_screenshot_shortcut_handler(
         .map_err(|error| format!("注册截图快捷键失败: {}", error))
 }
 
-pub fn handle_shortcut(
-    app: tauri::AppHandle,
-    popup_state: Arc<RwLock<PopupRuntimeState>>,
-) {
+pub fn handle_shortcut(app: tauri::AppHandle, popup_state: Arc<RwLock<PopupRuntimeState>>) {
     tauri::async_runtime::spawn(async move {
         info!("开始执行选中文本翻译流程");
         let request_id = next_popup_request_id(&popup_state);
@@ -241,8 +236,15 @@ fn present_popup_stage(
                 );
             }
         }
-        WorkflowStage::Cancelled | WorkflowStage::Failed { .. } => {
+        WorkflowStage::Cancelled => {
             close_if_active(app, popup_state, request_id);
+        }
+        WorkflowStage::Failed { message } => {
+            if let Err(popup_error) =
+                show_popup_failure(app, popup_state, request_id, anchor, message)
+            {
+                error!("显示翻译失败状态失败: {}", popup_error);
+            }
         }
     }
 }
@@ -263,10 +265,9 @@ where
     F: FnOnce() -> Result<String, String>,
 {
     match ui_automation_result {
-        Ok(text) if !text.trim().is_empty() => Ok((
-            text.trim().to_string(),
-            SelectionTextSource::UiAutomation,
-        )),
+        Ok(text) if !text.trim().is_empty() => {
+            Ok((text.trim().to_string(), SelectionTextSource::UiAutomation))
+        }
         Ok(_) => {
             warn!("UI Automation 未读取到选中文本，回退到剪贴板复制");
             clipboard_fallback().map(|text| {
@@ -340,7 +341,10 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(result, ("direct text".to_string(), SelectionTextSource::UiAutomation));
+        assert_eq!(
+            result,
+            ("direct text".to_string(), SelectionTextSource::UiAutomation)
+        );
         assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
     }
 

@@ -2,12 +2,11 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{LazyLock, Mutex},
     time::Instant,
 };
 
 use base64::{engine::general_purpose, Engine as _};
-use once_cell::sync::Lazy;
 use ppocr_rs::{OcrLite, OcrOptions};
 use tauri::{AppHandle, Manager};
 use tracing::{info, warn};
@@ -24,8 +23,7 @@ struct NativeOcrRuntime {
     engine: Mutex<OcrLite>,
 }
 
-static RUNTIME: Lazy<Mutex<Option<NativeOcrRuntime>>> = Lazy::new(|| Mutex::new(None));
-
+static RUNTIME: LazyLock<Mutex<Option<NativeOcrRuntime>>> = LazyLock::new(|| Mutex::new(None));
 
 pub fn engine_name() -> &'static str {
     "native_onnx"
@@ -129,6 +127,14 @@ pub fn model_status(app: &AppHandle, model_profile: &str) -> (String, Option<Pat
         normalize_model_profile(model_profile),
         packaged_model_dir(app, DEFAULT_PACKAGED_MODEL_PROFILE),
     )
+}
+
+pub fn packaged_runtime_profile(app: &AppHandle) -> Option<String> {
+    let (profile, _) = packaged_model_config(app, DEFAULT_PACKAGED_MODEL_PROFILE)?;
+    ort_dll_candidates(app)
+        .into_iter()
+        .any(|path| path.is_file())
+        .then_some(profile)
 }
 
 fn build_runtime(

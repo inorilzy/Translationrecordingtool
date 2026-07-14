@@ -18,6 +18,7 @@ const controls = createPopupControls()
 let unlistenTranslationResult: (() => void) | null = null
 let unlistenTranslationUpdate: (() => void) | null = null
 let unlistenTranslationStarted: (() => void) | null = null
+let unlistenTranslationFailed: (() => void) | null = null
 let unlistenTheme: (() => void) | null = null
 
 function currentThemeFallback() {
@@ -75,6 +76,15 @@ onMounted(async () => {
     await applyTranslation(event.payload, false)
   })
 
+  unlistenTranslationFailed = await listen<{ message?: string }>('translation-failed', (event) => {
+    applyTheme()
+    loading.value = false
+    error.value = event.payload?.message || '翻译失败'
+    currentTranslation.value = null
+  })
+
+  await controls.signalReady()
+
   // ESC key listener registered by createPopupControls
 })
 
@@ -83,6 +93,7 @@ onUnmounted(() => {
   unlistenTranslationStarted?.()
   unlistenTranslationResult?.()
   unlistenTranslationUpdate?.()
+  unlistenTranslationFailed?.()
   unlistenTheme?.()
   // ESC key listener cleanup handled by createPopupControls
 })

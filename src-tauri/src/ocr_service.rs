@@ -9,9 +9,9 @@ use std::{
 };
 
 use serde::Serialize;
+use serde_json::Value;
 use tauri::{AppHandle, Manager};
 use tracing::{info, warn};
-use serde_json::Value;
 
 use crate::ocr_contracts::{
     engine_label, normalize_engine, OcrHealthStatus, OcrRuntimeConfig, OcrServiceStatus,
@@ -29,9 +29,7 @@ pub struct OcrServiceState {
     last_error: RwLock<Option<String>>,
 }
 
-
 pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
-
     if let Ok(message) = check_service_engine(&config.endpoint, &config.engine).await {
         clear_last_error(app);
         return Ok(message);
@@ -57,7 +55,6 @@ pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Resul
 }
 
 pub async fn warmup(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
-
     ensure_running(app, config).await?;
     warmup_service(&config.endpoint).await
 }
@@ -69,7 +66,6 @@ pub async fn restart(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Strin
 }
 
 pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus {
-
     let (model_profile, model_dir) = packaged_model_config(app, &config.model_profile);
     let sidecar_path = packaged_sidecar_path(app);
     let log_path = log_path(app).ok();
@@ -372,6 +368,10 @@ fn model_dir_has_files(path: &PathBuf) -> bool {
             .unwrap_or(false)
 }
 
+pub fn has_packaged_sidecar(app: &AppHandle) -> bool {
+    packaged_sidecar_path(app).is_some()
+}
+
 fn packaged_sidecar_path(app: &AppHandle) -> Option<PathBuf> {
     let sidecar_file_names = sidecar_file_names();
     let mut candidates = sidecar_path_candidates(&sidecar_file_names);
@@ -600,7 +600,7 @@ pub async fn recognize_text(endpoint: &str, image_base64: &str) -> Result<String
         .map(|(_, data)| data)
         .unwrap_or(image_base64);
 
-    let response = crate::translator::http_client()
+    let response = crate::http_client::get()
         .post(endpoint)
         .header("Content-Type", "application/json")
         .json(&OcrRequest { image: payload })
@@ -621,10 +621,7 @@ pub async fn recognize_text(endpoint: &str, image_base64: &str) -> Result<String
     extract_text(&value).ok_or_else(|| "OCR 未返回可识别文本".to_string())
 }
 
-pub async fn check_service_engine(
-    endpoint: &str,
-    expected_engine: &str,
-) -> Result<String, String> {
+pub async fn check_service_engine(endpoint: &str, expected_engine: &str) -> Result<String, String> {
     let health = check_service_health(endpoint).await?;
     let actual_engine = health.engine.unwrap_or_else(|| "unknown".to_string());
     if normalize_engine(&actual_engine) != normalize_engine(expected_engine) {
@@ -641,11 +638,10 @@ pub async fn check_service_engine(
         health_url_from_endpoint(endpoint)?
     ))
 }
-
 pub async fn check_service_health(endpoint: &str) -> Result<OcrHealthStatus, String> {
     validate_endpoint(endpoint)?;
     let health_url = health_url_from_endpoint(endpoint)?;
-    let response = crate::translator::http_client()
+    let response = crate::http_client::get()
         .get(&health_url)
         .send()
         .await
@@ -660,11 +656,10 @@ pub async fn check_service_health(endpoint: &str) -> Result<OcrHealthStatus, Str
         .await
         .map_err(|error| format!("OCR 服务健康检查响应解析失败: {}", error))
 }
-
 pub async fn warmup_service(endpoint: &str) -> Result<String, String> {
     validate_endpoint(endpoint)?;
     let warmup_url = sibling_url_from_endpoint(endpoint, "/warmup")?;
-    let response = crate::translator::http_client()
+    let response = crate::http_client::get()
         .post(&warmup_url)
         .send()
         .await
@@ -693,8 +688,8 @@ fn health_url_from_endpoint(endpoint: &str) -> Result<String, String> {
 }
 
 fn sibling_url_from_endpoint(endpoint: &str, path: &str) -> Result<String, String> {
-    let mut url =
-        reqwest::Url::parse(endpoint.trim()).map_err(|error| format!("OCR HTTP 地址无效: {}", error))?;
+    let mut url = reqwest::Url::parse(endpoint.trim())
+        .map_err(|error| format!("OCR HTTP 地址无效: {}", error))?;
     url.set_path(path);
     url.set_query(None);
     Ok(url.to_string())
@@ -726,7 +721,20 @@ fn extract_text_from_node(value: &Value) -> Option<String> {
     }
 
     if let Some(object) = value.as_object() {
-        for key in ["text", "transcription", "label", "value", "result", "data"] {
+        for key in [
+            "text",
+            "recText",
+            "rec_texts",
+            "transcription",
+            "label",
+            "value",
+            "words",
+            "result",
+            "results",
+            "data",
+            "ocrResults",
+            "texts",
+        ] {
             if let Some(text) = object.get(key).and_then(extract_text_from_node) {
                 return Some(text);
             }
@@ -748,6 +756,44 @@ fn clean_text(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extracts_paddle_style_nested_lines() {
+        let value = serde_json::json!({
+            "result": [
+                { "recText": "first line" },
+                { "recText": "second line" }
+            ]
+        });
+
+        assert_eq!(
+            extract_text(&value),
+            Some("first line\nsecond line".to_string())
+        );
+    }
+
+    #[test]
+    fn extracts_legacy_ocr_collection_and_word_keys() {
+        let value = serde_json::json!({
+            "ocrResults": [
+                { "words": "hello" },
+                { "words": "world" }
+            ]
+        });
+
+        assert_eq!(extract_text(&value), Some("hello\nworld".to_string()));
+    }
+
+    #[test]
+    fn extracts_previous_results_and_paddle_v3_keys() {
+        let results = serde_json::json!({
+            "results": [{ "rec_texts": ["first", "second"] }]
+        });
+        let texts = serde_json::json!({ "texts": ["hello", "world"] });
+
+        assert_eq!(extract_text(&results), Some("first\nsecond".to_string()));
+        assert_eq!(extract_text(&texts), Some("hello\nworld".to_string()));
+    }
 
     #[test]
     fn sidecar_file_names_include_plain_and_target_specific_names() {

@@ -1,14 +1,18 @@
+use parking_lot::RwLock;
 /// Application state and configuration management.
 ///
 /// Contains all mutable state held in `Arc<RwLock<T>>` and persisted settings
 /// (JSON config file).
 use std::{fs, path::Path, sync::Arc};
-use parking_lot::RwLock;
 use tauri::Manager;
 
-use crate::settings::{
-    load_settings, save_settings, PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_ENDPOINT,
-    DEFAULT_OCR_ENGINE, DEFAULT_OCR_MODEL_PROFILE, DEFAULT_SCREENSHOT_SHORTCUT, DEFAULT_THEME,
+use crate::{
+    ocr_contracts::OcrRuntimeConfig,
+    settings::{
+        load_settings, save_settings, PersistedSettings, DEFAULT_GLOBAL_SHORTCUT,
+        DEFAULT_OCR_ENDPOINT, DEFAULT_OCR_ENGINE, DEFAULT_OCR_MODEL_PROFILE,
+        DEFAULT_SCREENSHOT_SHORTCUT, DEFAULT_THEME,
+    },
 };
 
 // ─── Runtime State ───────────────────────────────────────────────────────────
@@ -45,6 +49,17 @@ impl Default for AppConfig {
             global_shortcut: DEFAULT_GLOBAL_SHORTCUT.to_string(),
             screenshot_shortcut: DEFAULT_SCREENSHOT_SHORTCUT.to_string(),
             theme: DEFAULT_THEME.to_string(),
+        }
+    }
+}
+
+impl AppConfig {
+    pub fn ocr_runtime_config(&self) -> OcrRuntimeConfig {
+        OcrRuntimeConfig {
+            endpoint: self.ocr_endpoint.clone(),
+            engine: self.ocr_engine.clone(),
+            model_profile: self.ocr_model_profile.clone(),
+            preload_on_startup: self.ocr_preload_on_startup,
         }
     }
 }
@@ -151,8 +166,8 @@ pub fn update_and_persist_api_config(
     microsoft_translator_key: String,
     microsoft_translator_region: String,
     ocr_endpoint: String,
-    _ocr_engine: String,
-    _ocr_model_profile: String,
+    ocr_engine: String,
+    ocr_model_profile: String,
     ocr_preload_on_startup: bool,
 ) -> Result<(), String> {
     {
@@ -163,8 +178,8 @@ pub fn update_and_persist_api_config(
         cfg.microsoft_translator_key = microsoft_translator_key;
         cfg.microsoft_translator_region = microsoft_translator_region;
         cfg.ocr_endpoint = ocr_endpoint;
-        cfg.ocr_engine = DEFAULT_OCR_ENGINE.to_string();
-        cfg.ocr_model_profile = DEFAULT_OCR_MODEL_PROFILE.to_string();
+        cfg.ocr_engine = ocr_engine;
+        cfg.ocr_model_profile = ocr_model_profile;
         cfg.ocr_preload_on_startup = ocr_preload_on_startup;
     }
     persist_managed_settings(app, config, tray_behavior)

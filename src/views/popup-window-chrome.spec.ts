@@ -102,9 +102,11 @@ describe('popup-window-controls: ready / close / ESC / drag contract', () => {
   })
 
   describe('popup-ready', () => {
-    it('emits popup-ready on mount', () => {
-      createPopupControls()
+    it('emits popup-ready only when signaled', async () => {
+      const controls = createPopupControls()
 
+      expect(mocks.emit).not.toHaveBeenCalled()
+      await controls.signalReady()
       expect(mocks.emit).toHaveBeenCalledWith('popup-ready', {})
     })
   })

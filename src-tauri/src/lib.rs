@@ -2,11 +2,12 @@
 mod app_state;
 mod clipboard;
 mod database;
+mod http_client;
 pub mod local_dictionary;
 mod logger;
-mod ocr_contracts;
 mod native_ocr;
 mod ocr;
+mod ocr_contracts;
 mod ocr_service;
 pub mod popup_window;
 mod screenshot;
@@ -29,12 +30,11 @@ use database::{
     open_translations_connection, toggle_favorite_in_connection, TranslationRecord,
 };
 use ocr_contracts::{OcrRuntimeConfig, OcrServiceStatus};
-use translation_workflow::AppTranslationWorkflow;
+use parking_lot::RwLock;
 use settings::{
     PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_MODEL_PROFILE,
     DEFAULT_SCREENSHOT_SHORTCUT,
 };
-use parking_lot::RwLock;
 use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem},
@@ -42,6 +42,7 @@ use tauri::{
     Emitter, Manager,
 };
 use tracing::{error, info, warn};
+use translation_workflow::AppTranslationWorkflow;
 
 // ─── Tauri Commands ─────────────────────────────────────────────────────────
 
@@ -56,10 +57,17 @@ fn update_api_config(
     microsoft_translator_key: String,
     microsoft_translator_region: String,
     ocr_endpoint: String,
-    ocr_engine: String,
-    ocr_model_profile: String,
+    mut ocr_engine: String,
+    mut ocr_model_profile: String,
     ocr_preload_on_startup: bool,
 ) -> Result<(), String> {
+    apply_packaged_ocr_runtime(
+        &mut ocr_engine,
+        &mut ocr_model_profile,
+        native_ocr::packaged_runtime_profile(&app),
+        ocr_service::has_packaged_sidecar(&app),
+    );
+
     update_and_persist_api_config(
         &app,
         state.inner(),
@@ -77,32 +85,40 @@ fn update_api_config(
 }
 
 fn ocr_runtime_config_from_state(config: &Arc<RwLock<AppConfig>>) -> OcrRuntimeConfig {
-    let config = config.read();
-    OcrRuntimeConfig {
-        endpoint: config.ocr_endpoint.clone(),
-        engine: config.ocr_engine.clone(),
-        model_profile: config.ocr_model_profile.clone(),
-        preload_on_startup: config.ocr_preload_on_startup,
-    }
+    config.read().ocr_runtime_config()
+}
+
+fn apply_packaged_ocr_runtime(
+    ocr_engine: &mut String,
+    ocr_model_profile: &mut String,
+    native_profile: Option<String>,
+    has_sidecar: bool,
+) -> bool {
+    let (selected_engine, selected_profile) = if let Some(profile) = native_profile {
+        (native_ocr::engine_name(), profile)
+    } else if has_sidecar {
+        ("paddleocr", DEFAULT_OCR_MODEL_PROFILE.to_string())
+    } else {
+        return false;
+    };
+
+    let changed = *ocr_engine != selected_engine || *ocr_model_profile != selected_profile;
+    *ocr_engine = selected_engine.to_string();
+    *ocr_model_profile = selected_profile;
+    changed
 }
 
 fn adapt_ocr_settings_for_packaged_runtime(
     app: &tauri::AppHandle,
     settings: &mut PersistedSettings,
 ) -> bool {
-    let (native_profile, native_model_dir) =
-        native_ocr::model_status(app, DEFAULT_OCR_MODEL_PROFILE);
-    if native_model_dir.is_none() {
-        return false;
-    }
-
-    let changed = settings.ocr_engine != native_ocr::engine_name()
-        || settings.ocr_model_profile != native_profile;
-    settings.ocr_engine = native_ocr::engine_name().to_string();
-    settings.ocr_model_profile = native_profile;
-    changed
+    apply_packaged_ocr_runtime(
+        &mut settings.ocr_engine,
+        &mut settings.ocr_model_profile,
+        native_ocr::packaged_runtime_profile(app),
+        ocr_service::has_packaged_sidecar(app),
+    )
 }
-
 
 #[tauri::command]
 fn update_global_shortcut(
@@ -132,11 +148,9 @@ fn update_global_shortcut(
     let popup_state = app.state::<Arc<RwLock<PopupRuntimeState>>>();
     let popup_state_clone = popup_state.inner().clone();
 
-    if let Err(error) = shortcut_handler::register_shortcut_handler(
-        &app,
-        &new_shortcut,
-        popup_state_clone.clone(),
-    ) {
+    if let Err(error) =
+        shortcut_handler::register_shortcut_handler(&app, &new_shortcut, popup_state_clone.clone())
+    {
         return restore_global_shortcut(
             &app,
             &previous_shortcut,
@@ -324,9 +338,7 @@ async fn translate_text(
     workflow: tauri::State<'_, AppTranslationWorkflow>,
     text: String,
 ) -> Result<TranslationRecord, String> {
-    workflow
-        .translate_text(&text, &mut |_| {}, &|| false)
-        .await
+    workflow.translate_text(&text, &mut |_| {}, &|| false).await
 }
 
 #[tauri::command]
@@ -413,7 +425,6 @@ fn open_main_translate_window(app: tauri::AppHandle) -> Result<(), String> {
     window.set_focus().map_err(|e| e.to_string())
 }
 
-
 #[tauri::command]
 async fn toggle_favorite(app: tauri::AppHandle, id: i64, is_favorite: bool) -> Result<(), String> {
     let connection = open_translations_connection(&app)?;
@@ -433,7 +444,10 @@ async fn load_history(app: tauri::AppHandle) -> Result<Vec<TranslationRecord>, S
 }
 
 #[tauri::command]
-async fn get_translation_by_id(app: tauri::AppHandle, id: i64) -> Result<TranslationRecord, String> {
+async fn get_translation_by_id(
+    app: tauri::AppHandle,
+    id: i64,
+) -> Result<TranslationRecord, String> {
     let connection = open_translations_connection(&app)?;
     get_translation_by_id_in_connection(&connection, id)
 }
@@ -700,4 +714,38 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn full_package_uses_sidecar_without_native_assets() {
+        let mut settings = PersistedSettings::default();
+        settings.ocr_engine = native_ocr::engine_name().to_string();
+
+        assert!(apply_packaged_ocr_runtime(
+            &mut settings.ocr_engine,
+            &mut settings.ocr_model_profile,
+            None,
+            true,
+        ));
+        assert_eq!(settings.ocr_engine, "paddleocr");
+        assert_eq!(settings.ocr_model_profile, DEFAULT_OCR_MODEL_PROFILE);
+    }
+
+    #[test]
+    fn native_package_prefers_native_runtime() {
+        let mut settings = PersistedSettings::default();
+
+        assert!(apply_packaged_ocr_runtime(
+            &mut settings.ocr_engine,
+            &mut settings.ocr_model_profile,
+            Some("tiny".to_string()),
+            true,
+        ));
+        assert_eq!(settings.ocr_engine, native_ocr::engine_name());
+        assert_eq!(settings.ocr_model_profile, "tiny");
+    }
 }

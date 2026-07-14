@@ -88,7 +88,7 @@ function translationRecord(overrides: Partial<TranslationRecord> = {}): Translat
 async function mountPopup() {
   const wrapper = mount(PopupWindow)
   await vi.waitFor(() => {
-    expect(eventMocks.listen).toHaveBeenCalledTimes(4)
+    expect(eventMocks.listen).toHaveBeenCalledTimes(5)
   })
   return wrapper
 }
@@ -128,7 +128,14 @@ describe('PopupWindow runtime contract', () => {
       'translation-started',
       'translation-result',
       'translation-update',
+      'translation-failed',
     ])
+
+    expect(windowMocks.emit).toHaveBeenCalledWith('popup-ready', {})
+    const listenerOrders = eventMocks.listen.mock.invocationCallOrder
+    const lastListenerOrder = listenerOrders[listenerOrders.length - 1]
+    const readyOrder = windowMocks.emit.mock.invocationCallOrder[0]
+    expect(lastListenerOrder).toBeLessThan(readyOrder)
 
     wrapper.unmount()
     for (const eventName of [
@@ -136,6 +143,7 @@ describe('PopupWindow runtime contract', () => {
       'translation-started',
       'translation-result',
       'translation-update',
+      'translation-failed',
     ]) {
       expect(eventMocks.unlisteners[eventName]).toHaveBeenCalledTimes(1)
     }
@@ -159,6 +167,15 @@ describe('PopupWindow runtime contract', () => {
     expect(wrapper.text()).toContain('Hello, world!')
     expect(wrapper.text()).toContain('hi')
     expect(coreMocks.invoke).not.toHaveBeenCalledWith('save_translation', expect.anything())
+  })
+
+  it('renders workflow failures instead of closing silently', async () => {
+    const wrapper = await mountPopup()
+
+    await emitPopupEvent('translation-failed', { message: 'OCR 服务不可用' })
+
+    expect(wrapper.find('.error').text()).toContain('OCR 服务不可用')
+    expect(wrapper.find('.loading').exists()).toBe(false)
   })
 
   it('applies theme changes while the popup is open', async () => {

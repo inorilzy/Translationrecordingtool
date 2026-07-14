@@ -1,18 +1,8 @@
-use crate::{
-    local_dictionary::FreeDictionarySupplement,
-    translation_domain::TranslationContent,
-};
+use crate::{local_dictionary::FreeDictionarySupplement, translation_domain::TranslationContent};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{
-    sync::OnceLock,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info};
-
-pub(crate) const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
-
 
 // 有道翻译 API 响应
 #[derive(Debug, Serialize, Deserialize)]
@@ -76,17 +66,6 @@ pub struct Definition {
     pub antonyms: Option<Vec<String>>,
 }
 
-pub(crate) fn http_client() -> &'static reqwest::Client {
-    static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    HTTP_CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .connect_timeout(HTTP_CONNECT_TIMEOUT)
-            .timeout(HTTP_REQUEST_TIMEOUT)
-            .build()
-            .expect("failed to build HTTP client")
-    })
-}
-
 pub async fn translate_text(
     text: &str,
     app_key: &str,
@@ -125,7 +104,7 @@ pub async fn translate_text(
 
     info!("调用有道翻译 API");
 
-    let response = http_client()
+    let response = crate::http_client::get()
         .post("https://openapi.youdao.com/api")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(form_data)
@@ -190,7 +169,7 @@ pub async fn translate_with_microsoft(
 
     info!("调用微软翻译 API");
 
-    let mut request = http_client()
+    let mut request = crate::http_client::get()
         .post("https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=zh-Hans")
         .header("Content-Type", "application/json")
         .header("Ocp-Apim-Subscription-Key", key)
@@ -247,11 +226,15 @@ pub async fn fetch_free_dictionary_supplement(
 
     debug!("查询 Free Dictionary API: {}", url);
 
-    let response = http_client().get(&url).send().await.map_err(|e| {
-        let err_msg = format!("Free Dictionary API 请求失败: {}", e);
-        error!("{}", err_msg);
-        err_msg
-    })?;
+    let response = crate::http_client::get()
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| {
+            let err_msg = format!("Free Dictionary API 请求失败: {}", e);
+            error!("{}", err_msg);
+            err_msg
+        })?;
 
     if !response.status().is_success() {
         debug!("Free Dictionary API 未找到该单词");

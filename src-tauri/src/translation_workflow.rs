@@ -1,6 +1,5 @@
 use std::{
     future::Future,
-    pin::Pin,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -10,20 +9,15 @@ use tauri::AppHandle;
 
 use crate::{
     app_state::AppConfig,
-    database::{
-        open_translations_connection, save_translation_in_connection, TranslationRecord,
-    },
+    database::{open_translations_connection, save_translation_in_connection, TranslationRecord},
     local_dictionary::{self, FreeDictionarySupplement, OfflineDictionaryEntry},
     ocr_contracts::OcrRuntimeConfig,
     translation_domain::{TranslationConfig, TranslationContent, TranslationResult},
     translation_flow::{
         self, DictionaryGateway, ProviderGateway, ResolutionError, ResolutionStage,
-        TranslationFuture,
     },
     translator,
 };
-
-pub type OcrFuture<'a> = Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>>;
 
 pub trait TranslationRepository: Send + Sync {
     fn save_new(&self, result: &TranslationResult) -> Result<TranslationRecord, String>;
@@ -45,7 +39,7 @@ pub trait OcrGateway: Send + Sync {
         &'a self,
         config: &'a OcrRuntimeConfig,
         image_base64: &'a str,
-    ) -> OcrFuture<'a>;
+    ) -> impl Future<Output = Result<String, String>> + Send + 'a;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,8 +214,8 @@ impl DictionaryGateway for AppDictionaryGateway {
     fn fetch_supplement<'a>(
         &'a self,
         text: &'a str,
-    ) -> TranslationFuture<'a, Option<FreeDictionarySupplement>> {
-        Box::pin(async move { translator::fetch_free_dictionary_supplement(text).await })
+    ) -> impl Future<Output = Result<Option<FreeDictionarySupplement>, String>> + Send + 'a {
+        async move { translator::fetch_free_dictionary_supplement(text).await }
     }
 }
 
@@ -234,8 +228,8 @@ impl ProviderGateway for AppProviderGateway {
         text: &'a str,
         app_key: &'a str,
         app_secret: &'a str,
-    ) -> TranslationFuture<'a, TranslationContent> {
-        Box::pin(async move { translator::translate_text(text, app_key, app_secret).await })
+    ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
+        async move { translator::translate_text(text, app_key, app_secret).await }
     }
 
     fn translate_microsoft<'a>(
@@ -243,8 +237,8 @@ impl ProviderGateway for AppProviderGateway {
         text: &'a str,
         key: &'a str,
         region: &'a str,
-    ) -> TranslationFuture<'a, TranslationContent> {
-        Box::pin(async move { translator::translate_with_microsoft(text, key, region).await })
+    ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
+        async move { translator::translate_with_microsoft(text, key, region).await }
     }
 }
 
@@ -289,13 +283,7 @@ impl RuntimeSettingsSource for ManagedRuntimeSettings {
     }
 
     fn ocr_config(&self) -> OcrRuntimeConfig {
-        let config = self.config.read();
-        OcrRuntimeConfig {
-            endpoint: config.ocr_endpoint.clone(),
-            engine: config.ocr_engine.clone(),
-            model_profile: config.ocr_model_profile.clone(),
-            preload_on_startup: config.ocr_preload_on_startup,
-        }
+        self.config.read().ocr_runtime_config()
     }
 }
 
@@ -309,10 +297,8 @@ impl OcrGateway for AppOcrGateway {
         &'a self,
         config: &'a OcrRuntimeConfig,
         image_base64: &'a str,
-    ) -> OcrFuture<'a> {
-        Box::pin(async move {
-            crate::ocr::recognize_text_with_config(&self.app, config, image_base64).await
-        })
+    ) -> impl Future<Output = Result<String, String>> + Send + 'a {
+        async move { crate::ocr::recognize_text_with_config(&self.app, config, image_base64).await }
     }
 }
 
@@ -348,7 +334,10 @@ fn current_timestamp() -> i64 {
 mod tests {
     use super::*;
     use parking_lot::Mutex;
-    use std::{collections::VecDeque, sync::atomic::{AtomicBool, Ordering}};
+    use std::{
+        collections::VecDeque,
+        sync::atomic::{AtomicBool, Ordering},
+    };
 
     #[derive(Default)]
     struct FakeDictionary {
@@ -365,19 +354,16 @@ mod tests {
         fn fetch_supplement<'a>(
             &'a self,
             _text: &'a str,
-        ) -> TranslationFuture<'a, Option<FreeDictionarySupplement>> {
-            let result = self
-                .supplements
-                .lock()
-                .pop_front()
-                .unwrap_or(Ok(None));
+        ) -> impl Future<Output = Result<Option<FreeDictionarySupplement>, String>> + Send + 'a
+        {
+            let result = self.supplements.lock().pop_front().unwrap_or(Ok(None));
             let cancel = self.cancel_after_fetch.clone();
-            Box::pin(async move {
+            async move {
                 if let Some(cancel) = cancel {
                     cancel.store(true, Ordering::SeqCst);
                 }
                 result
-            })
+            }
         }
     }
 
@@ -394,10 +380,10 @@ mod tests {
             _text: &'a str,
             _app_key: &'a str,
             _app_secret: &'a str,
-        ) -> TranslationFuture<'a, TranslationContent> {
+        ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
             self.calls.lock().push("youdao".to_string());
             let result = self.youdao.lock().pop_front().unwrap();
-            Box::pin(async move { result })
+            async move { result }
         }
 
         fn translate_microsoft<'a>(
@@ -405,10 +391,10 @@ mod tests {
             _text: &'a str,
             _key: &'a str,
             _region: &'a str,
-        ) -> TranslationFuture<'a, TranslationContent> {
+        ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
             self.calls.lock().push("microsoft".to_string());
             let result = self.microsoft.lock().pop_front().unwrap();
-            Box::pin(async move { result })
+            async move { result }
         }
     }
 
@@ -460,9 +446,9 @@ mod tests {
             &'a self,
             _config: &'a OcrRuntimeConfig,
             _image_base64: &'a str,
-        ) -> OcrFuture<'a> {
+        ) -> impl Future<Output = Result<String, String>> + Send + 'a {
             let result = self.result.lock().pop_front().unwrap();
-            Box::pin(async move { result })
+            async move { result }
         }
     }
 
@@ -502,6 +488,8 @@ mod tests {
         FakeSettings {
             translation: RwLock::new(TranslationConfig {
                 provider: provider.to_string(),
+                youdao_app_key: "key".to_string(),
+                youdao_app_secret: "secret".to_string(),
                 ..TranslationConfig::default()
             }),
             ocr: OcrRuntimeConfig {
@@ -539,14 +527,8 @@ mod tests {
             assert_eq!(record.access_count, 1);
             assert_eq!(*workflow.repository.saves.lock(), 1);
             assert_eq!(*workflow.repository.updates.lock(), 1);
-            assert!(matches!(
-                stages[1],
-                WorkflowStage::LocalResultAvailable(_)
-            ));
-            assert!(matches!(
-                stages[2],
-                WorkflowStage::EnrichmentAvailable(_)
-            ));
+            assert!(matches!(stages[1], WorkflowStage::LocalResultAvailable(_)));
+            assert!(matches!(stages[2], WorkflowStage::EnrichmentAvailable(_)));
             assert!(matches!(stages[3], WorkflowStage::Completed(_)));
         });
     }
@@ -609,19 +591,14 @@ mod tests {
             let mut stages = Vec::new();
 
             let error = workflow
-                .translate_text(
-                    "hello",
-                    &mut |stage| stages.push(stage),
-                    &|| cancelled.load(Ordering::SeqCst),
-                )
+                .translate_text("hello", &mut |stage| stages.push(stage), &|| {
+                    cancelled.load(Ordering::SeqCst)
+                })
                 .await
                 .unwrap_err();
 
             assert_eq!(error, "翻译请求已取消");
-            assert!(matches!(
-                stages[1],
-                WorkflowStage::LocalResultAvailable(_)
-            ));
+            assert!(matches!(stages[1], WorkflowStage::LocalResultAvailable(_)));
             assert!(matches!(stages.last(), Some(WorkflowStage::Cancelled)));
             assert_eq!(*workflow.repository.updates.lock(), 0);
         });

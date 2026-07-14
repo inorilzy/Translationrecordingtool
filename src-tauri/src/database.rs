@@ -1,8 +1,8 @@
+use crate::translation_domain::TranslationResult;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs, path::PathBuf};
 use tauri::{AppHandle, Manager};
-use crate::translation_domain::TranslationResult;
 
 const TRANSLATIONS_DB_FILE_NAME: &str = "translations.db";
 
@@ -378,7 +378,9 @@ pub fn toggle_favorite_in_connection(
     Ok(())
 }
 
-pub fn load_favorites_in_connection(connection: &Connection) -> Result<Vec<TranslationRecord>, String> {
+pub fn load_favorites_in_connection(
+    connection: &Connection,
+) -> Result<Vec<TranslationRecord>, String> {
     let mut statement = connection
         .prepare(
             "SELECT id, source_text, translated_text, phonetic, us_phonetic, uk_phonetic, audio_url, explains, examples, synonyms, source_lang, target_lang, word_type, created_at, access_count, is_favorite FROM translations WHERE is_favorite = 1 ORDER BY created_at DESC",
@@ -399,7 +401,9 @@ pub fn load_favorites_in_connection(connection: &Connection) -> Result<Vec<Trans
     Ok(translations)
 }
 
-pub fn load_history_in_connection(connection: &Connection) -> Result<Vec<TranslationRecord>, String> {
+pub fn load_history_in_connection(
+    connection: &Connection,
+) -> Result<Vec<TranslationRecord>, String> {
     let mut statement = connection
         .prepare(
             "SELECT id, source_text, translated_text, phonetic, us_phonetic, uk_phonetic, audio_url, explains, examples, synonyms, source_lang, target_lang, word_type, created_at, access_count, is_favorite FROM translations ORDER BY created_at DESC LIMIT 100",
