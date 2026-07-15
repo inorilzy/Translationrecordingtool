@@ -292,6 +292,26 @@ where
     }
 }
 
+fn read_selection_and_restore_clipboard<R, W>(
+    previous_clipboard: Option<String>,
+    read_selected: R,
+    restore: W,
+) -> Result<String, String>
+where
+    R: FnOnce() -> Result<String, String>,
+    W: FnOnce(&str) -> Result<(), String>,
+{
+    let selected_text = read_selected();
+
+    if let Some(previous_text) = previous_clipboard {
+        if let Err(error) = restore(&previous_text) {
+            warn!("恢复原剪贴板失败: {}", error);
+        }
+    }
+
+    selected_text
+}
+
 fn copy_selection_and_read_clipboard(app: &tauri::AppHandle) -> Result<String, String> {
     let previous_clipboard = crate::clipboard::read_clipboard(app).ok();
     let baseline_clipboard_sequence = crate::clipboard::clipboard_sequence_number();
@@ -304,16 +324,11 @@ fn copy_selection_and_read_clipboard(app: &tauri::AppHandle) -> Result<String, S
     enigo.key(Key::Unicode('c'), enigo::Direction::Click).ok();
     enigo.key(Key::Control, enigo::Direction::Release).ok();
 
-    let selected_text =
-        crate::clipboard::read_clipboard_after_update(app, baseline_clipboard_sequence, 6, 80);
-
-    if let Some(previous_text) = previous_clipboard {
-        if let Err(error) = crate::clipboard::write_clipboard(app, &previous_text) {
-            warn!("恢复原剪贴板失败: {}", error);
-        }
-    }
-
-    selected_text
+    read_selection_and_restore_clipboard(
+        previous_clipboard,
+        || crate::clipboard::read_clipboard_after_update(app, baseline_clipboard_sequence, 6, 80),
+        |text| crate::clipboard::write_clipboard(app, text),
+    )
 }
 
 fn close_if_active(
@@ -372,5 +387,41 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.1, SelectionTextSource::ClipboardFallback);
+    }
+
+    #[test]
+    fn clipboard_fallback_restores_previous_text_after_success() {
+        let restored = std::cell::RefCell::new(None);
+
+        let selected = read_selection_and_restore_clipboard(
+            Some("original".to_string()),
+            || Ok("selected".to_string()),
+            |text| {
+                *restored.borrow_mut() = Some(text.to_string());
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(selected, "selected");
+        assert_eq!(restored.into_inner().as_deref(), Some("original"));
+    }
+
+    #[test]
+    fn clipboard_fallback_restores_previous_text_after_read_failure() {
+        let restored = std::cell::RefCell::new(None);
+
+        let error = read_selection_and_restore_clipboard(
+            Some("original".to_string()),
+            || Err("clipboard did not update".to_string()),
+            |text| {
+                *restored.borrow_mut() = Some(text.to_string());
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "clipboard did not update");
+        assert_eq!(restored.into_inner().as_deref(), Some("original"));
     }
 }

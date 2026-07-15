@@ -78,6 +78,21 @@ impl TranslationRecord {
         }
     }
 
+    pub fn has_same_content_as(&self, result: &TranslationResult) -> bool {
+        self.source_text == result.source_text
+            && self.translated_text == result.translated_text
+            && self.phonetic.as_deref() == result.phonetic.as_deref()
+            && self.us_phonetic.as_deref() == result.us_phonetic.as_deref()
+            && self.uk_phonetic.as_deref() == result.uk_phonetic.as_deref()
+            && self.audio_url.as_deref() == result.audio_url.as_deref()
+            && self.explains.as_deref() == result.explains.as_deref()
+            && self.examples.as_deref() == result.examples.as_deref()
+            && self.synonyms.as_deref() == result.synonyms.as_deref()
+            && self.source_lang == result.source_lang
+            && self.target_lang == result.target_lang
+            && self.word_type.as_deref() == result.word_type.as_deref()
+    }
+
     pub fn to_result(&self) -> TranslationResult {
         TranslationResult {
             source_text: self.source_text.clone(),
@@ -483,6 +498,35 @@ mod tests {
         assert_eq!(record.created_at, 321);
         assert_eq!(record.access_count, 1);
         assert_eq!(record.is_favorite, 0);
+    }
+
+    #[test]
+    fn content_comparison_accepts_equal_translation_content() {
+        let record = sample_translation("same", 100);
+        let result = record.to_result();
+
+        assert!(record.has_same_content_as(&result));
+    }
+
+    #[test]
+    fn content_comparison_detects_changed_translation_content() {
+        let record = sample_translation("changed", 100);
+        let mut result = record.to_result();
+        result.examples = Some(vec!["different example".to_string()]);
+
+        assert!(!record.has_same_content_as(&result));
+    }
+
+    #[test]
+    fn content_comparison_ignores_persistence_metadata() {
+        let mut record = sample_translation("metadata", 100);
+        let result = record.to_result();
+        record.id = Some(42);
+        record.created_at = 999;
+        record.access_count = 17;
+        record.is_favorite = 1;
+
+        assert!(record.has_same_content_as(&result));
     }
 
     #[test]

@@ -20,16 +20,17 @@ mod translation_workflow;
 mod translator;
 
 use app_state::{
-    load_persisted_settings, migrate_legacy_app_data, persist_managed_settings,
-    save_persisted_settings, update_and_persist_api_config, update_and_persist_global_shortcuts,
-    update_and_persist_theme, update_and_persist_tray_behavior, AppConfig, PopupRuntimeState,
+    is_active_screenshot_request, load_persisted_settings, migrate_legacy_app_data,
+    next_screenshot_request_id, persist_managed_settings, save_persisted_settings,
+    update_and_persist_api_config, update_and_persist_global_shortcuts, update_and_persist_theme,
+    update_and_persist_tray_behavior, AppConfig, PopupRuntimeState, ScreenshotRuntimeState,
     TrayBehaviorConfig,
 };
 use database::{
     get_translation_by_id_in_connection, load_favorites_in_connection, load_history_in_connection,
     open_translations_connection, toggle_favorite_in_connection, TranslationRecord,
 };
-use ocr_contracts::{OcrRuntimeConfig, OcrServiceStatus};
+use ocr_contracts::{normalize_engine, OcrRuntimeConfig, OcrServiceStatus};
 use parking_lot::RwLock;
 use settings::{
     PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_MODEL_PROFILE,
@@ -42,9 +43,23 @@ use tauri::{
     Emitter, Manager,
 };
 use tracing::{error, info, warn};
-use translation_workflow::AppTranslationWorkflow;
+use translation_workflow::{AppTranslationWorkflow, WorkflowStage};
 
 // ─── Tauri Commands ─────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenshotSelectionResult {
+    request_id: u64,
+    image_base64: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OcrSourceTextPayload {
+    request_id: u64,
+    text: String,
+}
 
 #[tauri::command]
 fn update_api_config(
@@ -61,12 +76,7 @@ fn update_api_config(
     mut ocr_model_profile: String,
     ocr_preload_on_startup: bool,
 ) -> Result<(), String> {
-    apply_packaged_ocr_runtime(
-        &mut ocr_engine,
-        &mut ocr_model_profile,
-        native_ocr::packaged_runtime_profile(&app),
-        ocr_service::has_packaged_sidecar(&app),
-    );
+    normalize_configured_ocr_runtime(&mut ocr_engine, &mut ocr_model_profile)?;
 
     update_and_persist_api_config(
         &app,
@@ -88,18 +98,79 @@ fn ocr_runtime_config_from_state(config: &Arc<RwLock<AppConfig>>) -> OcrRuntimeC
     config.read().ocr_runtime_config()
 }
 
-fn apply_packaged_ocr_runtime(
+fn normalize_configured_ocr_runtime(
+    ocr_engine: &mut String,
+    ocr_model_profile: &mut String,
+) -> Result<(), String> {
+    let selected_engine = normalize_engine(ocr_engine);
+    let selected_profile = match selected_engine {
+        "rapidocr" => "embedded".to_string(),
+        "paddleocr" | "native_onnx" => {
+            let profile = ocr_model_profile.trim();
+            if profile.is_empty() {
+                DEFAULT_OCR_MODEL_PROFILE.to_string()
+            } else {
+                profile.to_string()
+            }
+        }
+        _ => return Err(format!("不支持的 OCR 引擎: {}", ocr_engine)),
+    };
+
+    *ocr_engine = selected_engine.to_string();
+    *ocr_model_profile = selected_profile;
+    Ok(())
+}
+
+fn apply_new_install_ocr_default(
     ocr_engine: &mut String,
     ocr_model_profile: &mut String,
     native_profile: Option<String>,
+    sidecar_profile: Option<String>,
     has_sidecar: bool,
 ) -> bool {
-    let (selected_engine, selected_profile) = if let Some(profile) = native_profile {
-        (native_ocr::engine_name(), profile)
-    } else if has_sidecar {
-        ("paddleocr", DEFAULT_OCR_MODEL_PROFILE.to_string())
-    } else {
-        return false;
+    let current_profile = ocr_model_profile.trim();
+    let (selected_engine, selected_profile) = match normalize_engine(ocr_engine) {
+        "rapidocr" => ("rapidocr", "embedded".to_string()),
+        "paddleocr" => (
+            "paddleocr",
+            if current_profile.is_empty() {
+                sidecar_profile.as_deref().unwrap_or("official").to_string()
+            } else {
+                current_profile.to_string()
+            },
+        ),
+        "native_onnx" if native_profile.is_some() => (
+            native_ocr::engine_name(),
+            if current_profile.is_empty() {
+                native_profile.as_deref().unwrap().to_string()
+            } else {
+                current_profile.to_string()
+            },
+        ),
+        "native_onnx" if has_sidecar => (
+            "paddleocr",
+            sidecar_profile.as_deref().unwrap_or("official").to_string(),
+        ),
+        "native_onnx" => (
+            native_ocr::engine_name(),
+            if current_profile.is_empty() {
+                DEFAULT_OCR_MODEL_PROFILE.to_string()
+            } else {
+                current_profile.to_string()
+            },
+        ),
+        _ => {
+            if let Some(profile) = native_profile.as_deref() {
+                (native_ocr::engine_name(), profile.to_string())
+            } else if has_sidecar {
+                (
+                    "paddleocr",
+                    sidecar_profile.as_deref().unwrap_or("official").to_string(),
+                )
+            } else {
+                return false;
+            }
+        }
     };
 
     let changed = *ocr_engine != selected_engine || *ocr_model_profile != selected_profile;
@@ -108,14 +179,15 @@ fn apply_packaged_ocr_runtime(
     changed
 }
 
-fn adapt_ocr_settings_for_packaged_runtime(
+fn adapt_new_install_ocr_settings(
     app: &tauri::AppHandle,
     settings: &mut PersistedSettings,
 ) -> bool {
-    apply_packaged_ocr_runtime(
+    apply_new_install_ocr_default(
         &mut settings.ocr_engine,
         &mut settings.ocr_model_profile,
         native_ocr::packaged_runtime_profile(app),
+        ocr_service::packaged_runtime_profile(app),
         ocr_service::has_packaged_sidecar(app),
     )
 }
@@ -343,11 +415,31 @@ async fn translate_text(
 
 #[tauri::command]
 async fn translate_image(
+    app: tauri::AppHandle,
     workflow: tauri::State<'_, AppTranslationWorkflow>,
+    screenshot_state: tauri::State<'_, Arc<RwLock<ScreenshotRuntimeState>>>,
+    request_id: u64,
     image_base64: String,
 ) -> Result<TranslationRecord, String> {
+    let state = screenshot_state.inner();
+    let mut report = |stage| {
+        if !is_active_screenshot_request(state, request_id) {
+            return;
+        }
+
+        if let WorkflowStage::InputAccepted { text } = stage {
+            if let Some(main_window) = app.get_webview_window("main") {
+                let payload = OcrSourceTextPayload { request_id, text };
+                if let Err(error) = main_window.emit("ocr-source-text", payload) {
+                    warn!("回填 OCR 文本失败: {}", error);
+                }
+            }
+        }
+    };
+    let is_cancelled = || !is_active_screenshot_request(state, request_id);
+
     workflow
-        .translate_image(&image_base64, &mut |_| {}, &|| false)
+        .translate_image(&image_base64, &mut report, &is_cancelled)
         .await
 }
 
@@ -388,13 +480,29 @@ async fn restart_ocr_service(
 }
 
 #[tauri::command]
-fn get_ocr_log_path(app: tauri::AppHandle) -> Result<String, String> {
-    ocr::log_path(&app).map(|path| path.display().to_string())
+fn get_ocr_log_path(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
+) -> Result<String, String> {
+    let config = ocr_runtime_config_from_state(state.inner());
+    ocr::log_path(&app, &config).map(|path| path.display().to_string())
 }
 
 #[tauri::command]
-async fn select_screenshot_area(app: tauri::AppHandle) -> Result<String, String> {
-    screenshot::select_and_capture(app).await
+async fn select_screenshot_area(
+    app: tauri::AppHandle,
+    screenshot_state: tauri::State<'_, Arc<RwLock<ScreenshotRuntimeState>>>,
+) -> Result<ScreenshotSelectionResult, String> {
+    let request_id = next_screenshot_request_id(screenshot_state.inner());
+    let image_base64 = screenshot::select_and_capture(app).await?;
+    if !is_active_screenshot_request(screenshot_state.inner(), request_id) {
+        return Err("翻译请求已取消".to_string());
+    }
+
+    Ok(ScreenshotSelectionResult {
+        request_id,
+        image_base64,
+    })
 }
 
 #[tauri::command]
@@ -482,27 +590,27 @@ pub fn run() {
                 }
             }
 
-            // 加载持久化设置
-            let mut persisted_settings = match load_persisted_settings(&app.handle().clone()) {
-                Ok(settings) => settings,
-                Err(error) => {
-                    warn!("加载持久化设置失败，使用默认值: {}", error);
-                    PersistedSettings::default()
-                }
-            };
+            // 仅首次启动按安装包选择默认 OCR 运行时；已保存的显式选择保持不变。
+            let (mut persisted_settings, has_persisted_settings) =
+                match load_persisted_settings(&app.handle().clone()) {
+                    Ok(loaded) => loaded,
+                    Err(error) => {
+                        warn!("加载持久化设置失败，使用默认值: {}", error);
+                        (PersistedSettings::default(), false)
+                    }
+                };
 
-            if adapt_ocr_settings_for_packaged_runtime(
-                &app.handle().clone(),
-                &mut persisted_settings,
-            ) {
+            if !has_persisted_settings
+                && adapt_new_install_ocr_settings(&app.handle().clone(), &mut persisted_settings)
+            {
                 info!(
-                    "已根据当前安装包切换 OCR 运行时: engine={}, profile={}",
+                    "已根据当前安装包选择默认 OCR 运行时: engine={}, profile={}",
                     persisted_settings.ocr_engine, persisted_settings.ocr_model_profile
                 );
                 if let Err(error) =
                     save_persisted_settings(&app.handle().clone(), &persisted_settings)
                 {
-                    warn!("保存 OCR 运行时迁移设置失败: {}", error);
+                    warn!("保存默认 OCR 运行时设置失败: {}", error);
                 }
             }
 
@@ -533,6 +641,9 @@ pub fn run() {
 
             let popup_state = Arc::new(RwLock::new(PopupRuntimeState::default()));
             app.manage(popup_state.clone());
+
+            let screenshot_state = Arc::new(RwLock::new(ScreenshotRuntimeState::default()));
+            app.manage(screenshot_state);
 
             let ocr_service_state = Arc::new(ocr_service::OcrServiceState::default());
             app.manage(ocr_service_state);
@@ -721,31 +832,81 @@ mod tests {
     use super::*;
 
     #[test]
-    fn full_package_uses_sidecar_without_native_assets() {
-        let mut settings = PersistedSettings::default();
-        settings.ocr_engine = native_ocr::engine_name().to_string();
+    fn native_package_selects_native_default() {
+        let mut engine = String::new();
+        let mut profile = String::new();
 
-        assert!(apply_packaged_ocr_runtime(
+        assert!(apply_new_install_ocr_default(
+            &mut engine,
+            &mut profile,
+            Some("small".to_string()),
+            Some("small".to_string()),
+            true,
+        ));
+        assert_eq!(engine, "native_onnx");
+        assert_eq!(profile, "small");
+    }
+
+    #[test]
+    fn lite_package_uses_local_sidecar_models_without_native_assets() {
+        let mut settings = PersistedSettings::default();
+
+        assert!(apply_new_install_ocr_default(
             &mut settings.ocr_engine,
             &mut settings.ocr_model_profile,
+            None,
+            Some("small".to_string()),
+            true,
+        ));
+        assert_eq!(settings.ocr_engine, "paddleocr");
+        assert_eq!(settings.ocr_model_profile, "small");
+    }
+
+    #[test]
+    fn full_package_declares_official_model_download() {
+        let mut settings = PersistedSettings::default();
+
+        assert!(apply_new_install_ocr_default(
+            &mut settings.ocr_engine,
+            &mut settings.ocr_model_profile,
+            None,
             None,
             true,
         ));
         assert_eq!(settings.ocr_engine, "paddleocr");
-        assert_eq!(settings.ocr_model_profile, DEFAULT_OCR_MODEL_PROFILE);
+        assert_eq!(settings.ocr_model_profile, "official");
     }
 
     #[test]
-    fn native_package_prefers_native_runtime() {
-        let mut settings = PersistedSettings::default();
+    fn explicit_paddleocr_configuration_is_preserved() {
+        let mut engine = "paddleocr".to_string();
+        let mut profile = "official".to_string();
 
-        assert!(apply_packaged_ocr_runtime(
-            &mut settings.ocr_engine,
-            &mut settings.ocr_model_profile,
-            Some("tiny".to_string()),
-            true,
-        ));
-        assert_eq!(settings.ocr_engine, native_ocr::engine_name());
-        assert_eq!(settings.ocr_model_profile, "tiny");
+        normalize_configured_ocr_runtime(&mut engine, &mut profile).unwrap();
+
+        assert_eq!(engine, "paddleocr");
+        assert_eq!(profile, "official");
+    }
+
+    #[test]
+    fn explicit_rapidocr_configuration_uses_embedded_models() {
+        let mut engine = "rapidocr".to_string();
+        let mut profile = "tiny".to_string();
+
+        normalize_configured_ocr_runtime(&mut engine, &mut profile).unwrap();
+
+        assert_eq!(engine, "rapidocr");
+        assert_eq!(profile, "embedded");
+    }
+
+    #[test]
+    fn explicit_native_configuration_is_preserved_without_native_assets() {
+        let mut engine = "native_onnx".to_string();
+        let mut profile = "small".to_string();
+
+        normalize_configured_ocr_runtime(&mut engine, &mut profile).unwrap();
+
+        assert_eq!(engine, "native_onnx");
+        assert_eq!(profile, "small");
     }
 }

@@ -9,10 +9,11 @@ use tauri::Manager;
 use crate::{
     ocr_contracts::OcrRuntimeConfig,
     settings::{
-        load_settings, save_settings, PersistedSettings, DEFAULT_GLOBAL_SHORTCUT,
-        DEFAULT_OCR_ENDPOINT, DEFAULT_OCR_ENGINE, DEFAULT_OCR_MODEL_PROFILE,
-        DEFAULT_SCREENSHOT_SHORTCUT, DEFAULT_THEME,
+        load_settings, save_settings, settings_file_exists, PersistedSettings,
+        DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_ENDPOINT, DEFAULT_OCR_ENGINE,
+        DEFAULT_OCR_MODEL_PROFILE, DEFAULT_SCREENSHOT_SHORTCUT, DEFAULT_THEME,
     },
+    translation_domain::TranslationConfig,
 };
 
 // ─── Runtime State ───────────────────────────────────────────────────────────
@@ -62,6 +63,16 @@ impl AppConfig {
             preload_on_startup: self.ocr_preload_on_startup,
         }
     }
+
+    pub fn translation_runtime_config(&self) -> TranslationConfig {
+        TranslationConfig {
+            provider: self.translation_provider.clone(),
+            youdao_app_key: self.api_key.clone(),
+            youdao_app_secret: self.api_secret.clone(),
+            microsoft_key: self.microsoft_translator_key.clone(),
+            microsoft_region: self.microsoft_translator_region.clone(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -83,6 +94,11 @@ pub struct PopupRuntimeState {
     pub active_request_id: u64,
 }
 
+#[derive(Default)]
+pub struct ScreenshotRuntimeState {
+    pub active_request_id: u64,
+}
+
 // ─── Popup State Helpers ─────────────────────────────────────────────────────
 
 pub fn next_popup_request_id(state: &Arc<RwLock<PopupRuntimeState>>) -> u64 {
@@ -101,6 +117,21 @@ pub fn is_popup_ready(state: &Arc<RwLock<PopupRuntimeState>>) -> bool {
 
 pub fn mark_popup_ready(state: &Arc<RwLock<PopupRuntimeState>>, ready: bool) {
     state.write().ready = ready;
+}
+
+// ─── Screenshot State Helpers ────────────────────────────────────────────────
+
+pub fn next_screenshot_request_id(state: &Arc<RwLock<ScreenshotRuntimeState>>) -> u64 {
+    let mut screenshot_state = state.write();
+    screenshot_state.active_request_id += 1;
+    screenshot_state.active_request_id
+}
+
+pub fn is_active_screenshot_request(
+    state: &Arc<RwLock<ScreenshotRuntimeState>>,
+    request_id: u64,
+) -> bool {
+    state.read().active_request_id == request_id
 }
 
 // ─── Settings Persistence ────────────────────────────────────────────────────
@@ -126,9 +157,12 @@ pub fn to_persisted_settings(
     }
 }
 
-pub fn load_persisted_settings(app: &tauri::AppHandle) -> Result<PersistedSettings, String> {
+pub fn load_persisted_settings(
+    app: &tauri::AppHandle,
+) -> Result<(PersistedSettings, bool), String> {
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    load_settings(&config_dir)
+    let has_persisted_settings = settings_file_exists(&config_dir);
+    load_settings(&config_dir).map(|settings| (settings, has_persisted_settings))
 }
 
 pub fn save_persisted_settings(

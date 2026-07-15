@@ -106,8 +106,11 @@ pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceSta
     }
 }
 
-pub fn log_path(app: &AppHandle) -> Result<PathBuf, String> {
-    ocr_service::log_path(app)
+pub fn log_path(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<PathBuf, String> {
+    match adapter_kind(&config.engine) {
+        OcrAdapterKind::Native => Err("原生 ONNX OCR 不使用 sidecar 日志文件".to_string()),
+        OcrAdapterKind::CompatibilitySidecar => ocr_service::log_path(app, &config.engine),
+    }
 }
 
 fn native_status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus {

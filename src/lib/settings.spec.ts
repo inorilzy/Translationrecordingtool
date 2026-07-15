@@ -32,7 +32,7 @@ describe('normalizeSettings', () => {
     expect(result.enableTray).toBe(defaultSettings.enableTray)
   })
 
-  it('preserves valid non-OCR values and fixes OCR runtime', () => {
+  it('preserves explicit OCR runtime values', () => {
     const partial = {
       apiKey: 'test-key',
       apiSecret: 'test-secret',
@@ -40,8 +40,8 @@ describe('normalizeSettings', () => {
       microsoftTranslatorKey: 'ms-key',
       microsoftTranslatorRegion: 'eastasia',
       ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-      ocrEngine: 'paddleocr',
-      ocrModelProfile: 'medium',
+      ocrEngine: 'rapidocr',
+      ocrModelProfile: 'embedded',
       ocrPreloadOnStartup: false,
       globalShortcut: 'Ctrl+Shift+Q',
       screenshotShortcut: 'Ctrl+Shift+S',
@@ -49,11 +49,7 @@ describe('normalizeSettings', () => {
       theme: 'dark',
     }
     const result = normalizeSettings(partial)
-    expect(result).toEqual({
-      ...partial,
-      ocrEngine: defaultSettings.ocrEngine,
-      ocrModelProfile: defaultSettings.ocrModelProfile,
-    })
+    expect(result).toEqual(partial)
   })
 
   it('handles empty string api credentials as valid', () => {

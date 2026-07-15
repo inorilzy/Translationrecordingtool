@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { useTranslationStore } from './translation'
+import { useTranslationStore, type Translation } from './translation'
 import { useSettingsStore } from './settings'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -48,6 +48,16 @@ function createTranslationRecord({
     access_count: 0,
     is_favorite: isFavorite,
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
 }
 
 describe('useTranslationStore', () => {
@@ -139,10 +149,13 @@ describe('useTranslationStore', () => {
   })
 
   describe('translateScreenshot', () => {
-    it('sends only the selected image and uses the backend-persisted record', async () => {
+    it('sends the selected request and uses the backend-persisted record', async () => {
       const persisted = createTranslationRecord({ id: 3, sourceText: 'screen text' })
       invokeMock
-        .mockResolvedValueOnce('data:image/png;base64,fake-image')
+        .mockResolvedValueOnce({
+          requestId: 7,
+          imageBase64: 'data:image/png;base64,fake-image',
+        })
         .mockResolvedValueOnce(persisted)
 
       const settings = useSettingsStore()
@@ -154,6 +167,7 @@ describe('useTranslationStore', () => {
 
       expect(invokeMock).toHaveBeenNthCalledWith(1, 'select_screenshot_area')
       expect(invokeMock).toHaveBeenNthCalledWith(2, 'translate_image', {
+        requestId: 7,
         imageBase64: 'data:image/png;base64,fake-image',
       })
       expect(invokeMock).toHaveBeenCalledTimes(2)
@@ -162,6 +176,84 @@ describe('useTranslationStore', () => {
       expect(store.manualInputText).toBe('screen text')
       expect(store.loading).toBe(false)
       expect(store.error).toBe('')
+    })
+    it('keeps recognized text when provider translation fails', async () => {
+      const providerResult = deferred<Translation>()
+      invokeMock
+        .mockResolvedValueOnce({ requestId: 8, imageBase64: 'image-8' })
+        .mockImplementationOnce(() => providerResult.promise)
+
+      const store = useTranslationStore()
+      const request = store.translateScreenshot()
+      await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2))
+
+      store.acceptOcrSourceText({ requestId: 8, text: 'recognized text' })
+      providerResult.reject(new Error('provider unavailable'))
+      await request
+
+      expect(store.manualInputText).toBe('recognized text')
+      expect(store.currentTranslation).toBeNull()
+      expect(store.error).toBe('截图 OCR 翻译失败: provider unavailable')
+      expect(store.loading).toBe(false)
+    })
+
+    it('lets only the latest screenshot request update visible state', async () => {
+      const olderResult = deferred<Translation>()
+      const latestResult = deferred<Translation>()
+      const olderRecord = createTranslationRecord({ id: 31, sourceText: 'older text' })
+      const latestRecord = createTranslationRecord({ id: 32, sourceText: 'latest text' })
+      invokeMock
+        .mockResolvedValueOnce({ requestId: 31, imageBase64: 'image-31' })
+        .mockImplementationOnce(() => olderResult.promise)
+        .mockResolvedValueOnce({ requestId: 32, imageBase64: 'image-32' })
+        .mockImplementationOnce(() => latestResult.promise)
+
+      const store = useTranslationStore()
+      const olderRequest = store.translateScreenshot()
+      await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2))
+      const latestRequest = store.translateScreenshot()
+      await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(4))
+
+      store.acceptOcrSourceText({ requestId: 31, text: 'stale OCR text' })
+      expect(store.manualInputText).toBe('')
+      store.acceptOcrSourceText({ requestId: 32, text: 'latest OCR text' })
+      expect(store.manualInputText).toBe('latest OCR text')
+
+      latestResult.resolve(latestRecord)
+      await latestRequest
+      olderResult.resolve(olderRecord)
+      await olderRequest
+
+      expect(store.currentTranslation).toEqual(latestRecord)
+      expect(store.history).toEqual([latestRecord])
+      expect(store.manualInputText).toBe('latest text')
+      expect(store.error).toBe('')
+      expect(store.loading).toBe(false)
+    })
+
+    it('invalidates older updates when the latest selection is cancelled', async () => {
+      const olderResult = deferred<Translation>()
+      const olderRecord = createTranslationRecord({ id: 41, sourceText: 'older text' })
+      invokeMock
+        .mockResolvedValueOnce({ requestId: 41, imageBase64: 'image-41' })
+        .mockImplementationOnce(() => olderResult.promise)
+        .mockRejectedValueOnce(new Error('已取消截图选择'))
+
+      const store = useTranslationStore()
+      const olderRequest = store.translateScreenshot()
+      await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2))
+      const cancelledRequest = store.translateScreenshot()
+      await cancelledRequest
+
+      store.acceptOcrSourceText({ requestId: 41, text: 'stale OCR text' })
+      olderResult.resolve(olderRecord)
+      await olderRequest
+
+      expect(store.currentTranslation).toBeNull()
+      expect(store.history).toEqual([])
+      expect(store.manualInputText).toBe('')
+      expect(store.error).toBe('截图 OCR 翻译失败: 已取消截图选择')
+      expect(store.loading).toBe(false)
     })
 
     it('shows a readable error when the user cancels native screen selection', async () => {
@@ -178,7 +270,7 @@ describe('useTranslationStore', () => {
 
     it('does not make another request when OCR translation rejects', async () => {
       invokeMock
-        .mockResolvedValueOnce('data:image/png;base64,fake-image')
+        .mockResolvedValueOnce({ requestId: 51, imageBase64: 'fake-image' })
         .mockRejectedValueOnce(new Error('OCR 未识别到文本'))
 
       const store = useTranslationStore()

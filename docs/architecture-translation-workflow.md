@@ -111,15 +111,17 @@ The workflow persists the first usable result before publishing it. Later enrich
 - `ocr_service` owns the compatibility sidecar process and HTTP protocol.
 - Native OCR modules do not import the sidecar implementation.
 
-Packaging profiles:
+Packaging profiles and model sources:
 
-- `tauri.ocr-native.conf.json`: small PP-OCRv6 models plus `onnxruntime.dll`.
-- `tauri.ocr-lite.conf.json`: small PP-OCRv6 models, sidecar executable, and Python server resource.
-- `tauri.ocr-sidecar.conf.json`: sidecar executable for the compatibility profile.
+- `tauri.ocr-native.conf.json`: selects `native_onnx` with packaged `small` PP-OCRv6 models and `onnxruntime.dll`.
+- `tauri.ocr-lite.conf.json`: selects the PaddleOCR sidecar with packaged `small` models; RapidOCR remains an explicit sidecar choice and uses its embedded models.
+- `tauri.ocr-sidecar.conf.json`: selects PaddleOCR with the explicit `official` profile, which permits and verifies official model download; RapidOCR remains an explicit sidecar choice and uses its embedded models.
+
+Persisted `ocrEngine` and `ocrModelProfile` values take precedence over package defaults. Discovering a sidecar never changes the configured engine. Missing packaged models, missing sidecar binaries, and unavailable official downloads fail before recognition with the selected engine and model source in the error or status.
 
 ## Popup ownership
 
-`PopupWindow.vue` is the only owner of translation and theme event subscriptions for the popup. `popup-window-controls.ts` owns only window mechanics: ready signaling, Escape/close, drag, and cleanup. Rust owns request freshness through `PopupRuntimeState`; stale requests cannot publish later stages.
+`PopupWindow.vue` is the only owner of translation and theme event subscriptions for the popup. `popup-window-controls.ts` owns only window mechanics: ready signaling, Escape/close, drag, and cleanup. Ready signaling happens after all listeners are registered and propagates failures; the popup renders a terminal error when the backend cannot be notified. Rust flushes deferred stages only after receiving `popup-ready`. Rust also owns request freshness through `PopupRuntimeState`; stale requests cannot publish later stages.
 
 ## Change rules
 

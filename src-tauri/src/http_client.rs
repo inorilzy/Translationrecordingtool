@@ -11,6 +11,6 @@ static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .expect("failed to build HTTP client")
 });
 
-pub(crate) fn get() -> &'static reqwest::Client {
+pub(crate) fn shared_client() -> &'static reqwest::Client {
     &CLIENT
 }

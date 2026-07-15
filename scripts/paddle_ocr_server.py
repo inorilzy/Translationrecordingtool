@@ -116,6 +116,7 @@ class OcrServer(BaseHTTPRequestHandler):
                 "device": getattr(self.server, "ocr_device", None),
                 "modelProfile": getattr(self.server, "ocr_model_profile", None),
                 "modelDir": getattr(self.server, "ocr_model_dir", None),
+                "modelSource": getattr(self.server, "ocr_model_source", None),
             })
             return
         self.send_error(404, "Not found")
@@ -181,11 +182,10 @@ class OcrServer(BaseHTTPRequestHandler):
 
 
 def build_ocr(args: argparse.Namespace) -> Any:
-    configure_frozen_import_paths()
-
     if args.engine == "rapidocr":
         return build_rapid_ocr()
 
+    configure_frozen_import_paths()
     return build_paddle_ocr(args)
 
 
@@ -199,11 +199,23 @@ def build_paddle_ocr(args: argparse.Namespace) -> Any:
         ) from exc
 
     init_params = inspect.signature(PaddleOCR.__init__).parameters
-    model_dir = Path(args.model_dir).resolve() if args.model_dir else None
-    use_local_models = bool(model_dir and model_dir.exists())
-    kwargs: dict[str, Any] = {} if use_local_models else {"lang": args.lang}
     profile = normalize_model_profile(args.model_profile)
-
+    model_dir = Path(args.model_dir).resolve() if args.model_dir else None
+    if model_dir and not model_dir.exists():
+        raise SystemExit(f"指定的 PaddleOCR 本地模型目录不存在: {model_dir}")
+    if profile == "official":
+        if model_dir is not None:
+            raise SystemExit("PaddleOCR official 配置不接受 --model-dir；请移除本地模型目录参数。")
+        if not args.allow_official_model_download:
+            raise SystemExit(
+                "PaddleOCR official 配置必须显式传入 --allow-official-model-download。"
+            )
+    elif model_dir is None:
+        raise SystemExit(
+            f"PaddleOCR {profile} 配置缺少本地模型目录。请传入 --model-dir。"
+        )
+    use_local_models = model_dir is not None
+    kwargs: dict[str, Any] = {} if use_local_models else {"lang": args.lang}
     has_var_kwargs = accepts_var_kwargs(init_params)
 
     if "device" in init_params or has_var_kwargs:
@@ -230,11 +242,12 @@ def build_paddle_ocr(args: argparse.Namespace) -> Any:
         if key in init_params:
             kwargs[key] = False
 
-    det_model_name, rec_model_name = PPOCRV6_MODEL_NAMES[profile]
-    if "text_detection_model_name" in init_params:
-        kwargs["text_detection_model_name"] = det_model_name
-    if "text_recognition_model_name" in init_params:
-        kwargs["text_recognition_model_name"] = rec_model_name
+    if profile != "official":
+        det_model_name, rec_model_name = PPOCRV6_MODEL_NAMES[profile]
+        if "text_detection_model_name" in init_params:
+            kwargs["text_detection_model_name"] = det_model_name
+        if "text_recognition_model_name" in init_params:
+            kwargs["text_recognition_model_name"] = rec_model_name
 
     if model_dir and model_dir.exists():
         model_candidates = {
@@ -259,7 +272,7 @@ def accepts_var_kwargs(params: dict[str, inspect.Parameter]) -> bool:
 def normalize_model_profile(profile: str) -> str:
     value = (profile or "small").strip().lower()
     value = LEGACY_PROFILE_MAP.get(value, value)
-    return value if value in PPOCRV6_MODEL_NAMES else "small"
+    return value if value == "official" or value in PPOCRV6_MODEL_NAMES else "small"
 
 
 def build_rapid_ocr() -> Any:
@@ -282,19 +295,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--model-profile", default="small")
     parser.add_argument("--model-dir", default="")
+    parser.add_argument("--allow-official-model-download", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    print(f"initializing {args.engine} OCR runtime...", flush=True)
     OcrServer.ocr = build_ocr(args)
     server = ThreadingHTTPServer((args.host, args.port), OcrServer)
     server.ocr_engine = args.engine
     server.ocr_lang = args.lang
     server.ocr_device = args.device
-    server.ocr_model_profile = args.model_profile
+    server.ocr_model_profile = "embedded" if args.engine == "rapidocr" else args.model_profile
     server.ocr_model_dir = args.model_dir
-    print(f"{args.engine} HTTP server listening on http://{args.host}:{args.port}/ocr")
+    server.ocr_model_source = (
+        "embedded" if args.engine == "rapidocr"
+        else "local" if args.model_dir
+        else "official-download"
+    )
+    print(
+        f"{args.engine} HTTP server listening on http://{args.host}:{args.port}/ocr "
+        f"(model source: {server.ocr_model_source})",
+        flush=True,
+    )
     server.serve_forever()
 
 

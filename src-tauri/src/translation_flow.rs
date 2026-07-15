@@ -93,15 +93,7 @@ where
     );
 
     if is_word {
-        let mut local_error = None;
-        let local_entry = match lookup_local(dictionary, text) {
-            Ok(entry) => entry,
-            Err(error) => {
-                warn!("本地词典查询失败，继续在线回退: {}", error);
-                local_error = Some(error);
-                None
-            }
-        };
+        let local_entry = lookup_local(dictionary, text).map_err(ResolutionError::Failed)?;
 
         if let Some(entry) = local_entry {
             let local_result = TranslationResult::from_content(
@@ -161,13 +153,8 @@ where
                 )?;
                 return Ok(result);
             }
-            Ok(None) => local_error.unwrap_or_else(|| format!("未找到单词 \"{}\" 的释义", text)),
-            Err(error) => match local_error {
-                Some(local_error) => {
-                    format!("{}；Free Dictionary 查询失败: {}", local_error, error)
-                }
-                None => format!("查询单词失败: {}", error),
-            },
+            Ok(None) => format!("未找到单词 \"{}\" 的释义", text),
+            Err(error) => format!("查询单词失败: {}", error),
         };
 
         return resolve_remote(
@@ -526,36 +513,30 @@ mod tests {
     }
 
     #[test]
-    fn local_lookup_error_still_uses_remote_provider() {
+    fn local_lookup_error_stops_before_online_collaborators() {
         tauri::async_runtime::block_on(async {
             let dictionary = FakeDictionary {
                 local: None,
                 local_error: Some("local database unavailable".to_string()),
                 supplements: Mutex::new(VecDeque::from([Ok(None)])),
             };
-            let providers = FakeProviders {
-                microsoft: Mutex::new(VecDeque::from([Ok(remote_content("你好"))])),
-                ..FakeProviders::default()
-            };
-            let config = TranslationConfig {
-                provider: "microsoft".to_string(),
-                microsoft_key: "key".to_string(),
-                ..TranslationConfig::default()
-            };
+            let providers = FakeProviders::default();
 
-            let result = resolve_translation(
+            let error = resolve_translation(
                 &dictionary,
                 &providers,
-                &config,
+                &TranslationConfig::default(),
                 "hello",
                 |_| Ok(()),
                 || false,
             )
             .await
-            .unwrap();
+            .unwrap_err()
+            .into_message();
 
-            assert_eq!(result.translated_text, "你好");
-            assert_eq!(providers.calls.lock().as_slice(), ["microsoft"]);
+            assert_eq!(error, "local database unavailable");
+            assert_eq!(dictionary.supplements.lock().len(), 1);
+            assert!(providers.calls.lock().is_empty());
         });
     }
 

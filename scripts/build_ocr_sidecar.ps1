@@ -1,6 +1,7 @@
 param(
     [string]$PythonVersion = "3.11",
     [string]$PaddleOcrVersion = "3.7.0",
+    [string]$RapidOcrVersion = "1.4.4",
     [string]$OnnxRuntimeVersion = "1.27.0"
 )
 
@@ -39,7 +40,7 @@ if (-not (Test-Path $python)) {
 }
 
 Write-Host "[ocr-sidecar] Installing dependencies..."
-uv pip install --python $python "paddleocr==$PaddleOcrVersion" "onnxruntime==$OnnxRuntimeVersion" "numpy<2" "pyinstaller>=6,<7"
+uv pip install --python $python "paddleocr==$PaddleOcrVersion" "rapidocr-onnxruntime==$RapidOcrVersion" "onnxruntime==$OnnxRuntimeVersion" "numpy<2" "pyinstaller>=6,<7"
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to install OCR sidecar dependencies"
 }
@@ -88,6 +89,7 @@ Write-Host "[ocr-sidecar] Building executable..."
     --additional-hooks-dir $hookDir `
     --paths $paddleOcrPackageDir `
     --collect-all paddleocr `
+    --collect-all rapidocr_onnxruntime `
     --collect-all paddlex `
     --collect-submodules onnxruntime.capi `
     --collect-binaries onnxruntime `
@@ -100,9 +102,11 @@ Write-Host "[ocr-sidecar] Building executable..."
     --copy-metadata pyclipper `
     --copy-metadata opencv-contrib-python `
     --copy-metadata paddleocr `
+    --copy-metadata rapidocr-onnxruntime `
     --copy-metadata paddlex `
     --copy-metadata onnxruntime `
     --hidden-import paddleocr `
+    --hidden-import rapidocr_onnxruntime `
     --hidden-import paddlex `
     --hidden-import onnxruntime `
     --hidden-import pyclipper `

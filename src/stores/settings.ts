@@ -91,8 +91,8 @@ export const useSettingsStore = defineStore('settings', () => {
         microsoftTranslatorKey: settings.microsoftTranslatorKey,
         microsoftTranslatorRegion: settings.microsoftTranslatorRegion,
         ocrEndpoint: settings.ocrEndpoint,
-        ocrEngine: defaultSettings.ocrEngine,
-        ocrModelProfile: defaultSettings.ocrModelProfile,
+        ocrEngine: settings.ocrEngine,
+        ocrModelProfile: settings.ocrModelProfile,
         ocrPreloadOnStartup: settings.ocrPreloadOnStartup,
       })
       apiKey.value = settings.apiKey
@@ -101,8 +101,8 @@ export const useSettingsStore = defineStore('settings', () => {
       microsoftTranslatorKey.value = settings.microsoftTranslatorKey
       microsoftTranslatorRegion.value = settings.microsoftTranslatorRegion
       ocrEndpoint.value = settings.ocrEndpoint
-      ocrEngine.value = defaultSettings.ocrEngine
-      ocrModelProfile.value = defaultSettings.ocrModelProfile
+      ocrEngine.value = settings.ocrEngine
+      ocrModelProfile.value = settings.ocrModelProfile
       ocrPreloadOnStartup.value = settings.ocrPreloadOnStartup
     } catch (e) {
       error.value = `更新配置失败: ${e}`

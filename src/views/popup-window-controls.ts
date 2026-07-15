@@ -25,11 +25,7 @@ export function createPopupControls(): PopupControls {
   }
 
   async function signalReady() {
-    try {
-      await appWindow.emit('popup-ready', {})
-    } catch (error) {
-      console.error('Failed to emit popup-ready:', error)
-    }
+    await appWindow.emit('popup-ready', {})
   }
 
   function handleKeyDown(event: KeyboardEvent) {

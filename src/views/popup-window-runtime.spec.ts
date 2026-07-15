@@ -103,6 +103,7 @@ async function emitPopupEvent(eventName: string, payload: unknown) {
 describe('PopupWindow runtime contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    windowMocks.emit.mockResolvedValue(undefined)
     for (const key of Object.keys(eventMocks.handlers)) {
       delete eventMocks.handlers[key]
     }
@@ -147,6 +148,18 @@ describe('PopupWindow runtime contract', () => {
     ]) {
       expect(eventMocks.unlisteners[eventName]).toHaveBeenCalledTimes(1)
     }
+  })
+
+  it('renders a terminal error when popup-ready signaling fails', async () => {
+    windowMocks.emit.mockRejectedValueOnce(new Error('IPC unavailable'))
+
+    const wrapper = await mountPopup()
+    await vi.waitFor(() => {
+      expect(wrapper.find('.error').text()).toContain('弹窗无法通知后端已就绪')
+    })
+
+    expect(wrapper.find('.loading').exists()).toBe(false)
+    expect(eventMocks.listen).toHaveBeenCalledTimes(5)
   })
 
   it('renders loading, initial result, and enrichment as one popup state', async () => {

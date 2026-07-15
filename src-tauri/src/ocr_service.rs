@@ -30,7 +30,9 @@ pub struct OcrServiceState {
 }
 
 pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
-    if let Ok(message) = check_service_engine(&config.endpoint, &config.engine).await {
+    if let Ok(message) =
+        check_service_config(&config.endpoint, &config.engine, &config.model_profile).await
+    {
         clear_last_error(app);
         return Ok(message);
     }
@@ -42,7 +44,14 @@ pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Resul
         return Err(error);
     }
 
-    match wait_until_healthy(&config.endpoint, &config.engine, Duration::from_secs(90)).await {
+    match wait_until_healthy(
+        &config.endpoint,
+        &config.engine,
+        &config.model_profile,
+        Duration::from_secs(90),
+    )
+    .await
+    {
         Ok(message) => {
             clear_last_error(app);
             Ok(message)
@@ -66,51 +75,66 @@ pub async fn restart(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Strin
 }
 
 pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus {
-    let (model_profile, model_dir) = packaged_model_config(app, &config.model_profile);
+    let engine = normalize_engine(&config.engine);
+    let (model_profile, model_dir) = sidecar_model_status(app, config);
     let sidecar_path = packaged_sidecar_path(app);
-    let log_path = log_path(app).ok();
-    match check_service_engine(&config.endpoint, &config.engine).await {
-        Ok(message) => OcrServiceStatus {
-            running: true,
-            endpoint: config.endpoint.clone(),
-            message,
-            last_error: None,
-            engine: config.engine.clone(),
-            model_profile: model_profile.clone(),
-            model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
-            sidecar_path: sidecar_path.as_ref().map(|path| path.display().to_string()),
-            log_path: log_path.as_ref().map(|path| path.display().to_string()),
-            preload_on_startup: config.preload_on_startup,
-            rapidocr_version: RAPID_OCR_VERSION,
-            paddleocr_version: PADDLE_OCR_VERSION,
-            ppocr_version: PPOCR_VERSION,
-            onnxruntime_version: SIDECAR_ONNXRUNTIME_VERSION,
-            lang: OCR_LANG,
-            device: OCR_DEVICE,
-        },
-        Err(error) => OcrServiceStatus {
-            running: false,
-            endpoint: config.endpoint.clone(),
-            message: "OCR 服务未运行".to_string(),
-            last_error: last_error(app).or(Some(error)),
-            engine: config.engine.clone(),
-            model_profile: model_profile.clone(),
-            model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
-            sidecar_path: sidecar_path.as_ref().map(|path| path.display().to_string()),
-            log_path: log_path.as_ref().map(|path| path.display().to_string()),
-            preload_on_startup: config.preload_on_startup,
-            rapidocr_version: RAPID_OCR_VERSION,
-            paddleocr_version: PADDLE_OCR_VERSION,
-            ppocr_version: PPOCR_VERSION,
-            onnxruntime_version: SIDECAR_ONNXRUNTIME_VERSION,
-            lang: OCR_LANG,
-            device: OCR_DEVICE,
-        },
+    let log_path = log_path(app, engine).ok();
+    let (rapidocr_version, paddleocr_version, onnxruntime_version) = engine_versions(engine);
+    let (running, message, last_error) =
+        match check_service_config(&config.endpoint, engine, &model_profile).await {
+            Ok(message) => (true, message, None),
+            Err(error) => (
+                false,
+                "OCR 服务未运行".to_string(),
+                last_error(app).or(Some(error)),
+            ),
+        };
+
+    OcrServiceStatus {
+        running,
+        endpoint: config.endpoint.clone(),
+        message,
+        last_error,
+        engine: engine.to_string(),
+        model_profile,
+        model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
+        sidecar_path: sidecar_path.as_ref().map(|path| path.display().to_string()),
+        log_path: log_path.as_ref().map(|path| path.display().to_string()),
+        preload_on_startup: config.preload_on_startup,
+        rapidocr_version,
+        paddleocr_version,
+        ppocr_version: PPOCR_VERSION,
+        onnxruntime_version,
+        lang: OCR_LANG,
+        device: OCR_DEVICE,
+    }
+}
+
+fn engine_versions(engine: &str) -> (&'static str, &'static str, &'static str) {
+    match normalize_engine(engine) {
+        "rapidocr" => (RAPID_OCR_VERSION, "-", SIDECAR_ONNXRUNTIME_VERSION),
+        _ => ("-", PADDLE_OCR_VERSION, SIDECAR_ONNXRUNTIME_VERSION),
+    }
+}
+
+fn sidecar_model_status(app: &AppHandle, config: &OcrRuntimeConfig) -> (String, Option<PathBuf>) {
+    match normalize_engine(&config.engine) {
+        "rapidocr" => ("embedded".to_string(), None),
+        _ => {
+            let profile = normalize_model_profile(&config.model_profile);
+            let model_dir = if profile == "official" {
+                None
+            } else {
+                packaged_model_dir(app, &profile)
+            };
+            (profile, model_dir)
+        }
     }
 }
 
 fn start_process_if_needed(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<(), String> {
-    if !matches!(config.engine.as_str(), "paddleocr" | "rapidocr") {
+    let engine = normalize_engine(&config.engine);
+    if !matches!(engine, "paddleocr" | "rapidocr") {
         return Err(format!(
             "暂不支持 OCR 引擎 {}，当前可用引擎为 paddleocr、rapidocr",
             config.engine
@@ -141,7 +165,7 @@ fn start_process_if_needed(app: &AppHandle, config: &OcrRuntimeConfig) -> Result
     }
 
     let mut command = build_command(app, config)?;
-    configure_logs(app, &mut command)?;
+    configure_logs(app, engine, &mut command)?;
 
     #[cfg(windows)]
     {
@@ -184,18 +208,24 @@ fn build_command(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Command, 
         .map_err(|error| format!("OCR HTTP 地址无效: {}", error))?;
     let host = url.host_str().unwrap_or(OCR_HOST).to_string();
     let port = url.port().unwrap_or(8866).to_string();
-    let (model_profile, model_dir) = packaged_model_config(app, &config.model_profile);
+    let engine = normalize_engine(&config.engine);
+    let (model_profile, model_dir, allow_official_model_download) =
+        resolve_sidecar_model_config(app, engine, &config.model_profile)?;
+    let mut resolved_config = config.clone();
+    resolved_config.engine = engine.to_string();
+    resolved_config.model_profile = model_profile.clone();
 
     if cfg!(debug_assertions) {
         let mut command = npm_command();
-        command.args(["run", ocr_server_script_name(&config.engine)]);
+        command.args(["run", ocr_server_script_name(engine)]);
         command.arg("--");
         command.args(ocr_server_args(
             &host,
             &port,
-            config,
+            &resolved_config,
             &model_profile,
             model_dir.as_ref(),
+            allow_official_model_download,
         ));
         if let Some(workspace_root) = workspace_root_from_current_dir() {
             command.current_dir(workspace_root);
@@ -208,9 +238,10 @@ fn build_command(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Command, 
         command.args(ocr_server_args(
             &host,
             &port,
-            config,
+            &resolved_config,
             &model_profile,
             model_dir.as_ref(),
+            allow_official_model_download,
         ));
         return Ok(command);
     }
@@ -229,9 +260,9 @@ fn build_command(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Command, 
         "--python",
         "3.11",
         "--with",
-        ocr_engine_runtime_requirement(&config.engine),
+        ocr_engine_runtime_requirement(engine),
         "--with",
-        ocr_engine_core_requirement(&config.engine),
+        ocr_engine_core_requirement(engine),
         "--with",
         "numpy<2",
         "python",
@@ -240,9 +271,10 @@ fn build_command(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<Command, 
     command.args(ocr_server_args(
         &host,
         &port,
-        config,
+        &resolved_config,
         &model_profile,
         model_dir.as_ref(),
+        allow_official_model_download,
     ));
     Ok(command)
 }
@@ -253,6 +285,7 @@ fn ocr_server_args(
     config: &OcrRuntimeConfig,
     model_profile: &str,
     model_dir: Option<&PathBuf>,
+    allow_official_model_download: bool,
 ) -> Vec<String> {
     let mut args = vec![
         "--host".to_string(),
@@ -273,40 +306,52 @@ fn ocr_server_args(
         args.push("--model-dir".to_string());
         args.push(model_dir.display().to_string());
     }
+    if allow_official_model_download {
+        args.push("--allow-official-model-download".to_string());
+    }
 
     args
 }
 
 fn ocr_server_script_name(engine: &str) -> &'static str {
-    match engine {
+    match normalize_engine(engine) {
         "rapidocr" => "ocr:server:rapid",
         _ => "ocr:server:paddle",
     }
 }
 
 fn ocr_engine_runtime_requirement(engine: &str) -> &'static str {
-    match engine {
+    match normalize_engine(engine) {
         "rapidocr" => "rapidocr-onnxruntime==1.4.4",
         _ => "paddleocr==3.7.0",
     }
 }
 
-fn ocr_engine_core_requirement(engine: &str) -> &'static str {
-    match engine {
-        "rapidocr" => "onnxruntime==1.16.3",
-        _ => "onnxruntime==1.27.0",
-    }
+fn ocr_engine_core_requirement(_engine: &str) -> &'static str {
+    "onnxruntime==1.27.0"
 }
 
-fn packaged_model_config(app: &AppHandle, model_profile: &str) -> (String, Option<PathBuf>) {
-    let requested_profile = normalize_model_profile(model_profile);
-    if let Some(model_dir) = packaged_model_dir(app, &requested_profile) {
-        return (requested_profile, Some(model_dir));
+fn resolve_sidecar_model_config(
+    app: &AppHandle,
+    engine: &str,
+    model_profile: &str,
+) -> Result<(String, Option<PathBuf>, bool), String> {
+    if normalize_engine(engine) == "rapidocr" {
+        return Ok(("embedded".to_string(), None, false));
     }
 
-    let fallback_profile = DEFAULT_PACKAGED_MODEL_PROFILE.to_string();
-    let fallback_dir = packaged_model_dir(app, &fallback_profile);
-    (fallback_profile, fallback_dir)
+    let profile = normalize_model_profile(model_profile);
+    if profile == "official" {
+        return Ok((profile, None, true));
+    }
+
+    let model_dir = packaged_model_dir(app, &profile).ok_or_else(|| {
+        format!(
+            "未找到 PaddleOCR profile={} 的本地模型。请先运行 npm run ocr:models:win -- -Profile {}，或显式选择 official 配置允许下载官方模型",
+            profile, profile
+        )
+    })?;
+    Ok((profile, Some(model_dir), false))
 }
 
 const DEFAULT_PACKAGED_MODEL_PROFILE: &str = "small";
@@ -347,9 +392,11 @@ fn packaged_model_dir(app: &AppHandle, model_profile: &str) -> Option<PathBuf> {
 }
 
 fn normalize_model_profile(model_profile: &str) -> String {
-    match model_profile.trim() {
+    match model_profile.trim().to_ascii_lowercase().as_str() {
         "tiny" | "lite" => "tiny".to_string(),
         "medium" | "accurate" => "medium".to_string(),
+        "official" | "download" => "official".to_string(),
+        "embedded" | "bundled" => "embedded".to_string(),
         _ => "small".to_string(),
     }
 }
@@ -366,6 +413,11 @@ fn model_dir_has_files(path: &PathBuf) -> bool {
                 entries.any(|entry| entry.map(|item| item.path().is_file()).unwrap_or(false))
             })
             .unwrap_or(false)
+}
+
+pub fn packaged_runtime_profile(app: &AppHandle) -> Option<String> {
+    packaged_model_dir(app, DEFAULT_PACKAGED_MODEL_PROFILE)
+        .map(|_| DEFAULT_PACKAGED_MODEL_PROFILE.to_string())
 }
 
 pub fn has_packaged_sidecar(app: &AppHandle) -> bool {
@@ -512,8 +564,8 @@ fn packaged_script_path(app: &AppHandle) -> Result<PathBuf, String> {
         })
 }
 
-fn configure_logs(app: &AppHandle, command: &mut Command) -> Result<(), String> {
-    let log_path = log_path(app)?;
+fn configure_logs(app: &AppHandle, engine: &str, command: &mut Command) -> Result<(), String> {
+    let log_path = log_path(app, engine)?;
     let Some(log_dir) = log_path.parent() else {
         return Err("无法获取 OCR 日志目录".to_string());
     };
@@ -531,24 +583,32 @@ fn configure_logs(app: &AppHandle, command: &mut Command) -> Result<(), String> 
     Ok(())
 }
 
-pub fn log_path(app: &AppHandle) -> Result<PathBuf, String> {
+pub fn log_path(app: &AppHandle, engine: &str) -> Result<PathBuf, String> {
     let log_dir = app
         .path()
         .app_log_dir()
         .map_err(|error| format!("无法获取日志目录: {}", error))?;
-    Ok(log_dir.join("paddle-ocr-service.log"))
+    Ok(log_dir.join(log_file_name(engine)))
+}
+
+fn log_file_name(engine: &str) -> &'static str {
+    match normalize_engine(engine) {
+        "rapidocr" => "rapidocr-service.log",
+        _ => "paddleocr-service.log",
+    }
 }
 
 async fn wait_until_healthy(
     endpoint: &str,
     engine: &str,
+    model_profile: &str,
     timeout: Duration,
 ) -> Result<String, String> {
     let started = std::time::Instant::now();
     let mut last_error = None;
 
     while started.elapsed() < timeout {
-        match check_service_engine(endpoint, engine).await {
+        match check_service_config(endpoint, engine, model_profile).await {
             Ok(message) => return Ok(message),
             Err(error) => last_error = Some(error),
         }
@@ -600,7 +660,7 @@ pub async fn recognize_text(endpoint: &str, image_base64: &str) -> Result<String
         .map(|(_, data)| data)
         .unwrap_or(image_base64);
 
-    let response = crate::http_client::get()
+    let response = crate::http_client::shared_client()
         .post(endpoint)
         .header("Content-Type", "application/json")
         .json(&OcrRequest { image: payload })
@@ -621,16 +681,13 @@ pub async fn recognize_text(endpoint: &str, image_base64: &str) -> Result<String
     extract_text(&value).ok_or_else(|| "OCR 未返回可识别文本".to_string())
 }
 
-pub async fn check_service_engine(endpoint: &str, expected_engine: &str) -> Result<String, String> {
+pub async fn check_service_config(
+    endpoint: &str,
+    expected_engine: &str,
+    expected_model_profile: &str,
+) -> Result<String, String> {
     let health = check_service_health(endpoint).await?;
-    let actual_engine = health.engine.unwrap_or_else(|| "unknown".to_string());
-    if normalize_engine(&actual_engine) != normalize_engine(expected_engine) {
-        return Err(format!(
-            "OCR 服务引擎不匹配：当前为 {}，设置中选择的是 {}",
-            engine_label(&actual_engine),
-            engine_label(expected_engine)
-        ));
-    }
+    validate_health_config(&health, expected_engine, expected_model_profile)?;
 
     Ok(format!(
         "{} 服务正常: {}",
@@ -638,10 +695,61 @@ pub async fn check_service_engine(endpoint: &str, expected_engine: &str) -> Resu
         health_url_from_endpoint(endpoint)?
     ))
 }
+
+fn validate_health_config(
+    health: &OcrHealthStatus,
+    expected_engine: &str,
+    expected_model_profile: &str,
+) -> Result<(), String> {
+    let actual_engine = health.engine.as_deref().unwrap_or("unknown");
+    let expected_engine = normalize_engine(expected_engine);
+    if normalize_engine(actual_engine) != expected_engine {
+        return Err(format!(
+            "OCR 服务引擎不匹配：当前为 {}，设置中选择的是 {}",
+            engine_label(actual_engine),
+            engine_label(expected_engine)
+        ));
+    }
+
+    let expected_profile = if expected_engine == "rapidocr" {
+        "embedded".to_string()
+    } else {
+        normalize_model_profile(expected_model_profile)
+    };
+    let actual_profile = health
+        .model_profile
+        .as_deref()
+        .unwrap_or("unknown")
+        .trim()
+        .to_ascii_lowercase();
+    if actual_profile != expected_profile {
+        return Err(format!(
+            "OCR 服务 profile 不匹配：当前为 {}，设置中选择的是 {}",
+            actual_profile, expected_profile
+        ));
+    }
+
+    let expected_source = if expected_engine == "rapidocr" {
+        "embedded"
+    } else if expected_profile == "official" {
+        "official-download"
+    } else {
+        "local"
+    };
+    let actual_source = health.model_source.as_deref().unwrap_or("unknown");
+    if actual_source != expected_source {
+        return Err(format!(
+            "OCR 服务 model source 不匹配：当前为 {}，期望 {}",
+            actual_source, expected_source
+        ));
+    }
+
+    Ok(())
+}
 pub async fn check_service_health(endpoint: &str) -> Result<OcrHealthStatus, String> {
     validate_endpoint(endpoint)?;
     let health_url = health_url_from_endpoint(endpoint)?;
-    let response = crate::http_client::get()
+    let response = crate::http_client::shared_client()
         .get(&health_url)
         .send()
         .await
@@ -659,7 +767,7 @@ pub async fn check_service_health(endpoint: &str) -> Result<OcrHealthStatus, Str
 pub async fn warmup_service(endpoint: &str) -> Result<String, String> {
     validate_endpoint(endpoint)?;
     let warmup_url = sibling_url_from_endpoint(endpoint, "/warmup")?;
-    let response = crate::http_client::get()
+    let response = crate::http_client::shared_client()
         .post(&warmup_url)
         .send()
         .await
@@ -845,26 +953,84 @@ mod tests {
         );
         assert_eq!(
             ocr_engine_core_requirement("rapidocr"),
-            "onnxruntime==1.16.3"
+            "onnxruntime==1.27.0"
         );
     }
 
     #[test]
-    fn builds_server_args_with_engine_and_model_profile() {
+    fn rejects_running_sidecar_with_stale_model_profile() {
+        let health = OcrHealthStatus {
+            ok: true,
+            engine: Some("paddleocr".to_string()),
+            lang: Some("ch".to_string()),
+            device: Some("cpu".to_string()),
+            model_profile: Some("small".to_string()),
+            model_dir: Some("C:/models/small".to_string()),
+            model_source: Some("local".to_string()),
+        };
+
+        let error = validate_health_config(&health, "paddleocr", "official").unwrap_err();
+
+        assert!(error.contains("profile"));
+        assert!(error.contains("official"));
+    }
+
+    #[test]
+    fn rejects_running_sidecar_with_unverified_model_source() {
+        let health = OcrHealthStatus {
+            ok: true,
+            engine: Some("paddleocr".to_string()),
+            lang: Some("ch".to_string()),
+            device: Some("cpu".to_string()),
+            model_profile: Some("official".to_string()),
+            model_dir: None,
+            model_source: None,
+        };
+
+        let error = validate_health_config(&health, "paddleocr", "official").unwrap_err();
+
+        assert!(error.contains("model source"));
+        assert!(error.contains("official-download"));
+    }
+
+    #[test]
+    fn builds_rapidocr_args_with_embedded_models() {
         let config = OcrRuntimeConfig {
             endpoint: "http://127.0.0.1:8867/ocr".to_string(),
             engine: "rapidocr".to_string(),
-            model_profile: "tiny".to_string(),
+            model_profile: "embedded".to_string(),
             preload_on_startup: true,
         };
 
-        let args = ocr_server_args("127.0.0.1", "8867", &config, "tiny", None);
+        let args = ocr_server_args("127.0.0.1", "8867", &config, "embedded", None, false);
 
         assert!(args.windows(2).any(|pair| pair == ["--engine", "rapidocr"]));
         assert!(args
             .windows(2)
-            .any(|pair| pair == ["--model-profile", "tiny"]));
+            .any(|pair| pair == ["--model-profile", "embedded"]));
         assert!(args.windows(2).any(|pair| pair == ["--port", "8867"]));
+        assert!(!args.contains(&"--allow-official-model-download".to_string()));
+    }
+
+    #[test]
+    fn paddle_official_profile_explicitly_allows_download() {
+        let config = OcrRuntimeConfig {
+            endpoint: "http://127.0.0.1:8866/ocr".to_string(),
+            engine: "paddleocr".to_string(),
+            model_profile: "official".to_string(),
+            preload_on_startup: true,
+        };
+
+        let args = ocr_server_args("127.0.0.1", "8866", &config, "official", None, true);
+
+        assert!(args.contains(&"--allow-official-model-download".to_string()));
+        assert!(!args.contains(&"--model-dir".to_string()));
+    }
+
+    #[test]
+    fn uses_engine_specific_log_file_names() {
+        assert_eq!(log_file_name("paddleocr"), "paddleocr-service.log");
+        assert_eq!(log_file_name("rapidocr"), "rapidocr-service.log");
     }
 
     #[test]

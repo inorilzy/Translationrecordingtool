@@ -54,6 +54,10 @@ fn settings_file_path(config_dir: &Path) -> PathBuf {
     config_dir.join(SETTINGS_FILE_NAME)
 }
 
+pub fn settings_file_exists(config_dir: &Path) -> bool {
+    settings_file_path(config_dir).is_file()
+}
+
 pub fn load_settings(config_dir: &Path) -> Result<PersistedSettings, String> {
     let settings_path = settings_file_path(config_dir);
     if !settings_path.exists() {
@@ -130,6 +134,8 @@ mod tests {
     fn load_returns_defaults_when_file_is_missing() {
         let temp_dir = TempDirGuard::new("translation-tool-settings-defaults");
 
+        assert!(!settings_file_exists(temp_dir.path()));
+
         let settings = load_settings(temp_dir.path()).unwrap();
 
         assert_eq!(settings, PersistedSettings::default());
@@ -155,6 +161,7 @@ mod tests {
         };
 
         save_settings(temp_dir.path(), &settings).unwrap();
+        assert!(settings_file_exists(temp_dir.path()));
         let loaded = load_settings(temp_dir.path()).unwrap();
 
         assert_eq!(loaded, settings);

@@ -29,9 +29,15 @@ pub trait TranslationRepository: Send + Sync {
     ) -> Result<TranslationRecord, String>;
 }
 
+#[derive(Clone)]
+pub struct ScreenshotRequestSettings {
+    pub translation: TranslationConfig,
+    pub ocr: OcrRuntimeConfig,
+}
+
 pub trait RuntimeSettingsSource: Send + Sync {
     fn translation_config(&self) -> TranslationConfig;
-    fn ocr_config(&self) -> OcrRuntimeConfig;
+    fn screenshot_settings(&self) -> ScreenshotRequestSettings;
 }
 
 pub trait OcrGateway: Send + Sync {
@@ -91,12 +97,27 @@ where
         C: Fn() -> bool,
     {
         let config = self.settings.translation_config();
+        self.translate_text_with_config(text, &config, report, is_cancelled)
+            .await
+    }
+
+    async fn translate_text_with_config<F, C>(
+        &self,
+        text: &str,
+        config: &TranslationConfig,
+        report: &mut F,
+        is_cancelled: &C,
+    ) -> Result<TranslationRecord, String>
+    where
+        F: FnMut(WorkflowStage),
+        C: Fn() -> bool,
+    {
         let mut persisted: Option<TranslationRecord> = None;
 
         let result = translation_flow::resolve_translation(
             &self.dictionary,
             &self.providers,
-            &config,
+            config,
             text,
             |stage| {
                 match stage {
@@ -121,7 +142,9 @@ where
                     }
                     ResolutionStage::Completed(result) => {
                         let record = match persisted.as_ref() {
-                            Some(existing) if existing.to_result() == result => existing.clone(),
+                            Some(existing) if existing.has_same_content_as(&result) => {
+                                existing.clone()
+                            }
                             Some(existing) => self.repository.update(existing, &result)?,
                             None => self.repository.save_new(&result)?,
                         };
@@ -171,9 +194,9 @@ where
             return Err(ResolutionError::Cancelled.into_message());
         }
 
+        let settings = self.settings.screenshot_settings();
         report(WorkflowStage::OcrInProgress);
-        let config = self.settings.ocr_config();
-        let recognized = match self.ocr.recognize(&config, image_base64).await {
+        let recognized = match self.ocr.recognize(&settings.ocr, image_base64).await {
             Ok(text) => text,
             Err(message) => {
                 report(WorkflowStage::Failed {
@@ -197,7 +220,8 @@ where
             return Err(message);
         }
 
-        self.translate_text(recognized, report, is_cancelled).await
+        self.translate_text_with_config(recognized, &settings.translation, report, is_cancelled)
+            .await
     }
 }
 
@@ -272,18 +296,15 @@ pub struct ManagedRuntimeSettings {
 
 impl RuntimeSettingsSource for ManagedRuntimeSettings {
     fn translation_config(&self) -> TranslationConfig {
-        let config = self.config.read();
-        TranslationConfig {
-            provider: config.translation_provider.clone(),
-            youdao_app_key: config.api_key.clone(),
-            youdao_app_secret: config.api_secret.clone(),
-            microsoft_key: config.microsoft_translator_key.clone(),
-            microsoft_region: config.microsoft_translator_region.clone(),
-        }
+        self.config.read().translation_runtime_config()
     }
 
-    fn ocr_config(&self) -> OcrRuntimeConfig {
-        self.config.read().ocr_runtime_config()
+    fn screenshot_settings(&self) -> ScreenshotRequestSettings {
+        let config = self.config.read();
+        ScreenshotRequestSettings {
+            translation: config.translation_runtime_config(),
+            ocr: config.ocr_runtime_config(),
+        }
     }
 }
 
@@ -432,8 +453,11 @@ mod tests {
             self.translation.read().clone()
         }
 
-        fn ocr_config(&self) -> OcrRuntimeConfig {
-            self.ocr.clone()
+        fn screenshot_settings(&self) -> ScreenshotRequestSettings {
+            ScreenshotRequestSettings {
+                translation: self.translation.read().clone(),
+                ocr: self.ocr.clone(),
+            }
         }
     }
 
@@ -450,6 +474,86 @@ mod tests {
             let result = self.result.lock().pop_front().unwrap();
             async move { result }
         }
+    }
+
+    struct SharedSettings {
+        translation: Arc<RwLock<TranslationConfig>>,
+        ocr: OcrRuntimeConfig,
+    }
+
+    impl RuntimeSettingsSource for SharedSettings {
+        fn translation_config(&self) -> TranslationConfig {
+            self.translation.read().clone()
+        }
+
+        fn screenshot_settings(&self) -> ScreenshotRequestSettings {
+            ScreenshotRequestSettings {
+                translation: self.translation.read().clone(),
+                ocr: self.ocr.clone(),
+            }
+        }
+    }
+
+    struct SettingsMutatingOcr {
+        translation: Arc<RwLock<TranslationConfig>>,
+        result: String,
+    }
+
+    impl OcrGateway for SettingsMutatingOcr {
+        fn recognize<'a>(
+            &'a self,
+            _config: &'a OcrRuntimeConfig,
+            _image_base64: &'a str,
+        ) -> impl Future<Output = Result<String, String>> + Send + 'a {
+            self.translation.write().provider = "microsoft".to_string();
+            let result = self.result.clone();
+            async move { Ok(result) }
+        }
+    }
+    #[test]
+    fn image_translation_uses_one_settings_snapshot() {
+        tauri::async_runtime::block_on(async {
+            let translation = Arc::new(RwLock::new(TranslationConfig {
+                provider: "youdao".to_string(),
+                youdao_app_key: "key".to_string(),
+                youdao_app_secret: "secret".to_string(),
+                microsoft_key: "key".to_string(),
+                ..TranslationConfig::default()
+            }));
+            let workflow = TranslationWorkflow::new(
+                FakeDictionary {
+                    local: None,
+                    supplements: Mutex::new(VecDeque::from([Ok(None)])),
+                    cancel_after_fetch: None,
+                },
+                FakeProviders {
+                    youdao: Mutex::new(VecDeque::from([Ok(content("有道"))])),
+                    microsoft: Mutex::new(VecDeque::from([Ok(content("微软"))])),
+                    ..FakeProviders::default()
+                },
+                FakeRepository::default(),
+                SharedSettings {
+                    translation: translation.clone(),
+                    ocr: OcrRuntimeConfig {
+                        endpoint: "http://127.0.0.1:8866/ocr".to_string(),
+                        engine: "native_onnx".to_string(),
+                        model_profile: "small".to_string(),
+                        preload_on_startup: true,
+                    },
+                },
+                SettingsMutatingOcr {
+                    translation,
+                    result: "screenshot text".to_string(),
+                },
+            );
+
+            workflow
+                .translate_image("image", &mut |_| {}, &|| false)
+                .await
+                .unwrap();
+
+            assert_eq!(workflow.providers.calls.lock().as_slice(), ["youdao"]);
+        });
     }
 
     fn local_entry() -> OfflineDictionaryEntry {
@@ -530,6 +634,33 @@ mod tests {
             assert!(matches!(stages[1], WorkflowStage::LocalResultAvailable(_)));
             assert!(matches!(stages[2], WorkflowStage::EnrichmentAvailable(_)));
             assert!(matches!(stages[3], WorkflowStage::Completed(_)));
+        });
+    }
+
+    #[test]
+    fn equal_local_and_completed_results_do_not_update_persistence() {
+        tauri::async_runtime::block_on(async {
+            let workflow = TranslationWorkflow::new(
+                FakeDictionary {
+                    local: Some(local_entry()),
+                    supplements: Mutex::new(VecDeque::from([Ok(None)])),
+                    cancel_after_fetch: None,
+                },
+                FakeProviders::default(),
+                FakeRepository::default(),
+                settings("youdao"),
+                FakeOcr {
+                    result: Mutex::new(VecDeque::new()),
+                },
+            );
+
+            workflow
+                .translate_text("hello", &mut |_| {}, &|| false)
+                .await
+                .unwrap();
+
+            assert_eq!(*workflow.repository.saves.lock(), 1);
+            assert_eq!(*workflow.repository.updates.lock(), 0);
         });
     }
 
@@ -642,10 +773,54 @@ mod tests {
     }
 
     #[test]
+    fn provider_failure_keeps_ocr_backfill_stage() {
+        tauri::async_runtime::block_on(async {
+            let workflow = TranslationWorkflow::new(
+                FakeDictionary {
+                    local: None,
+                    supplements: Mutex::new(VecDeque::from([Ok(None)])),
+                    cancel_after_fetch: None,
+                },
+                FakeProviders {
+                    youdao: Mutex::new(VecDeque::from([Err("provider unavailable".to_string())])),
+                    ..FakeProviders::default()
+                },
+                FakeRepository::default(),
+                settings("youdao"),
+                FakeOcr {
+                    result: Mutex::new(VecDeque::from([Ok("  recognized text  ".to_string())])),
+                },
+            );
+            let mut stages = Vec::new();
+
+            let error = workflow
+                .translate_image("image", &mut |stage| stages.push(stage), &|| false)
+                .await
+                .unwrap_err();
+
+            assert_eq!(error, "provider unavailable");
+            assert_eq!(
+                stages[1],
+                WorkflowStage::InputAccepted {
+                    text: "recognized text".to_string()
+                }
+            );
+            assert!(matches!(
+                stages.last(),
+                Some(WorkflowStage::Failed { message }) if message == "provider unavailable"
+            ));
+        });
+    }
+
+    #[test]
     fn empty_ocr_output_fails_before_dictionary_or_provider_work() {
         tauri::async_runtime::block_on(async {
             let workflow = TranslationWorkflow::new(
-                FakeDictionary::default(),
+                FakeDictionary {
+                    local: None,
+                    supplements: Mutex::new(VecDeque::from([Ok(None)])),
+                    cancel_after_fetch: None,
+                },
                 FakeProviders::default(),
                 FakeRepository::default(),
                 settings("youdao"),
@@ -662,6 +837,8 @@ mod tests {
 
             assert_eq!(error, "OCR 未识别到文本");
             assert_eq!(*workflow.repository.saves.lock(), 0);
+            assert_eq!(workflow.dictionary.supplements.lock().len(), 1);
+            assert!(workflow.providers.calls.lock().is_empty());
             assert!(matches!(
                 stages.last(),
                 Some(WorkflowStage::Failed { message }) if message == "OCR 未识别到文本"

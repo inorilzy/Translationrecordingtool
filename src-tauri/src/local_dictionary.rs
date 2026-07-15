@@ -59,10 +59,17 @@ pub fn ensure_runtime_dictionary(app: &AppHandle) -> Result<Option<PathBuf>, Str
     Ok(None)
 }
 
+fn require_runtime_dictionary(path: Option<PathBuf>) -> Result<PathBuf, String> {
+    path.ok_or_else(|| {
+        format!(
+            "本地词典不可用：未找到 {}，请重新安装包含词典资源的应用",
+            DICTIONARY_FILE_NAME
+        )
+    })
+}
+
 pub fn lookup_word(app: &AppHandle, word: &str) -> Result<Option<OfflineDictionaryEntry>, String> {
-    let Some(runtime_path) = ensure_runtime_dictionary(app)? else {
-        return Ok(None);
-    };
+    let runtime_path = require_runtime_dictionary(ensure_runtime_dictionary(app)?)?;
 
     let connection =
         Connection::open(runtime_path).map_err(|e| format!("打开本地词典失败: {}", e))?;
@@ -321,4 +328,17 @@ fn push_unique(items: &mut Vec<String>, value: String) {
     }
 
     items.push(normalized.to_string());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_dictionary_path_is_an_explicit_failure() {
+        let error = require_runtime_dictionary(None).unwrap_err();
+
+        assert!(error.contains("本地词典"));
+        assert!(error.contains("未找到"));
+    }
 }

@@ -104,7 +104,7 @@ pub async fn translate_text(
 
     info!("调用有道翻译 API");
 
-    let response = crate::http_client::get()
+    let response = crate::http_client::shared_client()
         .post("https://openapi.youdao.com/api")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(form_data)
@@ -169,7 +169,7 @@ pub async fn translate_with_microsoft(
 
     info!("调用微软翻译 API");
 
-    let mut request = crate::http_client::get()
+    let mut request = crate::http_client::shared_client()
         .post("https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=zh-Hans")
         .header("Content-Type", "application/json")
         .header("Ocp-Apim-Subscription-Key", key)
@@ -226,7 +226,7 @@ pub async fn fetch_free_dictionary_supplement(
 
     debug!("查询 Free Dictionary API: {}", url);
 
-    let response = crate::http_client::get()
+    let response = crate::http_client::shared_client()
         .get(&url)
         .send()
         .await

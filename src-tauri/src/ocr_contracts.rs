@@ -45,6 +45,7 @@ pub struct OcrHealthStatus {
     pub device: Option<String>,
     pub model_profile: Option<String>,
     pub model_dir: Option<String>,
+    pub model_source: Option<String>,
 }
 
 pub fn is_native_engine(engine: &str) -> bool {

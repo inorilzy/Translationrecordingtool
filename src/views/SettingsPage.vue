@@ -20,8 +20,6 @@ import {
 } from '@lucide/vue'
 import { useSettingsStore, type OcrServiceStatus } from '../stores/settings'
 
-const FIXED_OCR_ENGINE = 'native_onnx'
-const FIXED_OCR_MODEL_PROFILE = 'small'
 
 const store = useSettingsStore()
 const notify = useMessage()
@@ -55,6 +53,54 @@ const providerOptions: SelectOption[] = [
   { label: '微软翻译', value: 'microsoft' },
   { label: '有道翻译', value: 'youdao' },
 ]
+
+const ocrEngineOptions: SelectOption[] = [
+  { label: '原生 ONNX', value: 'native_onnx' },
+  { label: 'PaddleOCR Sidecar', value: 'paddleocr' },
+  { label: 'RapidOCR Sidecar', value: 'rapidocr' },
+]
+
+const ocrProfilesByEngine: Record<string, SelectOption[]> = {
+  native_onnx: [
+    { label: 'Small（本地打包模型）', value: 'small' },
+    { label: 'Tiny（本地打包模型）', value: 'tiny' },
+    { label: 'Medium（本地打包模型）', value: 'medium' },
+  ],
+  paddleocr: [
+    { label: 'Small（本地打包模型）', value: 'small' },
+    { label: 'Tiny（本地打包模型）', value: 'tiny' },
+    { label: 'Medium（本地打包模型）', value: 'medium' },
+    { label: 'Official（允许下载官方模型）', value: 'official' },
+  ],
+  rapidocr: [
+    { label: 'Embedded（RapidOCR 内置模型）', value: 'embedded' },
+  ],
+}
+
+const ocrModelProfileOptions = computed(() => (
+  ocrProfilesByEngine[config.value.ocrEngine] || ocrProfilesByEngine.native_onnx
+))
+
+const ocrRuntimeName = computed(() => {
+  switch (config.value.ocrEngine) {
+    case 'paddleocr': return 'PaddleOCR Sidecar'
+    case 'rapidocr': return 'RapidOCR Sidecar'
+    default: return '原生 ONNX OCR'
+  }
+})
+
+const ocrRuntimeDescription = computed(() => {
+  switch (config.value.ocrEngine) {
+    case 'paddleocr':
+      return config.value.ocrModelProfile === 'official'
+        ? '独立进程运行；首次启动明确允许下载官方模型。'
+        : '独立进程运行；要求安装包包含所选本地模型。'
+    case 'rapidocr':
+      return '独立进程运行；使用 RapidOCR 包内置模型。'
+    default:
+      return '应用进程内运行；要求安装包包含 ONNX Runtime 与所选本地模型。'
+  }
+})
 
 const themeOptions: SelectOption[] = [
   { label: 'Light - 浅色', value: 'light' },
@@ -103,16 +149,25 @@ const ocrStatusText = computed(() => {
 })
 
 const ocrVersionText = computed(() => {
-  const onnxVersion = ocrStatus.value?.onnxruntimeVersion || '1.20.1'
-  const ppocrVersion = ocrStatus.value?.ppocrVersion || 'PP-OCRv6'
+  const engine = ocrStatus.value?.engine || config.value.ocrEngine
   const device = ocrStatus.value?.device?.toUpperCase() || 'CPU'
-  return `ONNX Runtime ${onnxVersion} / ${ppocrVersion} Small / ${device}`
+  if (engine === 'rapidocr') {
+    return `RapidOCR ${ocrStatus.value?.rapidocrVersion || '1.4.4'} / ONNX Runtime ${ocrStatus.value?.onnxruntimeVersion || '1.27.0'} / ${device}`
+  }
+  if (engine === 'paddleocr') {
+    return `PaddleOCR ${ocrStatus.value?.paddleocrVersion || '3.7.0'} / ONNX Runtime ${ocrStatus.value?.onnxruntimeVersion || '1.27.0'} / ${device}`
+  }
+  return `ONNX Runtime ${ocrStatus.value?.onnxruntimeVersion || '1.20.1'} / ${ocrStatus.value?.ppocrVersion || 'PP-OCRv6'} / ${device}`
 })
 
 const ocrModelText = computed(() => {
+  const engine = ocrStatus.value?.engine || config.value.ocrEngine
+  const profile = ocrStatus.value?.modelProfile || config.value.ocrModelProfile
+  if (engine === 'rapidocr') return '使用 RapidOCR 包内置模型'
+  if (profile === 'official') return '允许 PaddleOCR 下载并验证官方模型'
   return ocrStatus.value?.modelDir
-    ? '使用内置 PP-OCRv6 Small ONNX 模型，无需 Python OCR 服务'
-    : '未检测到内置 PP-OCRv6 Small 模型目录'
+    ? `使用本地 ${profile} 模型`
+    : `未检测到所需的本地 ${profile} 模型目录`
 })
 
 const ocrStatusDetail = computed(() => {
@@ -128,8 +183,8 @@ onMounted(async () => {
   config.value.microsoftTranslatorKey = store.microsoftTranslatorKey
   config.value.microsoftTranslatorRegion = store.microsoftTranslatorRegion
   config.value.ocrEndpoint = store.ocrEndpoint
-  config.value.ocrEngine = FIXED_OCR_ENGINE
-  config.value.ocrModelProfile = FIXED_OCR_MODEL_PROFILE
+  config.value.ocrEngine = store.ocrEngine
+  config.value.ocrModelProfile = store.ocrModelProfile
   config.value.ocrPreloadOnStartup = store.ocrPreloadOnStartup
   config.value.globalShortcut = store.globalShortcut
   config.value.screenshotShortcut = store.screenshotShortcut
@@ -174,12 +229,17 @@ function captureShortcut(event: KeyboardEvent, target: 'global' | 'screenshot') 
   }
 }
 
-async function saveApiConfig() {
-  config.value.ocrEngine = FIXED_OCR_ENGINE
-  config.value.ocrModelProfile = FIXED_OCR_MODEL_PROFILE
+function handleOcrEngineChange(engine: string) {
+  const profiles = ocrProfilesByEngine[engine] || ocrProfilesByEngine.native_onnx
+  if (!profiles.some((option) => option.value === config.value.ocrModelProfile)) {
+    config.value.ocrModelProfile = String(profiles[0].value)
+  }
+  void saveApiConfig()
+}
 
-  const ocrRuntimeChanged = store.ocrEngine !== FIXED_OCR_ENGINE
-    || store.ocrModelProfile !== FIXED_OCR_MODEL_PROFILE
+async function saveApiConfig() {
+  const ocrRuntimeChanged = store.ocrEngine !== config.value.ocrEngine
+    || store.ocrModelProfile !== config.value.ocrModelProfile
     || config.value.ocrPreloadOnStartup !== store.ocrPreloadOnStartup
 
   if (
@@ -204,8 +264,8 @@ async function saveApiConfig() {
       microsoftTranslatorKey: config.value.microsoftTranslatorKey,
       microsoftTranslatorRegion: config.value.microsoftTranslatorRegion,
       ocrEndpoint: config.value.ocrEndpoint,
-      ocrEngine: FIXED_OCR_ENGINE,
-      ocrModelProfile: FIXED_OCR_MODEL_PROFILE,
+      ocrEngine: config.value.ocrEngine,
+      ocrModelProfile: config.value.ocrModelProfile,
       ocrPreloadOnStartup: config.value.ocrPreloadOnStartup,
     })
     notify.success('服务配置已保存')
@@ -473,13 +533,42 @@ async function changeTheme() {
       <n-divider />
 
       <div class="settings-grid ocr-grid">
-        <label class="field-label">OCR 运行时</label>
+        <label class="field-label">OCR 引擎</label>
+        <n-select
+          v-model:value="config.ocrEngine"
+          :options="ocrEngineOptions"
+          @update:value="handleOcrEngineChange"
+        />
+
+        <label class="field-label">模型配置</label>
+        <n-select
+          v-model:value="config.ocrModelProfile"
+          :options="ocrModelProfileOptions"
+          @update:value="saveApiConfig"
+        />
+
+        <template v-if="config.ocrEngine !== 'native_onnx'">
+          <label class="field-label">Sidecar 地址</label>
+          <n-input
+            v-model:value="config.ocrEndpoint"
+            placeholder="http://127.0.0.1:8866/ocr"
+            @blur="saveApiConfig"
+          />
+        </template>
+
+        <label class="field-label">运行时来源</label>
         <div class="ocr-runtime-card">
           <div class="ocr-runtime-main">
-            <n-tag type="success" size="small" round>内置</n-tag>
-            <strong>ONNX Runtime + PP-OCRv6 Small</strong>
+            <n-tag
+              :type="config.ocrEngine === 'native_onnx' ? 'success' : 'info'"
+              size="small"
+              round
+            >
+              {{ config.ocrEngine === 'native_onnx' ? '进程内' : 'Sidecar' }}
+            </n-tag>
+            <strong>{{ ocrRuntimeName }}</strong>
           </div>
-          <p>当前版本固定使用原生 ONNX OCR，不启动 Python/PaddleOCR/RapidOCR 服务。</p>
+          <p>{{ ocrRuntimeDescription }}</p>
         </div>
 
         <label class="field-label">启动时预热 OCR</label>

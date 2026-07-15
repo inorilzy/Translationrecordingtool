@@ -30,6 +30,10 @@ function applyTheme(theme = currentThemeFallback()) {
   applyDocumentTheme(theme)
 }
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
 
 async function applyTranslation(payload: Translation, resetScroll: boolean) {
   currentTranslation.value = { ...payload }
@@ -83,7 +87,14 @@ onMounted(async () => {
     currentTranslation.value = null
   })
 
-  await controls.signalReady()
+  try {
+    await controls.signalReady()
+  } catch (cause) {
+    console.error('弹窗就绪信号发送失败:', cause)
+    loading.value = false
+    currentTranslation.value = null
+    error.value = `弹窗无法通知后端已就绪，请关闭后重试：${errorMessage(cause)}`
+  }
 
   // ESC key listener registered by createPopupControls
 })

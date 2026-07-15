@@ -109,6 +109,13 @@ describe('popup-window-controls: ready / close / ESC / drag contract', () => {
       await controls.signalReady()
       expect(mocks.emit).toHaveBeenCalledWith('popup-ready', {})
     })
+
+    it('propagates popup-ready emission failures', async () => {
+      mocks.emit.mockRejectedValueOnce(new Error('IPC unavailable'))
+      const controls = createPopupControls()
+
+      await expect(controls.signalReady()).rejects.toThrow('IPC unavailable')
+    })
   })
 
   describe('close', () => {

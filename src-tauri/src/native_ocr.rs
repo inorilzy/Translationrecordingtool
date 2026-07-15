@@ -101,8 +101,14 @@ pub fn recognize_text(
 }
 
 pub fn ensure_initialized(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
-    let (profile, model_dir) = packaged_model_config(app, &config.model_profile)
-        .ok_or_else(|| "未找到 PP-OCRv6 ONNX 模型目录".to_string())?;
+    let (profile, model_dir) =
+        packaged_model_config(app, &config.model_profile).ok_or_else(|| {
+            format!(
+            "未找到原生 OCR profile={} 的本地模型。请先运行 npm run ocr:models:win -- -Profile {}",
+            normalize_model_profile(&config.model_profile),
+            normalize_model_profile(&config.model_profile)
+        )
+        })?;
 
     let mut guard = RUNTIME
         .lock()
@@ -119,14 +125,9 @@ pub fn ensure_initialized(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<
 }
 
 pub fn model_status(app: &AppHandle, model_profile: &str) -> (String, Option<PathBuf>) {
-    if let Some((profile, model_dir)) = packaged_model_config(app, model_profile) {
-        return (profile, Some(model_dir));
-    }
-
-    (
-        normalize_model_profile(model_profile),
-        packaged_model_dir(app, DEFAULT_PACKAGED_MODEL_PROFILE),
-    )
+    let profile = normalize_model_profile(model_profile);
+    let model_dir = packaged_model_dir(app, &profile);
+    (profile, model_dir)
 }
 
 pub fn packaged_runtime_profile(app: &AppHandle) -> Option<String> {
@@ -329,13 +330,8 @@ fn top_left(points: &[ppocr_rs::Point]) -> (u32, u32) {
 }
 
 fn packaged_model_config(app: &AppHandle, model_profile: &str) -> Option<(String, PathBuf)> {
-    let requested_profile = normalize_model_profile(model_profile);
-    if let Some(model_dir) = packaged_model_dir(app, &requested_profile) {
-        return Some((requested_profile, model_dir));
-    }
-
-    let fallback_profile = DEFAULT_PACKAGED_MODEL_PROFILE.to_string();
-    packaged_model_dir(app, &fallback_profile).map(|model_dir| (fallback_profile, model_dir))
+    let profile = normalize_model_profile(model_profile);
+    packaged_model_dir(app, &profile).map(|model_dir| (profile, model_dir))
 }
 
 fn packaged_model_dir(app: &AppHandle, model_profile: &str) -> Option<PathBuf> {

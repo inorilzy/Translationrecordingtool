@@ -9,6 +9,16 @@ import {
 
 export type { Translation }
 
+export interface ScreenshotSelection {
+  requestId: number
+  imageBase64: string
+}
+
+export type OcrSourceTextPayload = string | {
+  requestId: number | null
+  text: string
+}
+
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message
@@ -27,9 +37,22 @@ export const useTranslationStore = defineStore('translation', () => {
   const loading = ref(false)
   const error = ref('')
   const manualInputText = ref('')
+  let screenshotOperationId = 0
+  let activeScreenshotRequestId: number | null = null
 
   function setManualInputText(text: string) {
     manualInputText.value = text
+  }
+
+  function acceptOcrSourceText(payload: OcrSourceTextPayload) {
+    if (typeof payload === 'string') {
+      manualInputText.value = payload
+      return
+    }
+
+    if (payload.requestId === null || payload.requestId === activeScreenshotRequestId) {
+      manualInputText.value = payload.text
+    }
   }
 
   async function loadHistory() {
@@ -112,21 +135,43 @@ export const useTranslationStore = defineStore('translation', () => {
   }
 
   async function translateScreenshot() {
+    const operationId = ++screenshotOperationId
+    activeScreenshotRequestId = null
     loading.value = true
     error.value = ''
 
     try {
-      const imageBase64 = await invoke<string>('select_screenshot_area')
-      const persisted = await invoke<Translation>('translate_image', { imageBase64 })
+      const selection = await invoke<ScreenshotSelection>('select_screenshot_area')
+      if (operationId !== screenshotOperationId) {
+        return null
+      }
+
+      activeScreenshotRequestId = selection.requestId
+      const persisted = await invoke<Translation>('translate_image', {
+        requestId: selection.requestId,
+        imageBase64: selection.imageBase64,
+      })
+      if (
+        operationId !== screenshotOperationId
+        || activeScreenshotRequestId !== selection.requestId
+      ) {
+        return null
+      }
+
       currentTranslation.value = persisted
       manualInputText.value = persisted.source_text
       history.value = mergeTranslationIntoHistory(history.value, persisted)
       return persisted
     } catch (e) {
-      error.value = formatStoreError('截图 OCR 翻译失败', e)
+      if (operationId === screenshotOperationId) {
+        error.value = formatStoreError('截图 OCR 翻译失败', e)
+      }
       return null
     } finally {
-      loading.value = false
+      if (operationId === screenshotOperationId) {
+        activeScreenshotRequestId = null
+        loading.value = false
+      }
     }
   }
 
@@ -137,6 +182,7 @@ export const useTranslationStore = defineStore('translation', () => {
     error,
     manualInputText,
     setManualInputText,
+    acceptOcrSourceText,
     translateFromClipboard,
     translateText,
     translateScreenshot,
