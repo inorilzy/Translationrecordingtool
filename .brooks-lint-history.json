@@ -31,5 +31,16 @@
       "suggestion": 1
     },
     "scope": "Entire project: Vue frontend, Tauri/Rust backend, and OCR/build support scripts; generated binaries, models, caches, and assets excluded"
+  },
+  {
+    "date": "2026-07-15",
+    "mode": "Architecture Audit",
+    "score": 89,
+    "findings": {
+      "critical": 0,
+      "warning": 2,
+      "suggestion": 1
+    },
+    "scope": "Entire project: Vue frontend, Tauri/Rust backend, and OCR/build support scripts; generated binaries, models, caches, and assets excluded"
   }
 ]

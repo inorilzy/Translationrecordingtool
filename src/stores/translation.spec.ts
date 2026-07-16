@@ -148,6 +148,67 @@ describe('useTranslationStore', () => {
     })
   })
 
+  describe('translateImage', () => {
+    it('starts an image request and uses the backend-persisted record', async () => {
+      const persisted = createTranslationRecord({ id: 9, sourceText: 'pasted image text' })
+      invokeMock
+        .mockResolvedValueOnce(21)
+        .mockResolvedValueOnce({
+          imageBase64: 'data:image/png;base64,pasted',
+          imageWidth: 180,
+          imageHeight: 90,
+          blocks: [
+            {
+              sourceText: 'pasted image text',
+              translatedText: persisted.translated_text,
+              x: 8,
+              y: 9,
+              width: 70,
+              height: 16,
+            },
+          ],
+          record: persisted,
+        })
+
+      const store = useTranslationStore()
+      await store.translateImage('data:image/png;base64,pasted')
+
+      expect(invokeMock).toHaveBeenNthCalledWith(1, 'begin_image_translation')
+      expect(invokeMock).toHaveBeenNthCalledWith(2, 'translate_image_overlay', {
+        requestId: 21,
+        imageBase64: 'data:image/png;base64,pasted',
+      })
+      expect(store.imageOverlay?.imageWidth).toBe(180)
+      expect(store.currentTranslation).toEqual(persisted)
+      expect(store.manualInputText).toBe('pasted image text')
+      expect(store.history).toEqual([persisted])
+      expect(store.loading).toBe(false)
+      expect(store.error).toBe('')
+    })
+
+    it('blocks while another translation is already loading', async () => {
+      const store = useTranslationStore()
+      store.loading = true
+
+      await expect(store.translateImage('data:image/png;base64,x')).resolves.toBeNull()
+
+      expect(store.error).toBe('已有翻译任务进行中，请稍候')
+      expect(invokeMock).not.toHaveBeenCalled()
+    })
+
+    it('surfaces OCR failures with a readable prefix', async () => {
+      invokeMock
+        .mockResolvedValueOnce(22)
+        .mockRejectedValueOnce(new Error('OCR 未识别到文本'))
+
+      const store = useTranslationStore()
+      await store.translateImage('data:image/png;base64,empty')
+
+      expect(store.error).toBe('图片 OCR 翻译失败: OCR 未识别到文本')
+      expect(store.loading).toBe(false)
+    })
+  })
+
   describe('translateScreenshot', () => {
     it('sends the selected request and uses the backend-persisted record', async () => {
       const persisted = createTranslationRecord({ id: 3, sourceText: 'screen text' })
@@ -156,7 +217,22 @@ describe('useTranslationStore', () => {
           requestId: 7,
           imageBase64: 'data:image/png;base64,fake-image',
         })
-        .mockResolvedValueOnce(persisted)
+        .mockResolvedValueOnce({
+          imageBase64: 'data:image/png;base64,fake-image',
+          imageWidth: 200,
+          imageHeight: 100,
+          blocks: [
+            {
+              sourceText: 'screen text',
+              translatedText: persisted.translated_text,
+              x: 10,
+              y: 12,
+              width: 80,
+              height: 18,
+            },
+          ],
+          record: persisted,
+        })
 
       const settings = useSettingsStore()
       settings.ocrEndpoint = 'http://must-not-be-sent/ocr'
@@ -166,10 +242,11 @@ describe('useTranslationStore', () => {
       await store.translateScreenshot()
 
       expect(invokeMock).toHaveBeenNthCalledWith(1, 'select_screenshot_area')
-      expect(invokeMock).toHaveBeenNthCalledWith(2, 'translate_image', {
+      expect(invokeMock).toHaveBeenNthCalledWith(2, 'translate_image_overlay', {
         requestId: 7,
         imageBase64: 'data:image/png;base64,fake-image',
       })
+      expect(store.imageOverlay?.blocks[0]?.translatedText).toBe(persisted.translated_text)
       expect(invokeMock).toHaveBeenCalledTimes(2)
       expect(store.currentTranslation).toEqual(persisted)
       expect(store.history).toEqual([persisted])
@@ -178,7 +255,20 @@ describe('useTranslationStore', () => {
       expect(store.error).toBe('')
     })
     it('keeps recognized text when provider translation fails', async () => {
-      const providerResult = deferred<Translation>()
+      const providerResult = deferred<{
+        imageBase64: string
+        imageWidth: number
+        imageHeight: number
+        blocks: Array<{
+          sourceText: string
+          translatedText: string
+          x: number
+          y: number
+          width: number
+          height: number
+        }>
+        record: Translation
+      }>()
       invokeMock
         .mockResolvedValueOnce({ requestId: 8, imageBase64: 'image-8' })
         .mockImplementationOnce(() => providerResult.promise)
@@ -211,7 +301,13 @@ describe('useTranslationStore', () => {
       expect(invokeMock).toHaveBeenCalledTimes(1)
 
       firstSelection.resolve({ requestId: 7, imageBase64: 'image-7' })
-      invokeMock.mockResolvedValueOnce(createTranslationRecord({ id: 7, sourceText: 'ok' }))
+      invokeMock.mockResolvedValueOnce({
+        imageBase64: 'image-7',
+        imageWidth: 100,
+        imageHeight: 80,
+        blocks: [],
+        record: createTranslationRecord({ id: 7, sourceText: 'ok' }),
+      })
       await firstRequest
       expect(store.loading).toBe(false)
     })

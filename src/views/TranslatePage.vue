@@ -7,6 +7,47 @@ export async function submitTranslation(
   if (!text) return
   await translateText(text)
 }
+
+export function findPasteImageFile(clipboardData: DataTransfer | null): File | null {
+  const items = clipboardData?.items
+  if (!items) {
+    return null
+  }
+
+  let hasText = false
+  let imageFile: File | null = null
+
+  for (const item of Array.from(items)) {
+    if (item.kind === 'string' && (item.type === 'text/plain' || item.type === 'text/html')) {
+      hasText = true
+    }
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      imageFile = item.getAsFile() ?? imageFile
+    }
+  }
+
+  // Prefer normal text paste when the clipboard also carries text.
+  if (hasText || !imageFile) {
+    return null
+  }
+
+  return imageFile
+}
+
+export function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+        return
+      }
+      reject(new Error('无法读取粘贴的图片'))
+    }
+    reader.onerror = () => reject(new Error('无法读取粘贴的图片'))
+    reader.readAsDataURL(file)
+  })
+}
 </script>
 
 <script setup lang="ts">
@@ -14,6 +55,7 @@ import { computed } from 'vue'
 import { useTranslationStore } from '../stores/translation'
 import { useSettingsStore } from '../stores/settings'
 import TranslationCard from '../components/TranslationCard.vue'
+import ImageOverlayPanel from '../components/ImageOverlayPanel.vue'
 
 const store = useTranslationStore()
 const settings = useSettingsStore()
@@ -32,6 +74,25 @@ async function handleScreenshotTranslate() {
     inputText.value = result.source_text
   }
 }
+
+async function handlePaste(event: ClipboardEvent) {
+  const imageFile = findPasteImageFile(event.clipboardData)
+  if (!imageFile) {
+    return
+  }
+
+  event.preventDefault()
+
+  try {
+    const imageBase64 = await readFileAsDataUrl(imageFile)
+    const result = await store.translateImage(imageBase64)
+    if (result?.source_text) {
+      inputText.value = result.source_text
+    }
+  } catch (error) {
+    store.error = error instanceof Error ? error.message : String(error)
+  }
+}
 </script>
 
 <template>
@@ -39,7 +100,7 @@ async function handleScreenshotTranslate() {
     <header class="page-header">
       <div class="eyebrow">WORKBENCH</div>
       <h1>手动翻译</h1>
-      <p class="subtitle">输入文本，或用快捷键从剪贴板 / 截图进入同一工作流</p>
+      <p class="subtitle">输入文本，或粘贴图片 / 截图后可在原图位置查看译文</p>
     </header>
 
     <section class="workbench" aria-label="翻译工作台">
@@ -49,7 +110,8 @@ async function handleScreenshotTranslate() {
         v-model="inputText"
         @keydown.ctrl.enter="handleTranslate"
         @keydown.meta.enter="handleTranslate"
-        placeholder="输入要翻译的文本，Ctrl/Cmd+Enter 提交"
+        @paste="handlePaste"
+        placeholder="输入文本，或直接粘贴图片识别后翻译；Ctrl/Cmd+Enter 提交"
         class="translate-input"
         rows="7"
         autofocus
@@ -81,6 +143,12 @@ async function handleScreenshotTranslate() {
     </section>
 
     <div v-if="store.error" class="error-message">{{ store.error }}</div>
+
+    <ImageOverlayPanel
+      v-if="store.imageOverlay"
+      :overlay="store.imageOverlay"
+      @close="store.clearImageOverlay()"
+    />
 
     <section v-if="store.currentTranslation" class="result-panel" aria-label="翻译结果">
       <div class="result-heading">

@@ -1,9 +1,10 @@
 use std::{
     io::Cursor,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         LazyLock, Mutex,
     },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(not(windows))]
@@ -36,26 +37,53 @@ const OVERLAY_HIDE_DELAY: Duration = Duration::from_millis(120);
 static SELECTION_PAYLOAD: LazyLock<Mutex<Option<SelectionStartPayload>>> =
     LazyLock::new(|| Mutex::new(None));
 static SELECTION_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+static SELECTION_STARTED_MS: AtomicU64 = AtomicU64::new(0);
+const SELECTION_STALE_MS: u64 = 90_000;
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 struct SelectionSessionGuard;
 
 impl SelectionSessionGuard {
     fn try_acquire() -> Result<Self, String> {
-        match SELECTION_IN_PROGRESS.compare_exchange(
-            false,
-            true,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ) {
-            Ok(_) => Ok(Self),
-            Err(_) => Err("已有截图选择进行中，请先按 ESC 取消当前截图".to_string()),
+        for _ in 0..2 {
+            match SELECTION_IN_PROGRESS.compare_exchange(
+                false,
+                true,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    SELECTION_STARTED_MS.store(now_millis(), Ordering::Release);
+                    return Ok(Self);
+                }
+                Err(_) => {
+                    let started = SELECTION_STARTED_MS.load(Ordering::Acquire);
+                    let age = now_millis().saturating_sub(started);
+                    if started > 0 && age > SELECTION_STALE_MS {
+                        // Recover from a stuck native selection session.
+                        SELECTION_IN_PROGRESS.store(false, Ordering::Release);
+                        SELECTION_STARTED_MS.store(0, Ordering::Release);
+                        continue;
+                    }
+                    return Err("已有截图选择进行中，请先按 ESC 取消当前截图".to_string());
+                }
+            }
         }
+
+        Err("已有截图选择进行中，请先按 ESC 取消当前截图".to_string())
     }
 }
 
 impl Drop for SelectionSessionGuard {
     fn drop(&mut self) {
         SELECTION_IN_PROGRESS.store(false, Ordering::Release);
+        SELECTION_STARTED_MS.store(0, Ordering::Release);
     }
 }
 

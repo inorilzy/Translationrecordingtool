@@ -30,7 +30,7 @@ use database::{
     get_translation_by_id_in_connection, load_favorites_in_connection, load_history_in_connection,
     open_translations_connection, toggle_favorite_in_connection, TranslationRecord,
 };
-use ocr_contracts::{normalize_engine, OcrRuntimeConfig, OcrServiceStatus};
+use ocr_contracts::{OcrRuntimeConfig, OcrServiceStatus};
 use parking_lot::RwLock;
 use settings::{
     PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_MODEL_PROFILE,
@@ -43,7 +43,7 @@ use tauri::{
     Emitter, Manager,
 };
 use tracing::{error, info, warn};
-use translation_workflow::{AppTranslationWorkflow, WorkflowStage};
+use translation_workflow::{ImageOverlayTranslation, AppTranslationWorkflow, WorkflowStage};
 
 // ─── Tauri Commands ─────────────────────────────────────────────────────────
 
@@ -387,6 +387,36 @@ async fn translate_image(
         .await
 }
 
+
+#[tauri::command]
+async fn translate_image_overlay(
+    app: tauri::AppHandle,
+    workflow: tauri::State<'_, AppTranslationWorkflow>,
+    screenshot_state: tauri::State<'_, Arc<RwLock<ScreenshotRuntimeState>>>,
+    request_id: u64,
+    image_base64: String,
+) -> Result<ImageOverlayTranslation, String> {
+    let state = screenshot_state.inner();
+    let mut report = |stage| {
+        if !is_active_screenshot_request(state, request_id) {
+            return;
+        }
+
+        if let WorkflowStage::InputAccepted { text } = stage {
+            if let Some(main_window) = app.get_webview_window("main") {
+                let payload = OcrSourceTextPayload { request_id, text };
+                if let Err(error) = main_window.emit("ocr-source-text", payload) {
+                    warn!("回填 OCR 文本失败: {}", error);
+                }
+            }
+        }
+    };
+    let is_cancelled = || !is_active_screenshot_request(state, request_id);
+
+    workflow
+        .translate_image_overlay(&image_base64, &mut report, &is_cancelled)
+        .await
+}
 #[tauri::command]
 async fn check_ocr_service(
     app: tauri::AppHandle,
@@ -430,6 +460,13 @@ fn get_ocr_log_path(
 ) -> Result<String, String> {
     let config = ocr_runtime_config_from_state(state.inner());
     ocr::log_path(&app, &config).map(|path| path.display().to_string())
+}
+
+#[tauri::command]
+fn begin_image_translation(
+    screenshot_state: tauri::State<'_, Arc<RwLock<ScreenshotRuntimeState>>>,
+) -> u64 {
+    next_screenshot_request_id(screenshot_state.inner())
 }
 
 #[tauri::command]
@@ -744,6 +781,8 @@ pub fn run() {
             translate_from_clipboard,
             translate_text,
             translate_image,
+            translate_image_overlay,
+            begin_image_translation,
             select_screenshot_area,
             get_screenshot_selection_payload,
             open_main_translate_window,

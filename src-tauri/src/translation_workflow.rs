@@ -11,7 +11,7 @@ use crate::{
     app_state::AppConfig,
     database::{open_translations_connection, save_translation_in_connection, TranslationRecord},
     local_dictionary::{self, FreeDictionarySupplement, OfflineDictionaryEntry},
-    ocr_contracts::OcrRuntimeConfig,
+    ocr_contracts::{OcrRecognition, OcrRuntimeConfig, OcrTextBlock},
     translation_domain::{TranslationConfig, TranslationContent, TranslationResult},
     translation_flow::{
         self, DictionaryGateway, ProviderGateway, ResolutionError, ResolutionStage,
@@ -45,7 +45,84 @@ pub trait OcrGateway: Send + Sync {
         &'a self,
         config: &'a OcrRuntimeConfig,
         image_base64: &'a str,
-    ) -> impl Future<Output = Result<String, String>> + Send + 'a;
+    ) -> impl Future<Output = Result<OcrRecognition, String>> + Send + 'a;
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayTextBlock {
+    pub source_text: String,
+    pub translated_text: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageOverlayTranslation {
+    pub image_base64: String,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub blocks: Vec<OverlayTextBlock>,
+    pub record: TranslationRecord,
+}
+
+pub fn align_overlay_blocks(blocks: &[OcrTextBlock], translated_text: &str) -> Vec<OverlayTextBlock> {
+    if blocks.is_empty() {
+        return Vec::new();
+    }
+
+    let lines = translated_text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+    // Per-line mapping is only trustworthy when the provider kept line breaks.
+    if lines.len() == blocks.len() {
+        return blocks
+            .iter()
+            .zip(lines.into_iter())
+            .map(|(block, translated)| OverlayTextBlock {
+                source_text: block.text.clone(),
+                translated_text: translated,
+                x: block.x,
+                y: block.y,
+                width: block.width,
+                height: block.height,
+            })
+            .collect();
+    }
+
+    // Otherwise cover the union of all text boxes with the whole translation,
+    // instead of mis-assigning lines and leaking untranslated originals.
+    let min_x = blocks.iter().map(|b| b.x).fold(f64::INFINITY, f64::min);
+    let min_y = blocks.iter().map(|b| b.y).fold(f64::INFINITY, f64::min);
+    let max_x = blocks
+        .iter()
+        .map(|b| b.x + b.width)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let max_y = blocks
+        .iter()
+        .map(|b| b.y + b.height)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let source_text = blocks
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    vec![OverlayTextBlock {
+        source_text,
+        translated_text: translated_text.trim().to_string(),
+        x: min_x,
+        y: min_y,
+        width: (max_x - min_x).max(1.0),
+        height: (max_y - min_y).max(1.0),
+    }]
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -194,10 +271,31 @@ where
             return Err(ResolutionError::Cancelled.into_message());
         }
 
+        let overlay = self
+            .translate_image_overlay(image_base64, report, is_cancelled)
+            .await?;
+        Ok(overlay.record)
+    }
+
+    pub async fn translate_image_overlay<F, C>(
+        &self,
+        image_base64: &str,
+        report: &mut F,
+        is_cancelled: &C,
+    ) -> Result<ImageOverlayTranslation, String>
+    where
+        F: FnMut(WorkflowStage),
+        C: Fn() -> bool,
+    {
+        if is_cancelled() {
+            report(WorkflowStage::Cancelled);
+            return Err(ResolutionError::Cancelled.into_message());
+        }
+
         let settings = self.settings.screenshot_settings();
         report(WorkflowStage::OcrInProgress);
         let recognized = match self.ocr.recognize(&settings.ocr, image_base64).await {
-            Ok(text) => text,
+            Ok(result) => result,
             Err(message) => {
                 report(WorkflowStage::Failed {
                     message: message.clone(),
@@ -211,8 +309,8 @@ where
             return Err(ResolutionError::Cancelled.into_message());
         }
 
-        let recognized = recognized.trim();
-        if recognized.is_empty() {
+        let recognized_text = recognized.text.trim();
+        if recognized_text.is_empty() || recognized.blocks.is_empty() {
             let message = "OCR 未识别到文本".to_string();
             report(WorkflowStage::Failed {
                 message: message.clone(),
@@ -220,8 +318,22 @@ where
             return Err(message);
         }
 
-        self.translate_text_with_config(recognized, &settings.translation, report, is_cancelled)
-            .await
+        let record = self
+            .translate_text_with_config(
+                recognized_text,
+                &settings.translation,
+                report,
+                is_cancelled,
+            )
+            .await?;
+
+        Ok(ImageOverlayTranslation {
+            image_base64: image_base64.to_string(),
+            image_width: recognized.image_width,
+            image_height: recognized.image_height,
+            blocks: align_overlay_blocks(&recognized.blocks, &record.translated_text),
+            record,
+        })
     }
 }
 
@@ -326,7 +438,7 @@ impl OcrGateway for AppOcrGateway {
         &'a self,
         config: &'a OcrRuntimeConfig,
         image_base64: &'a str,
-    ) -> impl Future<Output = Result<String, String>> + Send + 'a {
+    ) -> impl Future<Output = Result<OcrRecognition, String>> + Send + 'a {
         async move { crate::ocr::recognize_text_with_config(&self.app, config, image_base64).await }
     }
 }
@@ -485,7 +597,28 @@ mod tests {
     }
 
     struct FakeOcr {
-        result: Mutex<VecDeque<Result<String, String>>>,
+        result: Mutex<VecDeque<Result<OcrRecognition, String>>>,
+    }
+
+    fn fake_ocr_text(text: &str) -> OcrRecognition {
+        let blocks = text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .enumerate()
+            .map(|(index, line)| OcrTextBlock {
+                text: line.trim().to_string(),
+                x: 10.0,
+                y: (index as f64) * 24.0 + 10.0,
+                width: 120.0,
+                height: 20.0,
+            })
+            .collect::<Vec<_>>();
+        OcrRecognition {
+            text: text.to_string(),
+            image_width: 200,
+            image_height: 200,
+            blocks,
+        }
     }
 
     impl OcrGateway for FakeOcr {
@@ -493,7 +626,7 @@ mod tests {
             &'a self,
             _config: &'a OcrRuntimeConfig,
             _image_base64: &'a str,
-        ) -> impl Future<Output = Result<String, String>> + Send + 'a {
+        ) -> impl Future<Output = Result<OcrRecognition, String>> + Send + 'a {
             let result = self.result.lock().pop_front().unwrap();
             async move { result }
         }
@@ -527,9 +660,9 @@ mod tests {
             &'a self,
             _config: &'a OcrRuntimeConfig,
             _image_base64: &'a str,
-        ) -> impl Future<Output = Result<String, String>> + Send + 'a {
+        ) -> impl Future<Output = Result<OcrRecognition, String>> + Send + 'a {
             self.translation.write().provider = "microsoft".to_string();
-            let result = self.result.clone();
+            let result = fake_ocr_text(&self.result);
             async move { Ok(result) }
         }
     }
@@ -773,9 +906,7 @@ mod tests {
                 },
                 FakeRepository::default(),
                 settings("youdao"),
-                FakeOcr {
-                    result: Mutex::new(VecDeque::from([Ok("  screenshot text  ".to_string())])),
-                },
+                FakeOcr { result: Mutex::new(VecDeque::from([Ok(fake_ocr_text("  screenshot text  "))])), },
             );
             let mut stages = Vec::new();
 
@@ -810,9 +941,7 @@ mod tests {
                 },
                 FakeRepository::default(),
                 settings("youdao"),
-                FakeOcr {
-                    result: Mutex::new(VecDeque::from([Ok("  recognized text  ".to_string())])),
-                },
+                FakeOcr { result: Mutex::new(VecDeque::from([Ok(fake_ocr_text("  recognized text  "))])), },
             );
             let mut stages = Vec::new();
 
@@ -847,9 +976,7 @@ mod tests {
                 FakeProviders::default(),
                 FakeRepository::default(),
                 settings("youdao"),
-                FakeOcr {
-                    result: Mutex::new(VecDeque::from([Ok("   ".to_string())])),
-                },
+                FakeOcr { result: Mutex::new(VecDeque::from([Ok(fake_ocr_text("   "))])), },
             );
             let mut stages = Vec::new();
 
@@ -867,5 +994,32 @@ mod tests {
                 Some(WorkflowStage::Failed { message }) if message == "OCR 未识别到文本"
             ));
         });
+    }
+    #[test]
+    fn align_overlay_blocks_merges_on_mismatch() {
+        let blocks = vec![
+            OcrTextBlock { text: "hello".into(), x: 10.0, y: 10.0, width: 40.0, height: 12.0 },
+            OcrTextBlock { text: "world".into(), x: 10.0, y: 30.0, width: 60.0, height: 12.0 },
+        ];
+        let overlays = align_overlay_blocks(&blocks, "你好世界");
+        assert_eq!(overlays.len(), 1);
+        assert_eq!(overlays[0].translated_text, "你好世界");
+        assert_eq!(overlays[0].x, 10.0);
+        assert_eq!(overlays[0].y, 10.0);
+        assert_eq!(overlays[0].width, 60.0);
+        assert_eq!(overlays[0].height, 32.0);
+    }
+
+
+    #[test]
+    fn align_overlay_blocks_matches_line_count() {
+        let blocks = vec![
+            OcrTextBlock { text: "hello".into(), x: 1.0, y: 2.0, width: 30.0, height: 10.0 },
+            OcrTextBlock { text: "world".into(), x: 1.0, y: 20.0, width: 30.0, height: 10.0 },
+        ];
+        let overlays = align_overlay_blocks(&blocks, "你好\n世界");
+        assert_eq!(overlays.len(), 2);
+        assert_eq!(overlays[0].translated_text, "你好");
+        assert_eq!(overlays[1].translated_text, "世界");
     }
 }

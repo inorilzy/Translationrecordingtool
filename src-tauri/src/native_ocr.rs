@@ -37,9 +37,11 @@ pub fn recognize_text(
     app: &AppHandle,
     config: &OcrRuntimeConfig,
     image_base64: &str,
-) -> Result<String, String> {
+) -> Result<crate::ocr_contracts::OcrRecognition, String> {
     ensure_initialized(app, config)?;
     let image = decode_image(image_base64)?;
+    let image_width = image.width();
+    let image_height = image.height();
 
     let mut guard = RUNTIME
         .lock()
@@ -75,28 +77,48 @@ pub fn recognize_text(
         started.elapsed().as_millis()
     );
 
-    let mut lines = result
+    let mut blocks = result
         .text_blocks
         .into_iter()
         .filter(|block| !block.text.trim().is_empty())
-        .map(|block| (block.box_points, block.text.trim().to_string()))
+        .map(|block| {
+            let (x, y, width, height) = bounding_box(&block.box_points);
+            crate::ocr_contracts::OcrTextBlock {
+                text: block.text.trim().to_string(),
+                x,
+                y,
+                width,
+                height,
+            }
+        })
         .collect::<Vec<_>>();
-    lines.sort_by(|(left_box, _), (right_box, _)| {
-        let (left_x, left_y) = top_left(left_box);
-        let (right_x, right_y) = top_left(right_box);
-        left_y.cmp(&right_y).then_with(|| left_x.cmp(&right_x))
+
+    blocks.sort_by(|left, right| {
+        left.y
+            .partial_cmp(&right.y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                left.x
+                    .partial_cmp(&right.x)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     });
 
-    let text = lines
-        .into_iter()
-        .map(|(_, text)| text)
+    let text = blocks
+        .iter()
+        .map(|block| block.text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
 
     if text.trim().is_empty() {
         Err("OCR 未识别到文本".to_string())
     } else {
-        Ok(text)
+        Ok(crate::ocr_contracts::OcrRecognition {
+            text,
+            image_width,
+            image_height,
+            blocks,
+        })
     }
 }
 
@@ -323,11 +345,20 @@ fn decode_image(image_base64: &str) -> Result<image::RgbImage, String> {
     Ok(image)
 }
 
-fn top_left(points: &[ppocr_rs::Point]) -> (u32, u32) {
-    let x = points.iter().map(|point| point.x).min().unwrap_or(0);
-    let y = points.iter().map(|point| point.y).min().unwrap_or(0);
-    (x, y)
+
+fn bounding_box(points: &[ppocr_rs::Point]) -> (f64, f64, f64, f64) {
+    let min_x = points.iter().map(|point| point.x).min().unwrap_or(0);
+    let min_y = points.iter().map(|point| point.y).min().unwrap_or(0);
+    let max_x = points.iter().map(|point| point.x).max().unwrap_or(min_x);
+    let max_y = points.iter().map(|point| point.y).max().unwrap_or(min_y);
+    (
+        min_x as f64,
+        min_y as f64,
+        (max_x.saturating_sub(min_x)).max(1) as f64,
+        (max_y.saturating_sub(min_y)).max(1) as f64,
+    )
 }
+
 
 fn packaged_model_config(app: &AppHandle, model_profile: &str) -> Option<(String, PathBuf)> {
     let profile = normalize_model_profile(model_profile);

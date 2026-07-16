@@ -42,7 +42,7 @@ pub async fn recognize_text_with_config(
     app: &AppHandle,
     config: &OcrRuntimeConfig,
     image_base64: &str,
-) -> Result<String, String> {
+) -> Result<crate::ocr_contracts::OcrRecognition, String> {
     let _ = adapter_kind(&config.engine);
     let app = app.clone();
     let config = config.clone();

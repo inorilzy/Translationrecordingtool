@@ -14,6 +14,23 @@ export interface ScreenshotSelection {
   imageBase64: string
 }
 
+export interface OverlayTextBlock {
+  sourceText: string
+  translatedText: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface ImageOverlayTranslation {
+  imageBase64: string
+  imageWidth: number
+  imageHeight: number
+  blocks: OverlayTextBlock[]
+  record: Translation
+}
+
 export type OcrSourceTextPayload = string | {
   requestId: number | null
   text: string
@@ -37,6 +54,7 @@ export const useTranslationStore = defineStore('translation', () => {
   const loading = ref(false)
   const error = ref('')
   const manualInputText = ref('')
+  const imageOverlay = ref<ImageOverlayTranslation | null>(null)
   let screenshotOperationId = 0
   let activeScreenshotRequestId: number | null = null
 
@@ -134,6 +152,86 @@ export const useTranslationStore = defineStore('translation', () => {
     }
   }
 
+  async function completeImageTranslation(
+    operationId: number,
+    requestId: number,
+    imageBase64: string,
+    failurePrefix: string,
+  ) {
+    activeScreenshotRequestId = requestId
+    try {
+      const overlay = await invoke<ImageOverlayTranslation>('translate_image_overlay', {
+        requestId,
+        imageBase64,
+      })
+      if (
+        operationId !== screenshotOperationId
+        || activeScreenshotRequestId !== requestId
+      ) {
+        return null
+      }
+
+      const persisted = overlay.record
+      currentTranslation.value = persisted
+      manualInputText.value = persisted.source_text
+      history.value = mergeTranslationIntoHistory(history.value, persisted)
+      imageOverlay.value = overlay
+      return persisted
+    } catch (e) {
+      if (operationId === screenshotOperationId) {
+        const message = getErrorMessage(e)
+        if (message.includes('已取消截图选择') || message.includes('已有截图选择进行中')) {
+          error.value = message
+        } else {
+          error.value = formatStoreError(failurePrefix, e)
+        }
+      }
+      return null
+    } finally {
+      if (operationId === screenshotOperationId) {
+        activeScreenshotRequestId = null
+        loading.value = false
+      }
+    }
+  }
+
+  function clearImageOverlay() {
+    imageOverlay.value = null
+  }
+
+  async function translateImage(imageBase64: string) {
+    if (loading.value) {
+      error.value = '已有翻译任务进行中，请稍候'
+      return null
+    }
+
+    const operationId = ++screenshotOperationId
+    activeScreenshotRequestId = null
+    loading.value = true
+    error.value = ''
+
+    try {
+      const requestId = await invoke<number>('begin_image_translation')
+      if (operationId !== screenshotOperationId) {
+        return null
+      }
+
+      return await completeImageTranslation(
+        operationId,
+        requestId,
+        imageBase64,
+        '图片 OCR 翻译失败',
+      )
+    } catch (e) {
+      if (operationId === screenshotOperationId) {
+        error.value = formatStoreError('图片 OCR 翻译失败', e)
+        activeScreenshotRequestId = null
+        loading.value = false
+      }
+      return null
+    }
+  }
+
   async function translateScreenshot() {
     if (loading.value) {
       error.value = '已有截图选择进行中，请先按 ESC 取消当前截图'
@@ -151,38 +249,24 @@ export const useTranslationStore = defineStore('translation', () => {
         return null
       }
 
-      activeScreenshotRequestId = selection.requestId
-      const persisted = await invoke<Translation>('translate_image', {
-        requestId: selection.requestId,
-        imageBase64: selection.imageBase64,
-      })
-      if (
-        operationId !== screenshotOperationId
-        || activeScreenshotRequestId !== selection.requestId
-      ) {
-        return null
-      }
-
-      currentTranslation.value = persisted
-      manualInputText.value = persisted.source_text
-      history.value = mergeTranslationIntoHistory(history.value, persisted)
-      return persisted
+      return await completeImageTranslation(
+        operationId,
+        selection.requestId,
+        selection.imageBase64,
+        '截图 OCR 翻译失败',
+      )
     } catch (e) {
       if (operationId === screenshotOperationId) {
         const message = getErrorMessage(e)
-        // Keep cancel / reentry messages clean for users.
         if (message.includes('已取消截图选择') || message.includes('已有截图选择进行中')) {
           error.value = message
         } else {
           error.value = formatStoreError('截图 OCR 翻译失败', e)
         }
-      }
-      return null
-    } finally {
-      if (operationId === screenshotOperationId) {
         activeScreenshotRequestId = null
         loading.value = false
       }
+      return null
     }
   }
 
@@ -192,10 +276,13 @@ export const useTranslationStore = defineStore('translation', () => {
     loading,
     error,
     manualInputText,
+    imageOverlay,
     setManualInputText,
+    clearImageOverlay,
     acceptOcrSourceText,
     translateFromClipboard,
     translateText,
+    translateImage,
     translateScreenshot,
     loadHistory,
     loadFavorites,

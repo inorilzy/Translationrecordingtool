@@ -6,7 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createTestRouter, createTranslationRecord } from '../test-utils'
 import { useTranslationStore } from '../stores/translation'
 import { useSettingsStore } from '../stores/settings'
-import TranslatePage from './TranslatePage.vue'
+import TranslatePage, { findPasteImageFile } from './TranslatePage.vue'
 
 const TranslationCardStub = defineComponent({
   props: {
@@ -57,6 +57,7 @@ describe('TranslatePage mounted interactions', () => {
     vi.spyOn(translationStore, 'translateText').mockResolvedValue(null)
     vi.spyOn(translationStore, 'translateFromClipboard').mockResolvedValue(null)
     vi.spyOn(translationStore, 'translateScreenshot').mockResolvedValue(null)
+    vi.spyOn(translationStore, 'translateImage').mockResolvedValue(null)
     settingsStore.globalShortcut = 'Ctrl+Q'
     settingsStore.screenshotShortcut = 'Ctrl+Shift+Q'
   })
@@ -117,6 +118,56 @@ describe('TranslatePage mounted interactions', () => {
     expect(translationStore.manualInputText).toBe('ocr text')
   })
 
+  it('pastes an image into the OCR translation workflow', async () => {
+    const translated = createTranslationRecord({ source_text: 'pasted ocr' })
+    vi.mocked(translationStore.translateImage).mockResolvedValueOnce(translated)
+    const wrapper = await mountPage()
+    const imageFile = new File(['fake-image'], 'clip.png', { type: 'image/png' })
+
+    await wrapper.get('textarea').trigger('paste', {
+      clipboardData: {
+        items: [
+          {
+            kind: 'file',
+            type: 'image/png',
+            getAsFile: () => imageFile,
+          },
+        ],
+      },
+    })
+
+    await vi.waitFor(() => {
+      expect(translationStore.translateImage).toHaveBeenCalledTimes(1)
+    })
+    expect(translationStore.translateImage).toHaveBeenCalledWith(
+      expect.stringMatching(/^data:image\/png;base64,/),
+    )
+    expect(translationStore.manualInputText).toBe('pasted ocr')
+  })
+
+  it('keeps normal text paste when clipboard has text', async () => {
+    const wrapper = await mountPage()
+
+    await wrapper.get('textarea').trigger('paste', {
+      clipboardData: {
+        items: [
+          {
+            kind: 'string',
+            type: 'text/plain',
+            getAsFile: () => null,
+          },
+          {
+            kind: 'file',
+            type: 'image/png',
+            getAsFile: () => new File(['x'], 'x.png', { type: 'image/png' }),
+          },
+        ],
+      },
+    })
+
+    expect(translationStore.translateImage).not.toHaveBeenCalled()
+  })
+
   it('disables all translate actions while the store is loading', async () => {
     translationStore.loading = true
     const wrapper = await mountPage()
@@ -141,3 +192,40 @@ describe('TranslatePage mounted interactions', () => {
     expect(wrapper.get('[data-testid="translation-card"]').text()).toContain('你好，世界')
   })
 })
+
+describe('findPasteImageFile', () => {
+  it('returns the first image file when clipboard has no text', () => {
+    const imageFile = new File(['img'], 'a.png', { type: 'image/png' })
+    const result = findPasteImageFile({
+      items: [
+        {
+          kind: 'file',
+          type: 'image/png',
+          getAsFile: () => imageFile,
+        },
+      ],
+    } as unknown as DataTransfer)
+
+    expect(result).toBe(imageFile)
+  })
+
+  it('returns null when clipboard also contains text', () => {
+    const result = findPasteImageFile({
+      items: [
+        {
+          kind: 'string',
+          type: 'text/plain',
+          getAsFile: () => null,
+        },
+        {
+          kind: 'file',
+          type: 'image/png',
+          getAsFile: () => new File(['img'], 'a.png', { type: 'image/png' }),
+        },
+      ],
+    } as unknown as DataTransfer)
+
+    expect(result).toBeNull()
+  })
+})
+
