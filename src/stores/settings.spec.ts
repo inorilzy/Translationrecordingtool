@@ -127,6 +127,7 @@ describe('useSettingsStore', () => {
         translationProvider: 'microsoft',
         microsoftTranslatorKey: 'new-ms-key',
         microsoftTranslatorRegion: 'eastasia',
+        googleApiKey: 'new-google-key',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
         ocrEngine: 'native_onnx',
         ocrModelProfile: 'small',
@@ -139,6 +140,7 @@ describe('useSettingsStore', () => {
         translationProvider: 'microsoft',
         microsoftTranslatorKey: 'new-ms-key',
         microsoftTranslatorRegion: 'eastasia',
+        googleApiKey: 'new-google-key',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
         ocrEngine: 'native_onnx',
         ocrModelProfile: 'small',
@@ -149,6 +151,7 @@ describe('useSettingsStore', () => {
       expect(store.translationProvider).toBe('microsoft')
       expect(store.microsoftTranslatorKey).toBe('new-ms-key')
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
+      expect(store.googleApiKey).toBe('new-google-key')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.ocrEngine).toBe('native_onnx')
       expect(store.ocrModelProfile).toBe('small')
@@ -165,6 +168,7 @@ describe('useSettingsStore', () => {
         translationProvider: 'microsoft',
         microsoftTranslatorKey: 'bad-ms-key',
         microsoftTranslatorRegion: 'westus',
+        googleApiKey: 'bad-google-key',
         ocrEndpoint: 'http://bad.local/ocr',
         ocrEngine: 'native_onnx',
         ocrModelProfile: 'tiny',
