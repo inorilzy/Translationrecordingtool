@@ -6,6 +6,7 @@ import {
   applyTheme,
   defaultSettings,
   getSettingsSnapshot,
+  normalizeTheme,
   type AppSettings,
 } from '../lib/settings'
 
@@ -34,6 +35,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const translationProvider = ref(defaultSettings.translationProvider)
   const microsoftTranslatorKey = ref(defaultSettings.microsoftTranslatorKey)
   const microsoftTranslatorRegion = ref(defaultSettings.microsoftTranslatorRegion)
+  const googleApiKey = ref(defaultSettings.googleApiKey)
   const ocrEndpoint = ref(defaultSettings.ocrEndpoint)
   const ocrEngine = ref(defaultSettings.ocrEngine)
   const ocrModelProfile = ref(defaultSettings.ocrModelProfile)
@@ -50,6 +52,7 @@ export const useSettingsStore = defineStore('settings', () => {
     translationProvider.value = settings.translationProvider
     microsoftTranslatorKey.value = settings.microsoftTranslatorKey
     microsoftTranslatorRegion.value = settings.microsoftTranslatorRegion
+    googleApiKey.value = settings.googleApiKey
     ocrEndpoint.value = settings.ocrEndpoint
     ocrEngine.value = settings.ocrEngine
     ocrModelProfile.value = settings.ocrModelProfile
@@ -78,6 +81,7 @@ export const useSettingsStore = defineStore('settings', () => {
     | 'translationProvider'
     | 'microsoftTranslatorKey'
     | 'microsoftTranslatorRegion'
+    | 'googleApiKey'
     | 'ocrEndpoint'
     | 'ocrEngine'
     | 'ocrModelProfile'
@@ -90,6 +94,7 @@ export const useSettingsStore = defineStore('settings', () => {
         translationProvider: settings.translationProvider,
         microsoftTranslatorKey: settings.microsoftTranslatorKey,
         microsoftTranslatorRegion: settings.microsoftTranslatorRegion,
+        googleApiKey: settings.googleApiKey,
         ocrEndpoint: settings.ocrEndpoint,
         ocrEngine: settings.ocrEngine,
         ocrModelProfile: settings.ocrModelProfile,
@@ -100,6 +105,7 @@ export const useSettingsStore = defineStore('settings', () => {
       translationProvider.value = settings.translationProvider
       microsoftTranslatorKey.value = settings.microsoftTranslatorKey
       microsoftTranslatorRegion.value = settings.microsoftTranslatorRegion
+      googleApiKey.value = settings.googleApiKey
       ocrEndpoint.value = settings.ocrEndpoint
       ocrEngine.value = settings.ocrEngine
       ocrModelProfile.value = settings.ocrModelProfile
@@ -136,12 +142,13 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   async function updateTheme(nextTheme: string) {
+    const themeName = normalizeTheme(nextTheme)
     try {
       await invoke('update_theme', {
-        theme: nextTheme,
+        theme: themeName,
       })
-      theme.value = nextTheme
-      applyTheme(nextTheme)
+      theme.value = themeName
+      applyTheme(themeName)
     } catch (e) {
       error.value = `更新主题失败: ${e}`
       throw e
@@ -214,6 +221,7 @@ export const useSettingsStore = defineStore('settings', () => {
     translationProvider,
     microsoftTranslatorKey,
     microsoftTranslatorRegion,
+    googleApiKey,
     ocrEndpoint,
     ocrEngine,
     ocrModelProfile,

@@ -30,6 +30,7 @@ const config = ref({
   translationProvider: 'youdao',
   microsoftTranslatorKey: '',
   microsoftTranslatorRegion: '',
+  googleApiKey: '',
   ocrEndpoint: 'http://127.0.0.1:8866/ocr',
   ocrEngine: 'native_onnx',
   ocrModelProfile: 'small',
@@ -48,66 +49,24 @@ const ocrWarmupLoading = ref(false)
 const ocrStatus = ref<OcrServiceStatus | null>(null)
 const showYoudaoSecret = ref(false)
 const showMicrosoftKey = ref(false)
+const showGoogleKey = ref(false)
 
 const providerOptions: SelectOption[] = [
+  { label: 'Google 翻译', value: 'google' },
   { label: '微软翻译', value: 'microsoft' },
   { label: '有道翻译', value: 'youdao' },
 ]
 
-const ocrEngineOptions: SelectOption[] = [
-  { label: '原生 ONNX', value: 'native_onnx' },
-  { label: 'PaddleOCR Sidecar', value: 'paddleocr' },
-  { label: 'RapidOCR Sidecar', value: 'rapidocr' },
-]
 
-const ocrProfilesByEngine: Record<string, SelectOption[]> = {
-  native_onnx: [
-    { label: 'Small（本地打包模型）', value: 'small' },
-    { label: 'Tiny（本地打包模型）', value: 'tiny' },
-    { label: 'Medium（本地打包模型）', value: 'medium' },
-  ],
-  paddleocr: [
-    { label: 'Small（本地打包模型）', value: 'small' },
-    { label: 'Tiny（本地打包模型）', value: 'tiny' },
-    { label: 'Medium（本地打包模型）', value: 'medium' },
-    { label: 'Official（允许下载官方模型）', value: 'official' },
-  ],
-  rapidocr: [
-    { label: 'Embedded（RapidOCR 内置模型）', value: 'embedded' },
-  ],
-}
+const ocrRuntimeName = computed(() => '本地 OCR')
 
-const ocrModelProfileOptions = computed(() => (
-  ocrProfilesByEngine[config.value.ocrEngine] || ocrProfilesByEngine.native_onnx
-))
-
-const ocrRuntimeName = computed(() => {
-  switch (config.value.ocrEngine) {
-    case 'paddleocr': return 'PaddleOCR Sidecar'
-    case 'rapidocr': return 'RapidOCR Sidecar'
-    default: return '原生 ONNX OCR'
-  }
-})
-
-const ocrRuntimeDescription = computed(() => {
-  switch (config.value.ocrEngine) {
-    case 'paddleocr':
-      return config.value.ocrModelProfile === 'official'
-        ? '独立进程运行；首次启动明确允许下载官方模型。'
-        : '独立进程运行；要求安装包包含所选本地模型。'
-    case 'rapidocr':
-      return '独立进程运行；使用 RapidOCR 包内置模型。'
-    default:
-      return '应用进程内运行；要求安装包包含 ONNX Runtime 与所选本地模型。'
-  }
-})
+const ocrRuntimeDescription = computed(() =>
+  '应用内置 PP-OCRv6 small 模型，进程内运行。',
+)
 
 const themeOptions: SelectOption[] = [
   { label: 'Light - 浅色', value: 'light' },
-  { label: 'Dark - 深色 (VSCode)', value: 'dark' },
-  { label: 'One Dark Pro', value: 'one-dark' },
-  { label: 'GitHub Light', value: 'github-light' },
-  { label: 'GitHub Dark', value: 'github-dark' },
+  { label: 'Dark - 深色', value: 'dark' },
 ]
 
 const microsoftRegionOptions: SelectOption[] = [
@@ -118,13 +77,23 @@ const microsoftRegionOptions: SelectOption[] = [
   { label: 'southeastasia', value: 'southeastasia' },
 ]
 
-const providerName = computed(() => (
-  config.value.translationProvider === 'microsoft' ? 'Microsoft Translator' : '有道翻译'
-))
+const providerName = computed(() => {
+  switch (config.value.translationProvider) {
+    case 'google':
+      return 'Google Cloud Translation'
+    case 'microsoft':
+      return 'Microsoft Translator'
+    default:
+      return '有道翻译'
+  }
+})
 
 const providerConfigured = computed(() => {
   if (config.value.translationProvider === 'microsoft') {
     return config.value.microsoftTranslatorKey.trim().length > 0
+  }
+  if (config.value.translationProvider === 'google') {
+    return config.value.googleApiKey.trim().length > 0
   }
   return config.value.apiKey.trim().length > 0 && config.value.apiSecret.trim().length > 0
 })
@@ -149,25 +118,14 @@ const ocrStatusText = computed(() => {
 })
 
 const ocrVersionText = computed(() => {
-  const engine = ocrStatus.value?.engine || config.value.ocrEngine
   const device = ocrStatus.value?.device?.toUpperCase() || 'CPU'
-  if (engine === 'rapidocr') {
-    return `RapidOCR ${ocrStatus.value?.rapidocrVersion || '1.4.4'} / ONNX Runtime ${ocrStatus.value?.onnxruntimeVersion || '1.27.0'} / ${device}`
-  }
-  if (engine === 'paddleocr') {
-    return `PaddleOCR ${ocrStatus.value?.paddleocrVersion || '3.7.0'} / ONNX Runtime ${ocrStatus.value?.onnxruntimeVersion || '1.27.0'} / ${device}`
-  }
   return `ONNX Runtime ${ocrStatus.value?.onnxruntimeVersion || '1.20.1'} / ${ocrStatus.value?.ppocrVersion || 'PP-OCRv6'} / ${device}`
 })
 
 const ocrModelText = computed(() => {
-  const engine = ocrStatus.value?.engine || config.value.ocrEngine
-  const profile = ocrStatus.value?.modelProfile || config.value.ocrModelProfile
-  if (engine === 'rapidocr') return '使用 RapidOCR 包内置模型'
-  if (profile === 'official') return '允许 PaddleOCR 下载并验证官方模型'
   return ocrStatus.value?.modelDir
-    ? `使用本地 ${profile} 模型`
-    : `未检测到所需的本地 ${profile} 模型目录`
+    ? '使用本地 small 模型'
+    : '未检测到本地 small 模型目录'
 })
 
 const ocrStatusDetail = computed(() => {
@@ -182,9 +140,10 @@ onMounted(async () => {
   config.value.translationProvider = store.translationProvider
   config.value.microsoftTranslatorKey = store.microsoftTranslatorKey
   config.value.microsoftTranslatorRegion = store.microsoftTranslatorRegion
+  config.value.googleApiKey = store.googleApiKey
   config.value.ocrEndpoint = store.ocrEndpoint
-  config.value.ocrEngine = store.ocrEngine
-  config.value.ocrModelProfile = store.ocrModelProfile
+  config.value.ocrEngine = 'native_onnx'
+  config.value.ocrModelProfile = 'small'
   config.value.ocrPreloadOnStartup = store.ocrPreloadOnStartup
   config.value.globalShortcut = store.globalShortcut
   config.value.screenshotShortcut = store.screenshotShortcut
@@ -229,15 +188,13 @@ function captureShortcut(event: KeyboardEvent, target: 'global' | 'screenshot') 
   }
 }
 
-function handleOcrEngineChange(engine: string) {
-  const profiles = ocrProfilesByEngine[engine] || ocrProfilesByEngine.native_onnx
-  if (!profiles.some((option) => option.value === config.value.ocrModelProfile)) {
-    config.value.ocrModelProfile = String(profiles[0].value)
-  }
-  void saveApiConfig()
+function ensureFixedOcrRuntime() {
+  config.value.ocrEngine = 'native_onnx'
+  config.value.ocrModelProfile = 'small'
 }
 
 async function saveApiConfig() {
+  ensureFixedOcrRuntime()
   const ocrRuntimeChanged = store.ocrEngine !== config.value.ocrEngine
     || store.ocrModelProfile !== config.value.ocrModelProfile
     || config.value.ocrPreloadOnStartup !== store.ocrPreloadOnStartup
@@ -248,6 +205,7 @@ async function saveApiConfig() {
     && config.value.translationProvider === store.translationProvider
     && config.value.microsoftTranslatorKey === store.microsoftTranslatorKey
     && config.value.microsoftTranslatorRegion === store.microsoftTranslatorRegion
+    && config.value.googleApiKey === store.googleApiKey
     && config.value.ocrEndpoint === store.ocrEndpoint
     && config.value.ocrEngine === store.ocrEngine
     && config.value.ocrModelProfile === store.ocrModelProfile
@@ -263,9 +221,10 @@ async function saveApiConfig() {
       translationProvider: config.value.translationProvider,
       microsoftTranslatorKey: config.value.microsoftTranslatorKey,
       microsoftTranslatorRegion: config.value.microsoftTranslatorRegion,
+      googleApiKey: config.value.googleApiKey,
       ocrEndpoint: config.value.ocrEndpoint,
-      ocrEngine: config.value.ocrEngine,
-      ocrModelProfile: config.value.ocrModelProfile,
+      ocrEngine: 'native_onnx',
+      ocrModelProfile: 'small',
       ocrPreloadOnStartup: config.value.ocrPreloadOnStartup,
     })
     notify.success('服务配置已保存')
@@ -385,11 +344,8 @@ async function changeTheme() {
   }
 
   const themeNames: Record<string, string> = {
-    'light': 'Light 浅色',
-    'dark': 'Dark 深色',
-    'one-dark': 'One Dark Pro',
-    'github-light': 'GitHub Light',
-    'github-dark': 'GitHub Dark'
+    light: 'Light 浅色',
+    dark: 'Dark 深色',
   }
 
   notify.success(`已切换到 ${themeNames[config.value.theme]} 主题`)
@@ -432,7 +388,46 @@ async function changeTheme() {
           @update:value="saveApiConfig"
         />
 
-        <template v-if="config.translationProvider === 'microsoft'">
+        <template v-if="config.translationProvider === 'google'">
+          <label class="field-label">
+            Google API Key
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <ShieldQuestion :size="15" class="field-help" />
+              </template>
+              Google Cloud Translation API 密钥。
+            </n-tooltip>
+          </label>
+          <n-input
+            v-model:value="config.googleApiKey"
+            :type="showGoogleKey ? 'text' : 'password'"
+            size="medium"
+            placeholder="请输入 Google Cloud Translation API Key"
+            show-password-on="mousedown"
+            @blur="saveApiConfig"
+          >
+            <template #suffix>
+              <button class="icon-button" type="button" @click="showGoogleKey = !showGoogleKey">
+                <component :is="showGoogleKey ? EyeOff : Eye" :size="19" />
+              </button>
+            </template>
+          </n-input>
+
+          <div />
+          <n-button
+            text
+            tag="a"
+            href="https://console.cloud.google.com/apis/credentials"
+            target="_blank"
+            type="primary"
+            class="external-link"
+          >
+            <template #icon><ExternalLink :size="16" /></template>
+            打开 Google Cloud 凭据页
+          </n-button>
+        </template>
+
+        <template v-else-if="config.translationProvider === 'microsoft'">
           <label class="field-label">
             Microsoft Translator Key
             <n-tooltip trigger="hover">
@@ -533,38 +528,11 @@ async function changeTheme() {
       <n-divider />
 
       <div class="settings-grid ocr-grid">
-        <label class="field-label">OCR 引擎</label>
-        <n-select
-          v-model:value="config.ocrEngine"
-          :options="ocrEngineOptions"
-          @update:value="handleOcrEngineChange"
-        />
-
-        <label class="field-label">模型配置</label>
-        <n-select
-          v-model:value="config.ocrModelProfile"
-          :options="ocrModelProfileOptions"
-          @update:value="saveApiConfig"
-        />
-
-        <template v-if="config.ocrEngine !== 'native_onnx'">
-          <label class="field-label">Sidecar 地址</label>
-          <n-input
-            v-model:value="config.ocrEndpoint"
-            placeholder="http://127.0.0.1:8866/ocr"
-            @blur="saveApiConfig"
-          />
-        </template>
-
-        <label class="field-label">运行时来源</label>
+        <label class="field-label">OCR</label>
         <div class="ocr-runtime-card">
           <div class="ocr-runtime-main">
-            <n-tag
-              :type="config.ocrEngine === 'native_onnx' ? 'success' : 'info'"
-              size="small"
-              round
-            >
-              {{ config.ocrEngine === 'native_onnx' ? '进程内' : 'Sidecar' }}
+            <n-tag type="success" size="small" round>
+              进程内
             </n-tag>
             <strong>{{ ocrRuntimeName }}</strong>
           </div>

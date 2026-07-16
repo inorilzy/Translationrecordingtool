@@ -32,6 +32,12 @@ pub trait ProviderGateway: Send + Sync {
         key: &'a str,
         region: &'a str,
     ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a;
+
+    fn translate_google<'a>(
+        &'a self,
+        text: &'a str,
+        api_key: &'a str,
+    ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -195,6 +201,15 @@ where
             providers
                 .translate_microsoft(text, &config.microsoft_key, &config.microsoft_region)
                 .await
+        }
+        "google" => {
+            if config.google_api_key.trim().is_empty() {
+                Err("使用 Google 翻译需要配置 API Key，请在设置中配置".to_string())
+            } else {
+                providers
+                    .translate_google(text, &config.google_api_key)
+                    .await
+            }
         }
         _ => {
             if config.youdao_app_key.trim().is_empty() || config.youdao_app_secret.trim().is_empty()
@@ -365,6 +380,7 @@ mod tests {
         calls: Mutex<Vec<String>>,
         youdao: Mutex<VecDeque<Result<TranslationContent, String>>>,
         microsoft: Mutex<VecDeque<Result<TranslationContent, String>>>,
+        google: Mutex<VecDeque<Result<TranslationContent, String>>>,
     }
 
     impl ProviderGateway for FakeProviders {
@@ -395,6 +411,20 @@ mod tests {
                 .lock()
                 .pop_front()
                 .unwrap_or_else(|| Err("unexpected microsoft call".to_string()));
+            async move { result }
+        }
+
+        fn translate_google<'a>(
+            &'a self,
+            _text: &'a str,
+            _api_key: &'a str,
+        ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
+            self.calls.lock().push("google".to_string());
+            let result = self
+                .google
+                .lock()
+                .pop_front()
+                .unwrap_or_else(|| Err("unexpected google call".to_string()));
             async move { result }
         }
     }

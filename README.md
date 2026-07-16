@@ -2,11 +2,11 @@
 
 一个基于 `Tauri 2 + Vue 3 + Rust + SQLite` 的 Windows 桌面翻译工具，面向日常划词翻译、截图 OCR 翻译、历史记录和本地词典查询。
 
-当前发布版本：`v0.2.0`
+当前发布版本：`v0.2.1`
 
-- Release: <https://github.com/inorilzy/Translationrecordingtool/releases/tag/v0.2.0>
-- 推荐安装包：`translation-tool_0.2.0_x64-setup.exe`
-- MSI 安装包：`translation-tool_0.2.0_x64_en-US.msi`
+- Release: <https://github.com/inorilzy/Translationrecordingtool/releases/tag/v0.2.1>
+- 推荐安装包：`translation-tool_0.2.1_x64-setup.exe`
+- MSI 安装包：`translation-tool_0.2.1_x64_en-US.msi`
 
 ## 产品预览
 
@@ -20,9 +20,17 @@
 - 截图 OCR 翻译：默认快捷键 `Ctrl+Shift+Q`，截图后 OCR、翻译并弹出结果卡片。
 - OCR 原文回填：截图 OCR 识别出的文本会同步到主界面输入框，方便手动修正。
 - 本地词典优先：单词优先查本地 `ECDICT + WordNet`，再用 Free Dictionary 补全音标、例句等信息。
-- 在线翻译：支持有道翻译和 Microsoft Translator。
+- 在线翻译：支持有道、Microsoft Translator、Google Translate。
 - 历史与收藏：翻译记录、收藏、配置保存在本地。
 - 系统托盘：支持关闭时最小化到托盘。
+
+## v0.2.1 亮点
+
+- 新增 Google Translate 配置与调用链路。
+- 截图选择防重入：进行中拒绝重复触发，避免叠多层选区。
+- 截图右键确认，Esc 仍取消。
+- 主题收敛为 Light / Dark，并重做完整暗色 token。
+- OCR 只保留原生 ONNX 主线，去掉 sidecar 兼容入口。
 
 ## v0.2.0 亮点
 
@@ -104,7 +112,7 @@ flowchart TB
 从 Release 页面下载：
 
 ```text
-translation-tool_0.2.0_x64-setup.exe
+translation-tool_0.2.1_x64-setup.exe
 ```
 
 普通用户推荐使用 `.exe` 安装包。`.msi` 更适合系统管理、批量部署或自动化安装。
@@ -230,6 +238,8 @@ npm run ocr:ort:win
 npm run tauri -- dev --config src-tauri/tauri.ocr-native.conf.json
 ```
 
+启动细节、成功判断标准，以及**非交互环境**（进程管理器 / CI / 直接 spawn）下为什么不能裸调 `npm` 的说明，见 [docs/dev-startup.md](docs/dev-startup.md)。
+
 ## 打包
 
 推荐打包命令：
@@ -249,8 +259,8 @@ npm run tauri:build:ocr:native
 产物位置：
 
 ```text
-src-tauri/target/release/bundle/nsis/translation-tool_0.2.0_x64-setup.exe
-src-tauri/target/release/bundle/msi/translation-tool_0.2.0_x64_en-US.msi
+src-tauri/target/release/bundle/nsis/translation-tool_0.2.1_x64-setup.exe
+src-tauri/target/release/bundle/msi/translation-tool_0.2.1_x64_en-US.msi
 ```
 
 ## 常用命令
@@ -267,16 +277,7 @@ cargo check                     # Rust 编译检查
 cargo test                      # Rust 测试
 ```
 
-兼容/调试命令：
-
-```bash
-npm run ocr:server:paddle       # 启动 PaddleOCR HTTP 服务，调试旧链路
-npm run ocr:server:rapid        # 启动 RapidOCR HTTP 服务，调试旧链路
-npm run tauri:build:ocr:lite    # 构建带 Python sidecar 的 lite 兼容版本
-npm run tauri:build:ocr:full    # 构建带 Python sidecar 的 full 兼容版本
-```
-
-正常发布优先使用 `tauri:build:ocr:native`。
+当前产品仅支持原生 ONNX OCR；不再提供 Paddle/Rapid sidecar 打包路径。
 
 ## 数据存储
 

@@ -39,9 +39,10 @@ describe('normalizeSettings', () => {
       translationProvider: 'microsoft',
       microsoftTranslatorKey: 'ms-key',
       microsoftTranslatorRegion: 'eastasia',
+      googleApiKey: '',
       ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-      ocrEngine: 'rapidocr',
-      ocrModelProfile: 'embedded',
+      ocrEngine: 'native_onnx',
+      ocrModelProfile: 'small',
       ocrPreloadOnStartup: false,
       globalShortcut: 'Ctrl+Shift+Q',
       screenshotShortcut: 'Ctrl+Shift+S',
@@ -67,6 +68,12 @@ describe('normalizeSettings', () => {
     expect(result.globalShortcut).toBe(defaultSettings.globalShortcut)
     expect(result.screenshotShortcut).toBe(defaultSettings.screenshotShortcut)
     expect(result.enableTray).toBe(defaultSettings.enableTray)
+  })
+
+  it('maps unsupported themes back to light', () => {
+    expect(normalizeSettings({ theme: 'one-dark' }).theme).toBe('light')
+    expect(normalizeSettings({ theme: 'github-dark' }).theme).toBe('light')
+    expect(normalizeSettings({ theme: 'github-light' }).theme).toBe('light')
   })
 })
 

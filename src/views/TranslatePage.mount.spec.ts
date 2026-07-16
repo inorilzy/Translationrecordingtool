@@ -65,14 +65,14 @@ describe('TranslatePage mounted interactions', () => {
     settingsStore.globalShortcut = 'Ctrl+Shift+T'
     const wrapper = await mountPage()
 
-    expect(wrapper.text()).toContain('剪贴板翻译 (Ctrl+Shift+T)')
+    expect(wrapper.text()).toContain('剪贴板 (Ctrl+Shift+T)')
   })
 
   it('renders screenshot shortcut text from settings store', async () => {
     settingsStore.screenshotShortcut = 'Ctrl+Alt+S'
     const wrapper = await mountPage()
 
-    expect(wrapper.text()).toContain('截图 OCR 翻译 (Ctrl+Alt+S)')
+    expect(wrapper.text()).toContain('截图 OCR (Ctrl+Alt+S)')
   })
 
   it('submits trimmed text from the manual input', async () => {
@@ -137,7 +137,7 @@ describe('TranslatePage mounted interactions', () => {
     const wrapper = await mountPage()
 
     expect(wrapper.text()).toContain('翻译失败: network')
-    expect(wrapper.text()).toContain('翻译结果')
+    expect(wrapper.text()).toContain('结果')
     expect(wrapper.get('[data-testid="translation-card"]').text()).toContain('你好，世界')
   })
 })

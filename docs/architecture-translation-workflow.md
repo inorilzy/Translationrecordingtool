@@ -106,18 +106,15 @@ The workflow persists the first usable result before publishing it. Later enrich
 ## OCR boundary
 
 - `ocr_contracts` owns engine-independent runtime configuration and status records.
-- `ocr` selects the adapter and exposes the façade used by the workflow and settings commands.
+- `ocr` exposes the native ONNX façade used by the workflow and settings commands.
 - `native_ocr` owns in-process ONNX execution.
-- `ocr_service` owns the compatibility sidecar process and HTTP protocol.
-- Native OCR modules do not import the sidecar implementation.
+- Compatibility sidecars are no longer product options; legacy `paddleocr` / `rapidocr` values migrate to `native_onnx`.
 
-Packaging profiles and model sources:
+Packaging profile:
 
 - `tauri.ocr-native.conf.json`: selects `native_onnx` with packaged `small` PP-OCRv6 models and `onnxruntime.dll`.
-- `tauri.ocr-lite.conf.json`: selects the PaddleOCR sidecar with packaged `small` models; RapidOCR remains an explicit sidecar choice and uses its embedded models.
-- `tauri.ocr-sidecar.conf.json`: selects PaddleOCR with the explicit `official` profile, which permits and verifies official model download; RapidOCR remains an explicit sidecar choice and uses its embedded models.
 
-Persisted `ocrEngine` and `ocrModelProfile` values take precedence over package defaults. Discovering a sidecar never changes the configured engine. Missing packaged models, missing sidecar binaries, and unavailable official downloads fail before recognition with the selected engine and model source in the error or status.
+Persisted `ocrEngine` / `ocrModelProfile` values are normalized to native ONNX (`tiny` / `small` / `medium`). Missing packaged models fail before recognition with the selected profile in the error or status.
 
 ## Popup ownership
 

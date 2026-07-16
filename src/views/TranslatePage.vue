@@ -35,155 +35,186 @@ async function handleScreenshotTranslate() {
 </script>
 
 <template>
-  <div class="page-container">
-    <div class="header">
+  <div class="page-container translate-page">
+    <header class="page-header">
+      <div class="eyebrow">WORKBENCH</div>
       <h1>手动翻译</h1>
-      <p class="subtitle">输入或粘贴文本，获取翻译结果</p>
-    </div>
+      <p class="subtitle">输入文本，或用快捷键从剪贴板 / 截图进入同一工作流</p>
+    </header>
 
-    <!-- 翻译输入区 -->
-    <div class="translate-section">
-      <div class="input-group">
-        <textarea
-          v-model="inputText"
-          @keydown.ctrl.enter="handleTranslate"
-          @keydown.meta.enter="handleTranslate"
-          placeholder="输入要翻译的文本，按 Ctrl+Enter 或 Cmd+Enter 快速翻译"
-          class="translate-input"
-          rows="5"
-          autofocus
-        />
-        <div class="input-actions">
-          <button
-            @click="handleTranslate"
-            :disabled="store.loading || !inputText.trim()"
-            class="btn btn-primary translate-btn"
-          >
-            {{ store.loading ? '翻译中...' : '翻译' }}
-          </button>
-          <span class="divider">或</span>
-          <button
-            @click="store.translateFromClipboard"
-            :disabled="store.loading"
-            class="btn btn-secondary clipboard-btn"
-          >
-            {{ store.loading ? '翻译中...' : `剪贴板翻译 (${settings.globalShortcut})` }}
-          </button>
-          <button
-            @click="handleScreenshotTranslate"
-            :disabled="store.loading"
-            class="btn btn-secondary screenshot-btn"
-          >
-            {{ store.loading ? '处理中...' : `截图 OCR 翻译 (${settings.screenshotShortcut})` }}
-          </button>
-        </div>
+    <section class="workbench" aria-label="翻译工作台">
+      <label class="field-label" for="translate-input">原文</label>
+      <textarea
+        id="translate-input"
+        v-model="inputText"
+        @keydown.ctrl.enter="handleTranslate"
+        @keydown.meta.enter="handleTranslate"
+        placeholder="输入要翻译的文本，Ctrl/Cmd+Enter 提交"
+        class="translate-input"
+        rows="7"
+        autofocus
+      />
+
+      <div class="toolbar">
+        <button
+          @click="handleTranslate"
+          :disabled="store.loading || !inputText.trim()"
+          class="btn btn-primary translate-btn"
+        >
+          {{ store.loading ? '翻译中...' : '翻译' }}
+        </button>
+        <button
+          @click="store.translateFromClipboard"
+          :disabled="store.loading"
+          class="btn btn-secondary clipboard-btn"
+        >
+          {{ store.loading ? '翻译中...' : `剪贴板 (${settings.globalShortcut})` }}
+        </button>
+        <button
+          @click="handleScreenshotTranslate"
+          :disabled="store.loading"
+          class="btn btn-secondary screenshot-btn"
+        >
+          {{ store.loading ? '处理中...' : `截图 OCR (${settings.screenshotShortcut})` }}
+        </button>
       </div>
-    </div>
+    </section>
 
-    <!-- 错误提示 -->
     <div v-if="store.error" class="error-message">{{ store.error }}</div>
 
-    <!-- 当前翻译结果 -->
-    <div v-if="store.currentTranslation" class="current-result">
-      <h3>翻译结果</h3>
+    <section v-if="store.currentTranslation" class="result-panel" aria-label="翻译结果">
+      <div class="result-heading">
+        <h2>结果</h2>
+        <span class="result-hint">点击卡片查看详情</span>
+      </div>
       <TranslationCard
         :translation="store.currentTranslation"
         :show-favorite="true"
       />
-    </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.header {
-  text-align: center;
+
+.translate-page {
+  max-width: 760px;
+}
+
+.page-header {
   margin-bottom: var(--spacing-lg);
 }
 
-.header h1 {
-  font-size: var(--font-size-lg);
-  color: var(--color-text-primary);
+.eyebrow {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  color: var(--color-app-accent);
+  margin-bottom: 8px;
+}
+
+.page-header h1 {
   margin: 0;
+  font-family: var(--font-family-display);
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: var(--color-app-text-strong);
+  line-height: 1.15;
 }
 
 .subtitle {
-  margin: var(--spacing-xs) 0 0;
-  color: var(--color-text-tertiary);
+  margin: 8px 0 0;
+  max-width: 48ch;
+  color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+  line-height: 1.55;
 }
 
-.translate-section {
-  margin: var(--spacing-lg) 0;
-}
-
-.input-group {
+.workbench {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
-  max-width: 640px;
-  margin: 0 auto;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--color-app-panel-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-app-panel-bg);
+  box-shadow: var(--shadow-app-panel);
+}
+
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
 }
 
 .translate-input {
   width: 100%;
-  padding: var(--spacing-md);
-  font-size: var(--font-size-md);
-  background: var(--color-bg-secondary);
-  border: var(--border-width) solid var(--color-border);
+  min-height: 160px;
+  padding: 14px 16px;
+  font-size: 15px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   color: var(--color-text-primary);
   resize: vertical;
   font-family: inherit;
-  transition: border-color var(--transition-fast);
-  line-height: 1.6;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  line-height: 1.65;
 }
 
 .translate-input:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-alpha);
+  box-shadow: 0 0 0 3px var(--color-primary-alpha);
 }
 
 .translate-input::placeholder {
   color: var(--color-text-tertiary);
 }
 
-.input-actions {
+.toolbar {
   display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  justify-content: center;
   flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
 }
 
 .translate-btn {
-  padding: var(--spacing-sm) var(--spacing-xl);
-  font-size: var(--font-size-md);
-  min-width: 120px;
+  min-width: 108px;
+  padding: 10px 18px;
 }
 
-.clipboard-btn {
-  padding: var(--spacing-sm) var(--spacing-lg);
-  font-size: var(--font-size-sm);
-}
-
+.clipboard-btn,
 .screenshot-btn {
-  padding: var(--spacing-sm) var(--spacing-lg);
+  padding: 10px 14px;
   font-size: var(--font-size-sm);
 }
 
-.divider {
+.result-panel {
+  margin-top: var(--spacing-xl);
+}
+
+.result-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.result-heading h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--color-text-tertiary);
-  font-size: var(--font-size-sm);
 }
 
-.current-result {
-  margin: var(--spacing-xl) 0;
-}
-
-.current-result h3 {
-  margin-bottom: var(--spacing-md);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-md);
+.result-hint {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
 }
 </style>

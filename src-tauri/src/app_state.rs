@@ -26,6 +26,7 @@ pub struct AppConfig {
     pub translation_provider: String,
     pub microsoft_translator_key: String,
     pub microsoft_translator_region: String,
+    pub google_api_key: String,
     pub ocr_endpoint: String,
     pub ocr_engine: String,
     pub ocr_model_profile: String,
@@ -43,6 +44,7 @@ impl Default for AppConfig {
             translation_provider: "youdao".to_string(),
             microsoft_translator_key: String::new(),
             microsoft_translator_region: String::new(),
+            google_api_key: String::new(),
             ocr_endpoint: DEFAULT_OCR_ENDPOINT.to_string(),
             ocr_engine: DEFAULT_OCR_ENGINE.to_string(),
             ocr_model_profile: DEFAULT_OCR_MODEL_PROFILE.to_string(),
@@ -71,6 +73,7 @@ impl AppConfig {
             youdao_app_secret: self.api_secret.clone(),
             microsoft_key: self.microsoft_translator_key.clone(),
             microsoft_region: self.microsoft_translator_region.clone(),
+            google_api_key: self.google_api_key.clone(),
         }
     }
 }
@@ -146,6 +149,7 @@ pub fn to_persisted_settings(
         translation_provider: config.translation_provider.clone(),
         microsoft_translator_key: config.microsoft_translator_key.clone(),
         microsoft_translator_region: config.microsoft_translator_region.clone(),
+        google_api_key: config.google_api_key.clone(),
         ocr_endpoint: config.ocr_endpoint.clone(),
         ocr_engine: config.ocr_engine.clone(),
         ocr_model_profile: config.ocr_model_profile.clone(),
@@ -199,6 +203,7 @@ pub fn update_and_persist_api_config(
     translation_provider: String,
     microsoft_translator_key: String,
     microsoft_translator_region: String,
+    google_api_key: String,
     ocr_endpoint: String,
     ocr_engine: String,
     ocr_model_profile: String,
@@ -211,6 +216,7 @@ pub fn update_and_persist_api_config(
         cfg.translation_provider = translation_provider;
         cfg.microsoft_translator_key = microsoft_translator_key;
         cfg.microsoft_translator_region = microsoft_translator_region;
+        cfg.google_api_key = google_api_key;
         cfg.ocr_endpoint = ocr_endpoint;
         cfg.ocr_engine = ocr_engine;
         cfg.ocr_model_profile = ocr_model_profile;

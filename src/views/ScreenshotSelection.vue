@@ -64,9 +64,9 @@ const selectionStyle = computed(() => {
 
 const hintText = computed(() => {
   if (!selectionRect.value) {
-    return '拖拽选择要 OCR 翻译的区域，按 Esc 取消'
+    return '拖拽选择要 OCR 翻译的区域，右键确认，Esc 取消'
   }
-  return '拖动边框调整区域，按 Enter 确认，Esc 取消'
+  return '拖动边框调整区域，右键/Enter 确认，Esc 取消'
 })
 
 const selectionSizeText = computed(() => {
@@ -360,7 +360,7 @@ onUnmounted(() => {
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
     @pointercancel="cancelSelection"
-    @contextmenu.prevent="cancelSelection"
+    @contextmenu.prevent="completeSelection"
   >
     <div class="desktop-preview" aria-hidden="true">
       <img

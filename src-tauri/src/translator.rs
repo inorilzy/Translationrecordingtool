@@ -219,6 +219,105 @@ pub async fn translate_with_microsoft(
     })
 }
 
+#[derive(Debug, Deserialize)]
+struct GoogleTranslateResponse {
+    data: Option<GoogleTranslateData>,
+    error: Option<GoogleApiError>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleTranslateData {
+    translations: Option<Vec<GoogleTranslationItem>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleTranslationItem {
+    #[serde(rename = "translatedText")]
+    translated_text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleApiError {
+    message: Option<String>,
+}
+
+pub async fn translate_with_google(
+    text: &str,
+    api_key: &str,
+) -> Result<TranslationContent, String> {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        return Err("使用 Google 翻译需要配置 API Key".to_string());
+    }
+
+    info!("调用 Google Cloud Translation API");
+
+    let url = format!(
+        "https://translation.googleapis.com/language/translate/v2?key={}",
+        urlencoding::encode(api_key)
+    );
+
+    let body = serde_json::json!({
+        "q": text,
+        "target": "zh-CN",
+        "format": "text"
+    });
+
+    let response = crate::http_client::shared_client()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            let err_msg = format!("Google 翻译 API 请求失败: {}", e);
+            error!("{}", err_msg);
+            err_msg
+        })?;
+
+    let status = response.status();
+    let result: GoogleTranslateResponse = response.json().await.map_err(|e| {
+        let err_msg = format!("Google 翻译 API 解析响应失败: {}", e);
+        error!("{}", err_msg);
+        err_msg
+    })?;
+
+    if let Some(error) = result.error {
+        let message = error
+            .message
+            .unwrap_or_else(|| format!("HTTP {}", status.as_u16()));
+        let err_msg = format!("Google 翻译 API 返回错误: {}", message);
+        error!("{}", err_msg);
+        return Err(err_msg);
+    }
+
+    if !status.is_success() {
+        let err_msg = format!("Google 翻译 API 返回错误: HTTP {}", status.as_u16());
+        error!("{}", err_msg);
+        return Err(err_msg);
+    }
+
+    let translated_text = result
+        .data
+        .and_then(|data| data.translations)
+        .and_then(|items| items.into_iter().next())
+        .and_then(|item| item.translated_text)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| "未获取到 Google 翻译结果".to_string())?;
+
+    Ok(TranslationContent {
+        translated_text,
+        phonetic: None,
+        us_phonetic: None,
+        uk_phonetic: None,
+        audio_url: None,
+        explains: Vec::new(),
+        examples: Vec::new(),
+        synonyms: Vec::new(),
+        word_type: None,
+    })
+}
+
 pub async fn fetch_free_dictionary_supplement(
     word: &str,
 ) -> Result<Option<FreeDictionarySupplement>, String> {

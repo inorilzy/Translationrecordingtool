@@ -5,25 +5,19 @@ use tracing::{info, warn};
 
 use crate::{
     native_ocr,
-    ocr_contracts::{
-        is_native_engine, OcrRuntimeConfig, OcrServiceStatus, OCR_DEVICE, OCR_LANG, PPOCR_VERSION,
-        RAPID_OCR_VERSION,
-    },
-    ocr_service,
+    ocr_contracts::{OcrRuntimeConfig, OcrServiceStatus, OCR_DEVICE, OCR_LANG, PPOCR_VERSION},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OcrAdapterKind {
     Native,
-    CompatibilitySidecar,
 }
 
 pub fn adapter_kind(engine: &str) -> OcrAdapterKind {
-    if is_native_engine(engine) {
-        OcrAdapterKind::Native
-    } else {
-        OcrAdapterKind::CompatibilitySidecar
-    }
+    // Product runtime is native ONNX only. Legacy engine names are normalized
+    // upstream; unknown values still fail closed through native status/init.
+    let _ = engine;
+    OcrAdapterKind::Native
 }
 
 pub fn spawn_startup_check(app: AppHandle, config: OcrRuntimeConfig) {
@@ -49,68 +43,42 @@ pub async fn recognize_text_with_config(
     config: &OcrRuntimeConfig,
     image_base64: &str,
 ) -> Result<String, String> {
-    match adapter_kind(&config.engine) {
-        OcrAdapterKind::Native => {
-            let app = app.clone();
-            let config = config.clone();
-            let image_base64 = image_base64.to_string();
-            tauri::async_runtime::spawn_blocking(move || {
-                native_ocr::recognize_text(&app, &config, &image_base64)
-            })
-            .await
-            .map_err(|error| format!("原生 OCR 任务失败: {}", error))?
-        }
-        OcrAdapterKind::CompatibilitySidecar => {
-            ocr_service::ensure_running(app, config).await?;
-            ocr_service::recognize_text(&config.endpoint, image_base64).await
-        }
-    }
+    let _ = adapter_kind(&config.engine);
+    let app = app.clone();
+    let config = config.clone();
+    let image_base64 = image_base64.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        native_ocr::recognize_text(&app, &config, &image_base64)
+    })
+    .await
+    .map_err(|error| format!("原生 OCR 任务失败: {}", error))?
 }
 
 pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
-    match adapter_kind(&config.engine) {
-        OcrAdapterKind::Native => {
-            let app = app.clone();
-            let config = config.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                native_ocr::ensure_initialized(&app, &config)
-            })
-            .await
-            .map_err(|error| format!("原生 OCR 初始化任务失败: {}", error))?
-        }
-        OcrAdapterKind::CompatibilitySidecar => ocr_service::ensure_running(app, config).await,
-    }
+    let _ = adapter_kind(&config.engine);
+    let app = app.clone();
+    let config = config.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        native_ocr::ensure_initialized(&app, &config)
+    })
+    .await
+    .map_err(|error| format!("原生 OCR 初始化任务失败: {}", error))?
 }
 
 pub async fn warmup(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
-    match adapter_kind(&config.engine) {
-        OcrAdapterKind::Native => ensure_running(app, config).await,
-        OcrAdapterKind::CompatibilitySidecar => ocr_service::warmup(app, config).await,
-    }
+    ensure_running(app, config).await
 }
 
 pub async fn restart(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
-    match adapter_kind(&config.engine) {
-        OcrAdapterKind::Native => {
-            ocr_service::stop_process(app)?;
-            ensure_running(app, config).await
-        }
-        OcrAdapterKind::CompatibilitySidecar => ocr_service::restart(app, config).await,
-    }
+    ensure_running(app, config).await
 }
 
 pub async fn status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus {
-    match adapter_kind(&config.engine) {
-        OcrAdapterKind::Native => native_status(app, config),
-        OcrAdapterKind::CompatibilitySidecar => ocr_service::status(app, config).await,
-    }
+    native_status(app, config)
 }
 
-pub fn log_path(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<PathBuf, String> {
-    match adapter_kind(&config.engine) {
-        OcrAdapterKind::Native => Err("原生 ONNX OCR 不使用 sidecar 日志文件".to_string()),
-        OcrAdapterKind::CompatibilitySidecar => ocr_service::log_path(app, &config.engine),
-    }
+pub fn log_path(_app: &AppHandle, _config: &OcrRuntimeConfig) -> Result<PathBuf, String> {
+    Err("原生 ONNX OCR 不使用 sidecar 日志文件".to_string())
 }
 
 fn native_status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus {
@@ -120,7 +88,7 @@ fn native_status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus
         running,
         endpoint: "in-process".to_string(),
         message: if running {
-            "原生 ONNX OCR 可用，无需 Python sidecar".to_string()
+            "原生 ONNX OCR 可用".to_string()
         } else {
             "未找到 PP-OCRv6 ONNX 模型目录".to_string()
         },
@@ -135,7 +103,7 @@ fn native_status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus
         sidecar_path: None,
         log_path: None,
         preload_on_startup: config.preload_on_startup,
-        rapidocr_version: RAPID_OCR_VERSION,
+        rapidocr_version: "-",
         paddleocr_version: "-",
         ppocr_version: PPOCR_VERSION,
         onnxruntime_version: native_ocr::onnx_runtime_version(),
@@ -149,16 +117,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn selects_native_adapter_for_supported_native_aliases() {
-        for engine in ["native", "native_onnx", "onnx", "onnxruntime", "ppocr-rs"] {
+    fn always_selects_native_adapter() {
+        for engine in [
+            "native",
+            "native_onnx",
+            "onnx",
+            "paddleocr",
+            "rapidocr",
+            "unknown",
+        ] {
             assert_eq!(adapter_kind(engine), OcrAdapterKind::Native);
-        }
-    }
-
-    #[test]
-    fn selects_compatibility_sidecar_for_paddle_and_rapid() {
-        for engine in ["paddleocr", "rapidocr"] {
-            assert_eq!(adapter_kind(engine), OcrAdapterKind::CompatibilitySidecar);
         }
     }
 }

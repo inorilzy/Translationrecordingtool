@@ -20,6 +20,7 @@ pub struct TranslationConfig {
     pub youdao_app_secret: String,
     pub microsoft_key: String,
     pub microsoft_region: String,
+    pub google_api_key: String,
 }
 
 /// Translation content produced by the application workflow.

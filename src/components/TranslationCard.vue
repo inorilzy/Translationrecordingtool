@@ -32,12 +32,15 @@ function goToDetail() {
     @click="goToDetail"
   >
     <div class="card-content">
-      <div class="source-text">{{ translation.source_text }}</div>
+      <div class="source-row">
+        <div class="source-text">{{ translation.source_text }}</div>
+        <span v-if="showFavorite && translation.is_favorite" class="favorite-badge" title="已收藏">★</span>
+      </div>
       <div class="translated-text">{{ translation.translated_text }}</div>
 
       <div v-if="!compact" class="card-meta">
         <span v-if="translation.phonetic" class="phonetic">
-          [{{ translation.phonetic }}]
+          /{{ translation.phonetic }}/
         </span>
         <span v-if="translation.word_type" class="word-type">
           {{ translation.word_type }}
@@ -47,10 +50,7 @@ function goToDetail() {
       <div class="card-footer">
         <span class="time">{{ formatTime(translation.created_at) }}</span>
         <span v-if="translation.access_count > 1" class="access-count">
-          查询 {{ translation.access_count }} 次
-        </span>
-        <span v-if="showFavorite && translation.is_favorite" class="favorite-badge">
-          ⭐
+          ×{{ translation.access_count }}
         </span>
       </div>
     </div>
@@ -58,63 +58,84 @@ function goToDetail() {
 </template>
 
 <style scoped>
+
 .translation-card {
   background: var(--color-bg-primary);
-  border: var(--border-width) solid var(--color-border);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: var(--spacing-md);
+  padding: 14px 16px;
   cursor: pointer;
-  transition: all var(--transition-fast);
-  margin-bottom: var(--spacing-md);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  margin-bottom: 12px;
 }
 
 .translation-card:hover {
   box-shadow: var(--shadow-sm);
-  border-color: var(--color-primary);
+  border-color: var(--color-app-accent-border);
+  transform: translateY(-1px);
 }
 
 .translation-card.compact {
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 10px 14px;
 }
 
 .card-content {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: 8px;
+}
+
+.source-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .source-text {
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-md);
+  font-family: var(--font-family-display);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--color-app-text-strong);
+  font-size: 16px;
+  line-height: 1.35;
 }
 
 .translated-text {
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .card-meta {
   display: flex;
-  gap: var(--spacing-md);
-  font-size: var(--font-size-sm);
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
   color: var(--color-text-tertiary);
 }
 
 .phonetic {
+  font-family: var(--font-family-mono);
   color: var(--color-primary);
 }
 
 .word-type {
-  color: var(--color-text-secondary);
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-chip-bg);
+  border: 1px solid var(--color-chip-border);
+  color: var(--color-app-accent-strong);
+  font-weight: 600;
 }
 
 .card-footer {
   display: flex;
-  gap: var(--spacing-md);
-  font-size: var(--font-size-sm);
+  gap: 12px;
+  font-size: 12px;
   color: var(--color-text-tertiary);
   align-items: center;
+  padding-top: 2px;
 }
 
 .time {
@@ -122,11 +143,14 @@ function goToDetail() {
 }
 
 .access-count {
-  color: var(--color-warning);
-  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
+  font-weight: 600;
 }
 
 .favorite-badge {
-  font-size: var(--font-size-md);
+  color: var(--color-warning);
+  font-size: 14px;
+  line-height: 1;
 }
 </style>

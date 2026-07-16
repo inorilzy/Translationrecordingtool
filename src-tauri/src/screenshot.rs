@@ -1,6 +1,9 @@
 use std::{
     io::Cursor,
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        LazyLock, Mutex,
+    },
 };
 
 #[cfg(not(windows))]
@@ -30,7 +33,31 @@ const MIN_SELECTION_SIZE: f64 = 4.0;
 #[cfg(not(windows))]
 const OVERLAY_HIDE_DELAY: Duration = Duration::from_millis(120);
 
-static SELECTION_PAYLOAD: OnceLock<Mutex<Option<SelectionStartPayload>>> = OnceLock::new();
+static SELECTION_PAYLOAD: LazyLock<Mutex<Option<SelectionStartPayload>>> =
+    LazyLock::new(|| Mutex::new(None));
+static SELECTION_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+struct SelectionSessionGuard;
+
+impl SelectionSessionGuard {
+    fn try_acquire() -> Result<Self, String> {
+        match SELECTION_IN_PROGRESS.compare_exchange(
+            false,
+            true,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => Ok(Self),
+            Err(_) => Err("已有截图选择进行中，请先按 ESC 取消当前截图".to_string()),
+        }
+    }
+}
+
+impl Drop for SelectionSessionGuard {
+    fn drop(&mut self) {
+        SELECTION_IN_PROGRESS.store(false, Ordering::Release);
+    }
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,6 +136,7 @@ pub async fn select_and_capture_with_area(app: tauri::AppHandle) -> Result<Captu
 }
 
 fn select_and_capture_blocking(app: tauri::AppHandle) -> Result<CaptureResult, String> {
+    let _session = SelectionSessionGuard::try_acquire()?;
     let should_restore_main_window = should_restore_main_window_after_capture(&app);
 
     #[cfg(windows)]
@@ -327,7 +355,7 @@ fn reload_selection_window(window: &tauri::WebviewWindow) -> Result<(), String> 
 }
 
 fn selection_payload_slot() -> &'static Mutex<Option<SelectionStartPayload>> {
-    SELECTION_PAYLOAD.get_or_init(|| Mutex::new(None))
+    &SELECTION_PAYLOAD
 }
 
 #[cfg(not(windows))]
@@ -1154,8 +1182,7 @@ mod windows_native_selection {
             }
             WM_RBUTTONDOWN => {
                 if let Some(state) = state_from_hwnd(hwnd) {
-                    state.send_result(Ok(None));
-                    DestroyWindow(hwnd);
+                    complete_selection(hwnd, state);
                 }
                 0
             }
@@ -1987,7 +2014,8 @@ mod windows_native_selection {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_area, CaptureArea};
+    use super::{normalize_area, CaptureArea, SelectionSessionGuard, SELECTION_IN_PROGRESS};
+    use std::sync::atomic::Ordering;
 
     #[test]
     fn accepts_valid_capture_area() {
@@ -2012,5 +2040,21 @@ mod tests {
             height: 80.0,
         })
         .is_err());
+    }
+
+    #[test]
+    fn blocks_concurrent_screenshot_selection_sessions() {
+        SELECTION_IN_PROGRESS.store(false, Ordering::Release);
+
+        let first = SelectionSessionGuard::try_acquire().expect("first session should start");
+        let second_error = match SelectionSessionGuard::try_acquire() {
+            Ok(_) => panic!("second session should be blocked"),
+            Err(error) => error,
+        };
+        assert!(second_error.contains("已有截图选择进行中"));
+
+        drop(first);
+        let third = SelectionSessionGuard::try_acquire().expect("session should restart after drop");
+        drop(third);
     }
 }

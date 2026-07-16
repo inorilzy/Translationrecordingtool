@@ -59,7 +59,7 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'ms-key',
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-        ocrEngine: 'paddleocr',
+        ocrEngine: 'native_onnx',
         ocrModelProfile: 'tiny',
         ocrPreloadOnStartup: false,
         screenshotShortcut: 'Ctrl+Shift+S',
@@ -75,7 +75,7 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorKey).toBe('ms-key')
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
-      expect(store.ocrEngine).toBe('paddleocr')
+      expect(store.ocrEngine).toBe('native_onnx')
       expect(store.ocrModelProfile).toBe('tiny')
       expect(store.ocrPreloadOnStartup).toBe(false)
       expect(store.screenshotShortcut).toBe('Ctrl+Shift+S')
@@ -107,12 +107,12 @@ describe('useSettingsStore', () => {
     })
 
     it('applies theme via DOM when loading settings', async () => {
-      invokeMock.mockResolvedValue({ theme: 'one-dark' })
+      invokeMock.mockResolvedValue({ theme: 'dark' })
 
       const store = useSettingsStore()
       await store.loadSettings()
 
-      expect(settingsLib.applyTheme).toHaveBeenCalledWith('one-dark')
+      expect(settingsLib.applyTheme).toHaveBeenCalledWith('dark')
     })
   })
 
@@ -128,8 +128,8 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'new-ms-key',
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-        ocrEngine: 'rapidocr',
-        ocrModelProfile: 'embedded',
+        ocrEngine: 'native_onnx',
+        ocrModelProfile: 'small',
         ocrPreloadOnStartup: false,
       })
 
@@ -140,8 +140,8 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'new-ms-key',
         microsoftTranslatorRegion: 'eastasia',
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
-        ocrEngine: 'rapidocr',
-        ocrModelProfile: 'embedded',
+        ocrEngine: 'native_onnx',
+        ocrModelProfile: 'small',
         ocrPreloadOnStartup: false,
       })
       expect(store.apiKey).toBe('new-key')
@@ -150,8 +150,8 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorKey).toBe('new-ms-key')
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
-      expect(store.ocrEngine).toBe('rapidocr')
-      expect(store.ocrModelProfile).toBe('embedded')
+      expect(store.ocrEngine).toBe('native_onnx')
+      expect(store.ocrModelProfile).toBe('small')
       expect(store.ocrPreloadOnStartup).toBe(false)
     })
 
@@ -166,7 +166,7 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'bad-ms-key',
         microsoftTranslatorRegion: 'westus',
         ocrEndpoint: 'http://bad.local/ocr',
-        ocrEngine: 'paddleocr',
+        ocrEngine: 'native_onnx',
         ocrModelProfile: 'tiny',
         ocrPreloadOnStartup: false,
       })).rejects.toThrow('backend error')
@@ -236,11 +236,11 @@ describe('useSettingsStore', () => {
       invokeMock.mockResolvedValue(undefined)
 
       const store = useSettingsStore()
-      await store.updateTheme('github-dark')
+      await store.updateTheme('dark')
 
-      expect(invokeMock).toHaveBeenCalledWith('update_theme', { theme: 'github-dark' })
-      expect(store.theme).toBe('github-dark')
-      expect(settingsLib.applyTheme).toHaveBeenCalledWith('github-dark')
+      expect(invokeMock).toHaveBeenCalledWith('update_theme', { theme: 'dark' })
+      expect(store.theme).toBe('dark')
+      expect(settingsLib.applyTheme).toHaveBeenCalledWith('dark')
     })
 
     it('reverts local state on failure', async () => {
@@ -312,7 +312,7 @@ describe('useSettingsStore', () => {
         endpoint: 'http://127.0.0.1:8866/ocr',
         message: 'PaddleOCR 服务正常',
         lastError: null,
-        engine: 'paddleocr',
+        engine: 'native_onnx',
         modelProfile: 'small',
         modelDir: null,
         sidecarPath: null,

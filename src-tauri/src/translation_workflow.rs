@@ -264,6 +264,14 @@ impl ProviderGateway for AppProviderGateway {
     ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
         async move { translator::translate_with_microsoft(text, key, region).await }
     }
+
+    fn translate_google<'a>(
+        &'a self,
+        text: &'a str,
+        api_key: &'a str,
+    ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
+        async move { translator::translate_with_google(text, api_key).await }
+    }
 }
 
 #[derive(Clone)]
@@ -393,6 +401,7 @@ mod tests {
         calls: Mutex<Vec<String>>,
         youdao: Mutex<VecDeque<Result<TranslationContent, String>>>,
         microsoft: Mutex<VecDeque<Result<TranslationContent, String>>>,
+        google: Mutex<VecDeque<Result<TranslationContent, String>>>,
     }
 
     impl ProviderGateway for FakeProviders {
@@ -415,6 +424,20 @@ mod tests {
         ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
             self.calls.lock().push("microsoft".to_string());
             let result = self.microsoft.lock().pop_front().unwrap();
+            async move { result }
+        }
+
+        fn translate_google<'a>(
+            &'a self,
+            _text: &'a str,
+            _api_key: &'a str,
+        ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
+            self.calls.lock().push("google".to_string());
+            let result = self
+                .google
+                .lock()
+                .pop_front()
+                .unwrap_or_else(|| Err("unexpected google call".to_string()));
             async move { result }
         }
     }

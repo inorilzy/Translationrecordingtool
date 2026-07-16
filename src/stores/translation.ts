@@ -135,6 +135,11 @@ export const useTranslationStore = defineStore('translation', () => {
   }
 
   async function translateScreenshot() {
+    if (loading.value) {
+      error.value = '已有截图选择进行中，请先按 ESC 取消当前截图'
+      return null
+    }
+
     const operationId = ++screenshotOperationId
     activeScreenshotRequestId = null
     loading.value = true
@@ -164,7 +169,13 @@ export const useTranslationStore = defineStore('translation', () => {
       return persisted
     } catch (e) {
       if (operationId === screenshotOperationId) {
-        error.value = formatStoreError('截图 OCR 翻译失败', e)
+        const message = getErrorMessage(e)
+        // Keep cancel / reentry messages clean for users.
+        if (message.includes('已取消截图选择') || message.includes('已有截图选择进行中')) {
+          error.value = message
+        } else {
+          error.value = formatStoreError('截图 OCR 翻译失败', e)
+        }
       }
       return null
     } finally {

@@ -6,6 +6,7 @@ export interface AppSettings {
   translationProvider: string
   microsoftTranslatorKey: string
   microsoftTranslatorRegion: string
+  googleApiKey: string
   ocrEndpoint: string
   ocrEngine: string
   ocrModelProfile: string
@@ -22,6 +23,7 @@ export const defaultSettings: AppSettings = {
   translationProvider: 'youdao',
   microsoftTranslatorKey: '',
   microsoftTranslatorRegion: '',
+  googleApiKey: '',
   ocrEndpoint: 'http://127.0.0.1:8866/ocr',
   ocrEngine: 'native_onnx',
   ocrModelProfile: 'small',
@@ -32,10 +34,27 @@ export const defaultSettings: AppSettings = {
   theme: 'light',
 }
 
+const SUPPORTED_THEMES: Record<string, true> = {
+  light: true,
+  dark: true,
+}
+
+export function normalizeTheme(theme?: string | null): string {
+  if (theme && SUPPORTED_THEMES[theme]) {
+    return theme
+  }
+  return defaultSettings.theme
+}
+
 export function normalizeSettings(settings?: Partial<AppSettings> | null): AppSettings {
-  return {
+  const merged = {
     ...defaultSettings,
     ...settings,
+  }
+
+  return {
+    ...merged,
+    theme: normalizeTheme(merged.theme),
   }
 }
 
@@ -51,6 +70,7 @@ export function isDefaultSettings(settings: AppSettings) {
     && settings.translationProvider === defaultSettings.translationProvider
     && settings.microsoftTranslatorKey === defaultSettings.microsoftTranslatorKey
     && settings.microsoftTranslatorRegion === defaultSettings.microsoftTranslatorRegion
+    && settings.googleApiKey === defaultSettings.googleApiKey
     && settings.ocrEndpoint === defaultSettings.ocrEndpoint
     && settings.ocrEngine === defaultSettings.ocrEngine
     && settings.ocrModelProfile === defaultSettings.ocrModelProfile
@@ -63,5 +83,5 @@ export function isDefaultSettings(settings: AppSettings) {
 }
 
 export function applyTheme(theme: string) {
-  document.documentElement.setAttribute('data-theme', theme)
+  document.documentElement.setAttribute('data-theme', normalizeTheme(theme))
 }

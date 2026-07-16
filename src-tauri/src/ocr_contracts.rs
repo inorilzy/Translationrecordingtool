@@ -52,20 +52,23 @@ pub fn is_native_engine(engine: &str) -> bool {
     normalize_engine(engine) == "native_onnx"
 }
 
+/// Product runtime only supports in-process ONNX OCR.
+/// Legacy paddle/rapid values are migrated to `native_onnx`.
 pub fn normalize_engine(engine: &str) -> &'static str {
     match engine.trim().to_ascii_lowercase().as_str() {
-        "paddle" | "paddleocr" => "paddleocr",
-        "rapid" | "rapidocr" | "rapidocr_onnxruntime" => "rapidocr",
-        "native" | "native_onnx" | "onnx" | "onnxruntime" | "ppocr-rs" => "native_onnx",
+        "" | "native" | "native_onnx" | "onnx" | "onnxruntime" | "ppocr-rs" | "paddle"
+        | "paddleocr" | "rapid" | "rapidocr" | "rapidocr_onnxruntime" => "native_onnx",
         _ => "unknown",
     }
 }
 
 pub fn engine_label(engine: &str) -> &'static str {
     match normalize_engine(engine) {
-        "paddleocr" => "PaddleOCR",
-        "rapidocr" => "RapidOCR",
         "native_onnx" => "原生 ONNX OCR",
         _ => "未知 OCR",
     }
+}
+
+pub fn normalize_model_profile(_profile: &str) -> String {
+    "small".to_string()
 }

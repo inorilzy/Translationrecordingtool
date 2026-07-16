@@ -8,7 +8,7 @@ mod logger;
 mod native_ocr;
 mod ocr;
 mod ocr_contracts;
-mod ocr_service;
+
 pub mod popup_window;
 mod screenshot;
 mod selection_reader;
@@ -71,6 +71,7 @@ fn update_api_config(
     translation_provider: String,
     microsoft_translator_key: String,
     microsoft_translator_region: String,
+    google_api_key: String,
     ocr_endpoint: String,
     mut ocr_engine: String,
     mut ocr_model_profile: String,
@@ -87,6 +88,7 @@ fn update_api_config(
         translation_provider,
         microsoft_translator_key,
         microsoft_translator_region,
+        google_api_key,
         ocr_endpoint,
         ocr_engine,
         ocr_model_profile,
@@ -102,79 +104,23 @@ fn normalize_configured_ocr_runtime(
     ocr_engine: &mut String,
     ocr_model_profile: &mut String,
 ) -> Result<(), String> {
-    let selected_engine = normalize_engine(ocr_engine);
-    let selected_profile = match selected_engine {
-        "rapidocr" => "embedded".to_string(),
-        "paddleocr" | "native_onnx" => {
-            let profile = ocr_model_profile.trim();
-            if profile.is_empty() {
-                DEFAULT_OCR_MODEL_PROFILE.to_string()
-            } else {
-                profile.to_string()
-            }
-        }
-        _ => return Err(format!("不支持的 OCR 引擎: {}", ocr_engine)),
-    };
-
-    *ocr_engine = selected_engine.to_string();
-    *ocr_model_profile = selected_profile;
+    // Product ships a single OCR stack: native ONNX + small profile.
+    let _ = ocr_engine;
+    let _ = ocr_model_profile;
+    *ocr_engine = "native_onnx".to_string();
+    *ocr_model_profile = DEFAULT_OCR_MODEL_PROFILE.to_string();
     Ok(())
 }
 
 fn apply_new_install_ocr_default(
     ocr_engine: &mut String,
     ocr_model_profile: &mut String,
-    native_profile: Option<String>,
-    sidecar_profile: Option<String>,
-    has_sidecar: bool,
+    _native_profile: Option<String>,
 ) -> bool {
-    let current_profile = ocr_model_profile.trim();
-    let (selected_engine, selected_profile) = match normalize_engine(ocr_engine) {
-        "rapidocr" => ("rapidocr", "embedded".to_string()),
-        "paddleocr" => (
-            "paddleocr",
-            if current_profile.is_empty() {
-                sidecar_profile.as_deref().unwrap_or("official").to_string()
-            } else {
-                current_profile.to_string()
-            },
-        ),
-        "native_onnx" if native_profile.is_some() => (
-            native_ocr::engine_name(),
-            if current_profile.is_empty() {
-                native_profile.as_deref().unwrap().to_string()
-            } else {
-                current_profile.to_string()
-            },
-        ),
-        "native_onnx" if has_sidecar => (
-            "paddleocr",
-            sidecar_profile.as_deref().unwrap_or("official").to_string(),
-        ),
-        "native_onnx" => (
-            native_ocr::engine_name(),
-            if current_profile.is_empty() {
-                DEFAULT_OCR_MODEL_PROFILE.to_string()
-            } else {
-                current_profile.to_string()
-            },
-        ),
-        _ => {
-            if let Some(profile) = native_profile.as_deref() {
-                (native_ocr::engine_name(), profile.to_string())
-            } else if has_sidecar {
-                (
-                    "paddleocr",
-                    sidecar_profile.as_deref().unwrap_or("official").to_string(),
-                )
-            } else {
-                return false;
-            }
-        }
-    };
-
+    let selected_engine = native_ocr::engine_name().to_string();
+    let selected_profile = DEFAULT_OCR_MODEL_PROFILE.to_string();
     let changed = *ocr_engine != selected_engine || *ocr_model_profile != selected_profile;
-    *ocr_engine = selected_engine.to_string();
+    *ocr_engine = selected_engine;
     *ocr_model_profile = selected_profile;
     changed
 }
@@ -187,8 +133,6 @@ fn adapt_new_install_ocr_settings(
         &mut settings.ocr_engine,
         &mut settings.ocr_model_profile,
         native_ocr::packaged_runtime_profile(app),
-        ocr_service::packaged_runtime_profile(app),
-        ocr_service::has_packaged_sidecar(app),
     )
 }
 
@@ -621,6 +565,7 @@ pub fn run() {
                 translation_provider: persisted_settings.translation_provider.clone(),
                 microsoft_translator_key: persisted_settings.microsoft_translator_key.clone(),
                 microsoft_translator_region: persisted_settings.microsoft_translator_region.clone(),
+                google_api_key: persisted_settings.google_api_key.clone(),
                 ocr_endpoint: persisted_settings.ocr_endpoint.clone(),
                 ocr_engine: persisted_settings.ocr_engine.clone(),
                 ocr_model_profile: persisted_settings.ocr_model_profile.clone(),
@@ -645,8 +590,6 @@ pub fn run() {
             let screenshot_state = Arc::new(RwLock::new(ScreenshotRuntimeState::default()));
             app.manage(screenshot_state);
 
-            let ocr_service_state = Arc::new(ocr_service::OcrServiceState::default());
-            app.manage(ocr_service_state);
 
             // 数据迁移
             if let Err(error) = migrate_legacy_app_data(&app.handle().clone()) {
@@ -832,77 +775,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_package_selects_native_default() {
+    fn native_package_selects_native_small_default() {
         let mut engine = String::new();
         let mut profile = String::new();
 
         assert!(apply_new_install_ocr_default(
             &mut engine,
             &mut profile,
-            Some("small".to_string()),
-            Some("small".to_string()),
-            true,
+            Some("medium".to_string()),
         ));
         assert_eq!(engine, "native_onnx");
         assert_eq!(profile, "small");
     }
 
     #[test]
-    fn lite_package_uses_local_sidecar_models_without_native_assets() {
+    fn missing_native_assets_still_defaults_to_native_small() {
         let mut settings = PersistedSettings::default();
 
-        assert!(apply_new_install_ocr_default(
+        assert!(!apply_new_install_ocr_default(
             &mut settings.ocr_engine,
             &mut settings.ocr_model_profile,
             None,
-            Some("small".to_string()),
-            true,
         ));
-        assert_eq!(settings.ocr_engine, "paddleocr");
+        assert_eq!(settings.ocr_engine, "native_onnx");
         assert_eq!(settings.ocr_model_profile, "small");
     }
 
     #[test]
-    fn full_package_declares_official_model_download() {
-        let mut settings = PersistedSettings::default();
-
-        assert!(apply_new_install_ocr_default(
-            &mut settings.ocr_engine,
-            &mut settings.ocr_model_profile,
-            None,
-            None,
-            true,
-        ));
-        assert_eq!(settings.ocr_engine, "paddleocr");
-        assert_eq!(settings.ocr_model_profile, "official");
-    }
-
-    #[test]
-    fn explicit_paddleocr_configuration_is_preserved() {
+    fn any_legacy_ocr_settings_force_native_small() {
         let mut engine = "paddleocr".to_string();
-        let mut profile = "official".to_string();
+        let mut profile = "medium".to_string();
 
         normalize_configured_ocr_runtime(&mut engine, &mut profile).unwrap();
 
-        assert_eq!(engine, "paddleocr");
-        assert_eq!(profile, "official");
+        assert_eq!(engine, "native_onnx");
+        assert_eq!(profile, "small");
     }
 
     #[test]
-    fn explicit_rapidocr_configuration_uses_embedded_models() {
-        let mut engine = "rapidocr".to_string();
-        let mut profile = "tiny".to_string();
-
-        normalize_configured_ocr_runtime(&mut engine, &mut profile).unwrap();
-
-        assert_eq!(engine, "rapidocr");
-        assert_eq!(profile, "embedded");
-    }
-
-    #[test]
-    fn explicit_native_configuration_is_preserved_without_native_assets() {
+    fn explicit_tiny_profile_is_forced_to_small() {
         let mut engine = "native_onnx".to_string();
-        let mut profile = "small".to_string();
+        let mut profile = "tiny".to_string();
 
         normalize_configured_ocr_runtime(&mut engine, &mut profile).unwrap();
 

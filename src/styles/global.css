@@ -1,11 +1,12 @@
 /* 按钮样式 */
 .btn {
-  padding: 12px 24px;
+  padding: 10px 18px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-md);
+  font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
   font-family: inherit;
 }
 
@@ -54,7 +55,8 @@
 .page-container {
   max-width: 800px;
   margin: 0 auto;
-  padding: var(--spacing-lg);
+  padding: 28px 28px 36px;
+  font-family: var(--font-family-ui);
 }
 
 /* 输入框样式 */

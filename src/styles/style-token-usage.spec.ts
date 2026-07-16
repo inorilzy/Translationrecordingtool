@@ -289,7 +289,7 @@ describe('style-token-usage: design-tokens integrity', () => {
 
   it('all themes define matching token sets', () => {
     const css = readSrc('styles/design-tokens.css')
-    const themes = ['light', 'dark', 'one-dark', 'github-light', 'github-dark']
+    const themes = ['light', 'dark']
     for (const theme of themes) {
       const selector = theme === 'light'
         ? ':root,'

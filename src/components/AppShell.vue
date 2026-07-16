@@ -52,13 +52,17 @@ function handleMenuUpdate(key: string) {
   <n-layout has-sider class="app-shell">
     <n-layout-sider
       class="app-sidebar"
-      :width="198"
+      :width="212"
       :native-scrollbar="false"
       bordered
     >
       <div class="brand-zone">
         <div class="brand-mark">
-          <Languages :size="25" :stroke-width="2.2" />
+          <Languages :size="20" :stroke-width="2.1" />
+        </div>
+        <div class="brand-copy">
+          <div class="brand-title">选词翻译</div>
+          <div class="brand-kicker">DESKTOP</div>
         </div>
       </div>
 
@@ -87,11 +91,12 @@ function handleMenuUpdate(key: string) {
 
 <style scoped>
 .app-shell {
-  --app-sidebar-width: 198px;
+  --app-sidebar-width: 212px;
   min-height: 100vh;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-ui);
   background:
-    radial-gradient(circle at 4% 12%, var(--color-app-shell-glow), transparent 26%),
-    linear-gradient(120deg, var(--color-app-shell-bg) 0%, var(--color-bg-primary) 42%, var(--color-app-shell-bg-end) 100%);
+    linear-gradient(180deg, var(--color-app-shell-bg) 0%, var(--color-app-shell-bg-end) 100%);
 }
 
 .app-sidebar {
@@ -103,30 +108,54 @@ function handleMenuUpdate(key: string) {
   height: 100vh;
   width: var(--app-sidebar-width) !important;
   background: var(--color-app-sidebar-bg);
-  backdrop-filter: blur(18px);
+  border-right: 1px solid var(--color-app-panel-border);
 }
 
 .brand-zone {
-  height: 74px;
+  height: 84px;
   display: flex;
   align-items: center;
-  padding: 0 22px;
+  gap: 12px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--color-app-panel-border);
 }
 
 .brand-mark {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--color-text-on-primary);
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-app-accent-strong));
+  border-radius: 10px;
+  background: var(--color-app-accent-strong);
   box-shadow: var(--shadow-app-brand);
+  flex-shrink: 0;
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-title {
+  font-family: var(--font-family-display);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--color-app-text-strong);
+  line-height: 1.2;
+}
+
+.brand-kicker {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--color-app-text-muted);
 }
 
 .shell-menu {
-  padding: 12px 10px 0;
+  padding: 14px 10px 0;
   background: transparent;
 }
 
@@ -145,7 +174,7 @@ function handleMenuUpdate(key: string) {
   align-items: center;
   gap: 9px;
   padding: 0 13px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
   color: var(--color-app-text-soft);
@@ -171,40 +200,40 @@ function handleMenuUpdate(key: string) {
 }
 
 :deep(.n-menu-item) {
-  margin: 5px 0;
-  height: 42px;
+  margin: 4px 0;
+  height: 40px;
 }
 
 :deep(.n-menu-item-content) {
-  height: 42px;
-  padding-left: 15px !important;
-  border-radius: 8px;
+  height: 40px;
+  padding-left: 14px !important;
+  border-radius: 10px;
   color: var(--color-app-icon-muted);
-  font-size: 16px;
+  font-size: 14px;
 }
 
 :deep(.n-menu-item-content::before) {
   left: 0;
   right: 0;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 :deep(.n-menu-item-content.n-menu-item-content--selected) {
-  color: var(--color-app-accent);
+  color: var(--color-app-accent-strong);
   font-weight: 650;
 }
 
 :deep(.n-menu-item-content.n-menu-item-content--selected::before) {
-  background: linear-gradient(90deg, var(--color-chip-bg), var(--color-app-accent-tint-soft));
+  background: var(--color-app-accent-tint);
 }
 
 :deep(.n-menu-item-content.n-menu-item-content--selected::after) {
   content: '';
   position: absolute;
   left: -10px;
-  top: 6px;
-  bottom: 6px;
-  width: 4px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
   border-radius: 999px;
   background: var(--color-app-accent-strong);
 }

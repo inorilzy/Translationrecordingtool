@@ -20,6 +20,7 @@ pub struct PersistedSettings {
     pub translation_provider: String,
     pub microsoft_translator_key: String,
     pub microsoft_translator_region: String,
+    pub google_api_key: String,
     pub ocr_endpoint: String,
     pub ocr_engine: String,
     pub ocr_model_profile: String,
@@ -38,6 +39,7 @@ impl Default for PersistedSettings {
             translation_provider: "youdao".to_string(),
             microsoft_translator_key: String::new(),
             microsoft_translator_region: String::new(),
+            google_api_key: String::new(),
             ocr_endpoint: DEFAULT_OCR_ENDPOINT.to_string(),
             ocr_engine: DEFAULT_OCR_ENGINE.to_string(),
             ocr_model_profile: DEFAULT_OCR_MODEL_PROFILE.to_string(),
@@ -150,6 +152,7 @@ mod tests {
             translation_provider: "microsoft".to_string(),
             microsoft_translator_key: "ms-key".to_string(),
             microsoft_translator_region: "eastasia".to_string(),
+            google_api_key: "google-key".to_string(),
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
             ocr_engine: "paddleocr".to_string(),
             ocr_model_profile: "small".to_string(),
@@ -176,6 +179,7 @@ mod tests {
             translation_provider: String::new(),
             microsoft_translator_key: String::new(),
             microsoft_translator_region: String::new(),
+            google_api_key: String::new(),
             ocr_endpoint: String::new(),
             ocr_engine: String::new(),
             ocr_model_profile: String::new(),
@@ -202,6 +206,7 @@ mod tests {
             translation_provider: "youdao".to_string(),
             microsoft_translator_key: "mk".to_string(),
             microsoft_translator_region: "global".to_string(),
+            google_api_key: "gk".to_string(),
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
             ocr_engine: "paddleocr".to_string(),
             ocr_model_profile: "small".to_string(),
@@ -220,6 +225,7 @@ mod tests {
         assert!(json.contains(r#""translationProvider""#));
         assert!(json.contains(r#""microsoftTranslatorKey""#));
         assert!(json.contains(r#""microsoftTranslatorRegion""#));
+        assert!(json.contains(r#""googleApiKey""#));
         assert!(json.contains(r#""ocrEndpoint""#));
         assert!(json.contains(r#""ocrEngine""#));
         assert!(json.contains(r#""ocrModelProfile""#));
@@ -238,6 +244,7 @@ mod tests {
             "translationProvider": "microsoft",
             "microsoftTranslatorKey": "ms-key",
             "microsoftTranslatorRegion": "eastasia",
+            "googleApiKey": "google-key",
             "ocrEndpoint": "http://127.0.0.1:8866/ocr",
             "ocrEngine": "paddleocr",
             "ocrModelProfile": "lite",
@@ -255,6 +262,7 @@ mod tests {
         assert_eq!(settings.translation_provider, "microsoft");
         assert_eq!(settings.microsoft_translator_key, "ms-key");
         assert_eq!(settings.microsoft_translator_region, "eastasia");
+        assert_eq!(settings.google_api_key, "google-key");
         assert_eq!(settings.ocr_endpoint, "http://127.0.0.1:8866/ocr");
         assert_eq!(settings.ocr_engine, "paddleocr");
         assert_eq!(settings.ocr_model_profile, "lite");

@@ -197,62 +197,22 @@ describe('useTranslationStore', () => {
       expect(store.loading).toBe(false)
     })
 
-    it('lets only the latest screenshot request update visible state', async () => {
-      const olderResult = deferred<Translation>()
-      const latestResult = deferred<Translation>()
-      const olderRecord = createTranslationRecord({ id: 31, sourceText: 'older text' })
-      const latestRecord = createTranslationRecord({ id: 32, sourceText: 'latest text' })
-      invokeMock
-        .mockResolvedValueOnce({ requestId: 31, imageBase64: 'image-31' })
-        .mockImplementationOnce(() => olderResult.promise)
-        .mockResolvedValueOnce({ requestId: 32, imageBase64: 'image-32' })
-        .mockImplementationOnce(() => latestResult.promise)
+    it('blocks a second screenshot request while one is already active', async () => {
+      const firstSelection = deferred<{ requestId: number; imageBase64: string }>()
+      invokeMock.mockImplementationOnce(() => firstSelection.promise)
 
       const store = useTranslationStore()
-      const olderRequest = store.translateScreenshot()
-      await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2))
-      const latestRequest = store.translateScreenshot()
-      await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(4))
+      const firstRequest = store.translateScreenshot()
+      await vi.waitFor(() => expect(store.loading).toBe(true))
 
-      store.acceptOcrSourceText({ requestId: 31, text: 'stale OCR text' })
-      expect(store.manualInputText).toBe('')
-      store.acceptOcrSourceText({ requestId: 32, text: 'latest OCR text' })
-      expect(store.manualInputText).toBe('latest OCR text')
+      const secondRequest = store.translateScreenshot()
+      await expect(secondRequest).resolves.toBeNull()
+      expect(store.error).toBe('已有截图选择进行中，请先按 ESC 取消当前截图')
+      expect(invokeMock).toHaveBeenCalledTimes(1)
 
-      latestResult.resolve(latestRecord)
-      await latestRequest
-      olderResult.resolve(olderRecord)
-      await olderRequest
-
-      expect(store.currentTranslation).toEqual(latestRecord)
-      expect(store.history).toEqual([latestRecord])
-      expect(store.manualInputText).toBe('latest text')
-      expect(store.error).toBe('')
-      expect(store.loading).toBe(false)
-    })
-
-    it('invalidates older updates when the latest selection is cancelled', async () => {
-      const olderResult = deferred<Translation>()
-      const olderRecord = createTranslationRecord({ id: 41, sourceText: 'older text' })
-      invokeMock
-        .mockResolvedValueOnce({ requestId: 41, imageBase64: 'image-41' })
-        .mockImplementationOnce(() => olderResult.promise)
-        .mockRejectedValueOnce(new Error('已取消截图选择'))
-
-      const store = useTranslationStore()
-      const olderRequest = store.translateScreenshot()
-      await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2))
-      const cancelledRequest = store.translateScreenshot()
-      await cancelledRequest
-
-      store.acceptOcrSourceText({ requestId: 41, text: 'stale OCR text' })
-      olderResult.resolve(olderRecord)
-      await olderRequest
-
-      expect(store.currentTranslation).toBeNull()
-      expect(store.history).toEqual([])
-      expect(store.manualInputText).toBe('')
-      expect(store.error).toBe('截图 OCR 翻译失败: 已取消截图选择')
+      firstSelection.resolve({ requestId: 7, imageBase64: 'image-7' })
+      invokeMock.mockResolvedValueOnce(createTranslationRecord({ id: 7, sourceText: 'ok' }))
+      await firstRequest
       expect(store.loading).toBe(false)
     })
 
@@ -262,7 +222,7 @@ describe('useTranslationStore', () => {
       const store = useTranslationStore()
       await store.translateScreenshot()
 
-      expect(store.error).toBe('截图 OCR 翻译失败: 已取消截图选择')
+      expect(store.error).toBe('已取消截图选择')
       expect(store.loading).toBe(false)
       expect(invokeMock).toHaveBeenCalledTimes(1)
       expect(invokeMock).toHaveBeenCalledWith('select_screenshot_area')
