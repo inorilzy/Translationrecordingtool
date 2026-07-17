@@ -19,24 +19,10 @@ pub trait DictionaryGateway: Send + Sync {
 }
 
 pub trait ProviderGateway: Send + Sync {
-    fn translate_youdao<'a>(
+    fn translate<'a>(
         &'a self,
         text: &'a str,
-        app_key: &'a str,
-        app_secret: &'a str,
-    ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a;
-
-    fn translate_microsoft<'a>(
-        &'a self,
-        text: &'a str,
-        key: &'a str,
-        region: &'a str,
-    ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a;
-
-    fn translate_google<'a>(
-        &'a self,
-        text: &'a str,
-        api_key: &'a str,
+        config: &'a TranslationConfig,
     ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a;
 }
 
@@ -196,32 +182,7 @@ where
         ResolutionStage::RemoteTranslationInProgress,
     )?;
 
-    let content = match config.provider.trim().to_ascii_lowercase().as_str() {
-        "microsoft" => {
-            providers
-                .translate_microsoft(text, &config.microsoft_key, &config.microsoft_region)
-                .await
-        }
-        "google" => {
-            if config.google_api_key.trim().is_empty() {
-                Err("使用 Google 翻译需要配置 API Key，请在设置中配置".to_string())
-            } else {
-                providers
-                    .translate_google(text, &config.google_api_key)
-                    .await
-            }
-        }
-        _ => {
-            if config.youdao_app_key.trim().is_empty() || config.youdao_app_secret.trim().is_empty()
-            {
-                Err("翻译句子需要配置有道翻译 API，请在设置中配置".to_string())
-            } else {
-                providers
-                    .translate_youdao(text, &config.youdao_app_key, &config.youdao_app_secret)
-                    .await
-            }
-        }
-    };
+    let content = providers.translate(text, config).await;
     ensure_active(&is_cancelled)?;
 
     let content = content.map_err(|remote_error| {
@@ -384,47 +345,49 @@ mod tests {
     }
 
     impl ProviderGateway for FakeProviders {
-        fn translate_youdao<'a>(
+        fn translate<'a>(
             &'a self,
             _text: &'a str,
-            _app_key: &'a str,
-            _app_secret: &'a str,
+            config: &'a TranslationConfig,
         ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
-            self.calls.lock().push("youdao".to_string());
-            let result = self
-                .youdao
-                .lock()
-                .pop_front()
-                .unwrap_or_else(|| Err("unexpected youdao call".to_string()));
-            async move { result }
-        }
-
-        fn translate_microsoft<'a>(
-            &'a self,
-            _text: &'a str,
-            _key: &'a str,
-            _region: &'a str,
-        ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
-            self.calls.lock().push("microsoft".to_string());
-            let result = self
-                .microsoft
-                .lock()
-                .pop_front()
-                .unwrap_or_else(|| Err("unexpected microsoft call".to_string()));
-            async move { result }
-        }
-
-        fn translate_google<'a>(
-            &'a self,
-            _text: &'a str,
-            _api_key: &'a str,
-        ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
-            self.calls.lock().push("google".to_string());
-            let result = self
-                .google
-                .lock()
-                .pop_front()
-                .unwrap_or_else(|| Err("unexpected google call".to_string()));
+            let provider = config.provider.trim().to_ascii_lowercase();
+            let result = match provider.as_str() {
+                "microsoft" => {
+                    if config.microsoft_key.trim().is_empty() {
+                        Err("使用微软翻译需要配置 Microsoft Translator Key".to_string())
+                    } else {
+                        self.calls.lock().push("microsoft".to_string());
+                        self.microsoft
+                            .lock()
+                            .pop_front()
+                            .unwrap_or_else(|| Err("unexpected microsoft call".to_string()))
+                    }
+                }
+                "google" => {
+                    if config.google_api_key.trim().is_empty() {
+                        Err("使用 Google 翻译需要配置 API Key，请在设置中配置".to_string())
+                    } else {
+                        self.calls.lock().push("google".to_string());
+                        self.google
+                            .lock()
+                            .pop_front()
+                            .unwrap_or_else(|| Err("unexpected google call".to_string()))
+                    }
+                }
+                _ => {
+                    if config.youdao_app_key.trim().is_empty()
+                        || config.youdao_app_secret.trim().is_empty()
+                    {
+                        Err("翻译句子需要配置有道翻译 API，请在设置中配置".to_string())
+                    } else {
+                        self.calls.lock().push("youdao".to_string());
+                        self.youdao
+                            .lock()
+                            .pop_front()
+                            .unwrap_or_else(|| Err("unexpected youdao call".to_string()))
+                    }
+                }
+            };
             async move { result }
         }
     }
@@ -440,7 +403,7 @@ mod tests {
             explains: vec!["int. 你好".to_string()],
             examples: Vec::new(),
             synonyms: Vec::new(),
-            word_type: Some("int.".to_string()),
+            word_type: Some("int".to_string()),
         }
     }
 
@@ -539,6 +502,63 @@ mod tests {
 
             assert_eq!(result.translated_text, "你好");
             assert_eq!(providers.calls.lock().as_slice(), ["microsoft"]);
+        });
+    }
+
+    #[test]
+    fn google_provider_is_selected_for_remote_sentences() {
+        tauri::async_runtime::block_on(async {
+            let dictionary = FakeDictionary::default();
+            let providers = FakeProviders {
+                google: Mutex::new(VecDeque::from([Ok(remote_content("你好"))])),
+                ..FakeProviders::default()
+            };
+            let config = TranslationConfig {
+                provider: "google".to_string(),
+                google_api_key: "google-key".to_string(),
+                ..TranslationConfig::default()
+            };
+
+            let result = resolve_translation(
+                &dictionary,
+                &providers,
+                &config,
+                "hello world",
+                |_| Ok(()),
+                || false,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(result.translated_text, "你好");
+            assert_eq!(providers.calls.lock().as_slice(), ["google"]);
+        });
+    }
+
+    #[test]
+    fn missing_google_credentials_fail_before_provider_call() {
+        tauri::async_runtime::block_on(async {
+            let dictionary = FakeDictionary::default();
+            let providers = FakeProviders::default();
+            let config = TranslationConfig {
+                provider: "google".to_string(),
+                ..TranslationConfig::default()
+            };
+
+            let error = resolve_translation(
+                &dictionary,
+                &providers,
+                &config,
+                "hello world",
+                |_| Ok(()),
+                || false,
+            )
+            .await
+            .unwrap_err()
+            .into_message();
+
+            assert_eq!(error, "使用 Google 翻译需要配置 API Key，请在设置中配置");
+            assert!(providers.calls.lock().is_empty());
         });
     }
 

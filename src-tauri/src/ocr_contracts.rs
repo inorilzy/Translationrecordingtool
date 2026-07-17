@@ -2,10 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const OCR_LANG: &str = "ch";
 pub const OCR_DEVICE: &str = "cpu";
-pub const PADDLE_OCR_VERSION: &str = "3.7.0";
 pub const PPOCR_VERSION: &str = "PP-OCRv6";
-pub const SIDECAR_ONNXRUNTIME_VERSION: &str = "1.27.0";
-pub const RAPID_OCR_VERSION: &str = "1.4.4";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OcrRuntimeConfig {
@@ -62,17 +59,6 @@ pub struct OcrServiceStatus {
     pub device: &'static str,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct OcrHealthStatus {
-    pub ok: bool,
-    pub engine: Option<String>,
-    pub lang: Option<String>,
-    pub device: Option<String>,
-    pub model_profile: Option<String>,
-    pub model_dir: Option<String>,
-    pub model_source: Option<String>,
-}
 
 pub fn is_native_engine(engine: &str) -> bool {
     normalize_engine(engine) == "native_onnx"

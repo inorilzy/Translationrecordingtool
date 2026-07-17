@@ -39,7 +39,6 @@ flowchart LR
     Repository[database]
     OcrFacade[ocr]
     NativeOcr[native_ocr]
-    SidecarOcr[ocr_service]
     Settings[managed AppConfig]
   end
 
@@ -63,9 +62,7 @@ flowchart LR
   Repository --> TranslationDomain
   OcrFacade --> OcrContracts
   OcrFacade --> NativeOcr
-  OcrFacade --> SidecarOcr
   NativeOcr --> OcrContracts
-  SidecarOcr --> OcrContracts
 ```
 
 Dependency direction is entry point → adapter → application workflow → domain contract or infrastructure gateway. `lib.rs` is the composition root; business translation policy belongs in `translation_flow.rs` or `translation_workflow.rs`, not in command handlers or setup code.

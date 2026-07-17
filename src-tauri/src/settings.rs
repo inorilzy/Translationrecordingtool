@@ -1,3 +1,7 @@
+use crate::{
+    ocr_contracts::OcrRuntimeConfig,
+    translation_domain::TranslationConfig,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -12,6 +16,11 @@ pub const DEFAULT_OCR_ENGINE: &str = "native_onnx";
 pub const DEFAULT_OCR_MODEL_PROFILE: &str = "small";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 
+/// Canonical application settings record.
+///
+/// This is the single Rust-owned source of defaults, persistence shape, and
+/// runtime configuration projections during the architecture-deepening expand.
+/// Existing callers may continue using compatibility mirrors until they migrate.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct PersistedSettings {
@@ -30,6 +39,9 @@ pub struct PersistedSettings {
     pub enable_tray: bool,
     pub theme: String,
 }
+
+/// Expand-phase alias for the canonical settings runtime seam.
+pub type SettingsRecord = PersistedSettings;
 
 impl Default for PersistedSettings {
     fn default() -> Self {
@@ -50,6 +62,36 @@ impl Default for PersistedSettings {
             theme: DEFAULT_THEME.to_string(),
         }
     }
+}
+
+impl PersistedSettings {
+    pub fn translation_config(&self) -> TranslationConfig {
+        TranslationConfig {
+            provider: self.translation_provider.clone(),
+            youdao_app_key: self.api_key.clone(),
+            youdao_app_secret: self.api_secret.clone(),
+            microsoft_key: self.microsoft_translator_key.clone(),
+            microsoft_region: self.microsoft_translator_region.clone(),
+            google_api_key: self.google_api_key.clone(),
+        }
+    }
+
+    pub fn ocr_runtime_config(&self) -> OcrRuntimeConfig {
+        OcrRuntimeConfig {
+            endpoint: self.ocr_endpoint.clone(),
+            engine: self.ocr_engine.clone(),
+            model_profile: self.ocr_model_profile.clone(),
+            preload_on_startup: self.ocr_preload_on_startup,
+        }
+    }
+}
+
+pub fn load_settings_record(config_dir: &Path) -> Result<SettingsRecord, String> {
+    load_settings(config_dir)
+}
+
+pub fn save_settings_record(config_dir: &Path, settings: &SettingsRecord) -> Result<(), String> {
+    save_settings(config_dir, settings)
 }
 
 fn settings_file_path(config_dir: &Path) -> PathBuf {
@@ -117,6 +159,68 @@ mod tests {
     }
 
     // ─── Default Values ──────────────────────────────────────────────────
+
+    #[test]
+    fn settings_record_alias_is_canonical_persisted_settings() {
+        let defaults = SettingsRecord::default();
+        assert_eq!(defaults, PersistedSettings::default());
+    }
+
+    #[test]
+    fn translation_and_ocr_projections_use_canonical_fields() {
+        let settings = PersistedSettings {
+            api_key: "youdao-key".to_string(),
+            api_secret: "youdao-secret".to_string(),
+            translation_provider: "microsoft".to_string(),
+            microsoft_translator_key: "ms-key".to_string(),
+            microsoft_translator_region: "eastasia".to_string(),
+            google_api_key: "google-key".to_string(),
+            ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
+            ocr_engine: "native_onnx".to_string(),
+            ocr_model_profile: "small".to_string(),
+            ocr_preload_on_startup: false,
+            ..PersistedSettings::default()
+        };
+
+        assert_eq!(
+            settings.translation_config(),
+            TranslationConfig {
+                provider: "microsoft".to_string(),
+                youdao_app_key: "youdao-key".to_string(),
+                youdao_app_secret: "youdao-secret".to_string(),
+                microsoft_key: "ms-key".to_string(),
+                microsoft_region: "eastasia".to_string(),
+                google_api_key: "google-key".to_string(),
+            }
+        );
+        assert_eq!(
+            settings.ocr_runtime_config(),
+            OcrRuntimeConfig {
+                endpoint: "http://127.0.0.1:8866/ocr".to_string(),
+                engine: "native_onnx".to_string(),
+                model_profile: "small".to_string(),
+                preload_on_startup: false,
+            }
+        );
+    }
+
+    #[test]
+    fn load_settings_record_round_trips_through_canonical_api() {
+        let temp_dir = TempDirGuard::new("translation-tool-settings-record-roundtrip");
+        let settings = SettingsRecord {
+            api_key: "record-key".to_string(),
+            theme: "dark".to_string(),
+            enable_tray: false,
+            ..SettingsRecord::default()
+        };
+
+        save_settings_record(temp_dir.path(), &settings).unwrap();
+        let loaded = load_settings_record(temp_dir.path()).unwrap();
+
+        assert_eq!(loaded, settings);
+        assert_eq!(loaded.theme, "dark");
+        assert!(!loaded.enable_tray);
+    }
 
     #[test]
     fn defaults_match_frontend_expectations() {

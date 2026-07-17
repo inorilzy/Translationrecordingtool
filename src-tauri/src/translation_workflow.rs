@@ -359,30 +359,47 @@ impl DictionaryGateway for AppDictionaryGateway {
 pub struct AppProviderGateway;
 
 impl ProviderGateway for AppProviderGateway {
-    fn translate_youdao<'a>(
+    fn translate<'a>(
         &'a self,
         text: &'a str,
-        app_key: &'a str,
-        app_secret: &'a str,
+        config: &'a TranslationConfig,
     ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
-        async move { translator::translate_text(text, app_key, app_secret).await }
-    }
-
-    fn translate_microsoft<'a>(
-        &'a self,
-        text: &'a str,
-        key: &'a str,
-        region: &'a str,
-    ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
-        async move { translator::translate_with_microsoft(text, key, region).await }
-    }
-
-    fn translate_google<'a>(
-        &'a self,
-        text: &'a str,
-        api_key: &'a str,
-    ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
-        async move { translator::translate_with_google(text, api_key).await }
+        async move {
+            match config.provider.trim().to_ascii_lowercase().as_str() {
+                "microsoft" => {
+                    if config.microsoft_key.trim().is_empty() {
+                        return Err("使用微软翻译需要配置 Microsoft Translator Key".to_string());
+                    }
+                    translator::translate_with_microsoft(
+                        text,
+                        &config.microsoft_key,
+                        &config.microsoft_region,
+                    )
+                    .await
+                }
+                "google" => {
+                    if config.google_api_key.trim().is_empty() {
+                        return Err(
+                            "使用 Google 翻译需要配置 API Key，请在设置中配置".to_string(),
+                        );
+                    }
+                    translator::translate_with_google(text, &config.google_api_key).await
+                }
+                _ => {
+                    if config.youdao_app_key.trim().is_empty()
+                        || config.youdao_app_secret.trim().is_empty()
+                    {
+                        return Err("翻译句子需要配置有道翻译 API，请在设置中配置".to_string());
+                    }
+                    translator::translate_text(
+                        text,
+                        &config.youdao_app_key,
+                        &config.youdao_app_secret,
+                    )
+                    .await
+                }
+            }
+        }
     }
 }
 
@@ -517,39 +534,49 @@ mod tests {
     }
 
     impl ProviderGateway for FakeProviders {
-        fn translate_youdao<'a>(
+        fn translate<'a>(
             &'a self,
             _text: &'a str,
-            _app_key: &'a str,
-            _app_secret: &'a str,
+            config: &'a TranslationConfig,
         ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
-            self.calls.lock().push("youdao".to_string());
-            let result = self.youdao.lock().pop_front().unwrap();
-            async move { result }
-        }
-
-        fn translate_microsoft<'a>(
-            &'a self,
-            _text: &'a str,
-            _key: &'a str,
-            _region: &'a str,
-        ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
-            self.calls.lock().push("microsoft".to_string());
-            let result = self.microsoft.lock().pop_front().unwrap();
-            async move { result }
-        }
-
-        fn translate_google<'a>(
-            &'a self,
-            _text: &'a str,
-            _api_key: &'a str,
-        ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
-            self.calls.lock().push("google".to_string());
-            let result = self
-                .google
-                .lock()
-                .pop_front()
-                .unwrap_or_else(|| Err("unexpected google call".to_string()));
+            let provider = config.provider.trim().to_ascii_lowercase();
+            let result = match provider.as_str() {
+                "microsoft" => {
+                    if config.microsoft_key.trim().is_empty() {
+                        Err("使用微软翻译需要配置 Microsoft Translator Key".to_string())
+                    } else {
+                        self.calls.lock().push("microsoft".to_string());
+                        self.microsoft
+                            .lock()
+                            .pop_front()
+                            .unwrap_or_else(|| Err("unexpected microsoft call".to_string()))
+                    }
+                }
+                "google" => {
+                    if config.google_api_key.trim().is_empty() {
+                        Err("使用 Google 翻译需要配置 API Key，请在设置中配置".to_string())
+                    } else {
+                        self.calls.lock().push("google".to_string());
+                        self.google
+                            .lock()
+                            .pop_front()
+                            .unwrap_or_else(|| Err("unexpected google call".to_string()))
+                    }
+                }
+                _ => {
+                    if config.youdao_app_key.trim().is_empty()
+                        || config.youdao_app_secret.trim().is_empty()
+                    {
+                        Err("翻译句子需要配置有道翻译 API，请在设置中配置".to_string())
+                    } else {
+                        self.calls.lock().push("youdao".to_string());
+                        self.youdao
+                            .lock()
+                            .pop_front()
+                            .unwrap_or_else(|| Err("unexpected youdao call".to_string()))
+                    }
+                }
+            };
             async move { result }
         }
     }
@@ -845,7 +872,11 @@ mod tests {
                 .translate_text("hello", &mut |_| {}, &|| false)
                 .await
                 .unwrap();
-            workflow.settings.translation.write().provider = "microsoft".to_string();
+            {
+                let mut translation = workflow.settings.translation.write();
+                translation.provider = "microsoft".to_string();
+                translation.microsoft_key = "key".to_string();
+            }
             workflow
                 .translate_text("world", &mut |_| {}, &|| false)
                 .await
