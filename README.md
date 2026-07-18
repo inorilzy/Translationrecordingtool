@@ -2,11 +2,11 @@
 
 一个基于 `Tauri 2 + Vue 3 + Rust + SQLite` 的 Windows 桌面翻译工具，面向日常划词翻译、截图 OCR 翻译、历史记录和本地词典查询。
 
-当前发布版本：`v0.2.1`
+当前发布版本：`v0.2.3`
 
-- Release: <https://github.com/inorilzy/Translationrecordingtool/releases/tag/v0.2.1>
-- 推荐安装包：`translation-tool_0.2.1_x64-setup.exe`
-- MSI 安装包：`translation-tool_0.2.1_x64_en-US.msi`
+- Release: <https://github.com/inorilzy/Translationrecordingtool/releases/tag/v0.2.3>
+- 推荐安装包：`translation-tool_0.2.3_x64-setup.exe`
+- MSI 安装包：`translation-tool_0.2.3_x64_en-US.msi`
 
 ## 产品预览
 
@@ -259,8 +259,8 @@ npm run tauri:build:ocr:native
 产物位置：
 
 ```text
-src-tauri/target/release/bundle/nsis/translation-tool_0.2.1_x64-setup.exe
-src-tauri/target/release/bundle/msi/translation-tool_0.2.1_x64_en-US.msi
+src-tauri/target/release/bundle/nsis/translation-tool_0.2.3_x64-setup.exe
+src-tauri/target/release/bundle/msi/translation-tool_0.2.3_x64_en-US.msi
 ```
 
 ## 常用命令
