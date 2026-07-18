@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import {
@@ -12,56 +12,74 @@ import {
 
 export interface OcrServiceStatus {
   running: boolean
-  endpoint: string
   message: string
   lastError?: string | null
   engine: string
   modelProfile: string
   modelDir?: string | null
-  sidecarPath?: string | null
-  logPath?: string | null
   preloadOnStartup: boolean
-  rapidocrVersion: string
-  paddleocrVersion: string
   ppocrVersion: string
   onnxruntimeVersion: string
   lang: string
   device: string
 }
 
+type ApiConfigPatch = Pick<
+  AppSettings,
+  | 'apiKey'
+  | 'apiSecret'
+  | 'translationProvider'
+  | 'microsoftTranslatorKey'
+  | 'microsoftTranslatorRegion'
+  | 'googleApiKey'
+  | 'ocrEndpoint'
+  | 'ocrEngine'
+  | 'ocrModelProfile'
+  | 'ocrPreloadOnStartup'
+>
+
+function cloneSettings(settings: AppSettings): AppSettings {
+  return { ...settings }
+}
+
 export const useSettingsStore = defineStore('settings', () => {
-  const apiKey = ref(defaultSettings.apiKey)
-  const apiSecret = ref(defaultSettings.apiSecret)
-  const translationProvider = ref(defaultSettings.translationProvider)
-  const microsoftTranslatorKey = ref(defaultSettings.microsoftTranslatorKey)
-  const microsoftTranslatorRegion = ref(defaultSettings.microsoftTranslatorRegion)
-  const googleApiKey = ref(defaultSettings.googleApiKey)
-  const ocrEndpoint = ref(defaultSettings.ocrEndpoint)
-  const ocrEngine = ref(defaultSettings.ocrEngine)
-  const ocrModelProfile = ref(defaultSettings.ocrModelProfile)
-  const ocrPreloadOnStartup = ref(defaultSettings.ocrPreloadOnStartup)
-  const globalShortcut = ref(defaultSettings.globalShortcut)
-  const screenshotShortcut = ref(defaultSettings.screenshotShortcut)
-  const enableTray = ref(defaultSettings.enableTray)
-  const theme = ref(defaultSettings.theme)
+  const settings = ref<AppSettings>(cloneSettings(defaultSettings))
   const error = ref('')
 
-  function applySettings(settings: AppSettings) {
-    apiKey.value = settings.apiKey
-    apiSecret.value = settings.apiSecret
-    translationProvider.value = settings.translationProvider
-    microsoftTranslatorKey.value = settings.microsoftTranslatorKey
-    microsoftTranslatorRegion.value = settings.microsoftTranslatorRegion
-    googleApiKey.value = settings.googleApiKey
-    ocrEndpoint.value = settings.ocrEndpoint
-    ocrEngine.value = settings.ocrEngine
-    ocrModelProfile.value = settings.ocrModelProfile
-    ocrPreloadOnStartup.value = settings.ocrPreloadOnStartup
-    globalShortcut.value = settings.globalShortcut
-    screenshotShortcut.value = settings.screenshotShortcut
-    enableTray.value = settings.enableTray
-    theme.value = settings.theme
-    applyTheme(settings.theme)
+  function field<K extends keyof AppSettings>(key: K) {
+    return computed({
+      get: () => settings.value[key],
+      set: (value: AppSettings[K]) => {
+        settings.value = {
+          ...settings.value,
+          [key]: value,
+        }
+      },
+    })
+  }
+
+  const apiKey = field('apiKey')
+  const apiSecret = field('apiSecret')
+  const translationProvider = field('translationProvider')
+  const microsoftTranslatorKey = field('microsoftTranslatorKey')
+  const microsoftTranslatorRegion = field('microsoftTranslatorRegion')
+  const googleApiKey = field('googleApiKey')
+  const ocrEndpoint = field('ocrEndpoint')
+  const ocrEngine = field('ocrEngine')
+  const ocrModelProfile = field('ocrModelProfile')
+  const ocrPreloadOnStartup = field('ocrPreloadOnStartup')
+  const globalShortcut = field('globalShortcut')
+  const screenshotShortcut = field('screenshotShortcut')
+  const enableTray = field('enableTray')
+  const theme = field('theme')
+
+  function applySettings(next: AppSettings) {
+    settings.value = cloneSettings(next)
+    applyTheme(next.theme)
+  }
+
+  function createDraft(): AppSettings {
+    return cloneSettings(settings.value)
   }
 
   async function loadSettings() {
@@ -75,41 +93,24 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function updateApiConfig(settings: Pick<AppSettings,
-    'apiKey'
-    | 'apiSecret'
-    | 'translationProvider'
-    | 'microsoftTranslatorKey'
-    | 'microsoftTranslatorRegion'
-    | 'googleApiKey'
-    | 'ocrEndpoint'
-    | 'ocrEngine'
-    | 'ocrModelProfile'
-    | 'ocrPreloadOnStartup'
-  >) {
+  async function updateApiConfig(patch: ApiConfigPatch) {
     try {
       await invoke('update_api_config', {
-        apiKey: settings.apiKey,
-        apiSecret: settings.apiSecret,
-        translationProvider: settings.translationProvider,
-        microsoftTranslatorKey: settings.microsoftTranslatorKey,
-        microsoftTranslatorRegion: settings.microsoftTranslatorRegion,
-        googleApiKey: settings.googleApiKey,
-        ocrEndpoint: settings.ocrEndpoint,
-        ocrEngine: settings.ocrEngine,
-        ocrModelProfile: settings.ocrModelProfile,
-        ocrPreloadOnStartup: settings.ocrPreloadOnStartup,
+        apiKey: patch.apiKey,
+        apiSecret: patch.apiSecret,
+        translationProvider: patch.translationProvider,
+        microsoftTranslatorKey: patch.microsoftTranslatorKey,
+        microsoftTranslatorRegion: patch.microsoftTranslatorRegion,
+        googleApiKey: patch.googleApiKey,
+        ocrEndpoint: patch.ocrEndpoint,
+        ocrEngine: patch.ocrEngine,
+        ocrModelProfile: patch.ocrModelProfile,
+        ocrPreloadOnStartup: patch.ocrPreloadOnStartup,
       })
-      apiKey.value = settings.apiKey
-      apiSecret.value = settings.apiSecret
-      translationProvider.value = settings.translationProvider
-      microsoftTranslatorKey.value = settings.microsoftTranslatorKey
-      microsoftTranslatorRegion.value = settings.microsoftTranslatorRegion
-      googleApiKey.value = settings.googleApiKey
-      ocrEndpoint.value = settings.ocrEndpoint
-      ocrEngine.value = settings.ocrEngine
-      ocrModelProfile.value = settings.ocrModelProfile
-      ocrPreloadOnStartup.value = settings.ocrPreloadOnStartup
+      settings.value = {
+        ...settings.value,
+        ...patch,
+      }
     } catch (e) {
       error.value = `更新配置失败: ${e}`
       throw e
@@ -117,12 +118,16 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   async function updateGlobalShortcut(newShortcut: string) {
+    const oldShortcut = settings.value.globalShortcut
     try {
       await invoke('update_global_shortcut', {
-        oldShortcut: globalShortcut.value,
+        oldShortcut,
         newShortcut,
       })
-      globalShortcut.value = newShortcut
+      settings.value = {
+        ...settings.value,
+        globalShortcut: newShortcut,
+      }
     } catch (e) {
       error.value = `更新快捷键失败: ${e}`
       throw e
@@ -134,7 +139,10 @@ export const useSettingsStore = defineStore('settings', () => {
       await invoke('update_tray_behavior', {
         enabled,
       })
-      enableTray.value = enabled
+      settings.value = {
+        ...settings.value,
+        enableTray: enabled,
+      }
     } catch (e) {
       error.value = `更新托盘行为失败: ${e}`
       throw e
@@ -147,7 +155,10 @@ export const useSettingsStore = defineStore('settings', () => {
       await invoke('update_theme', {
         theme: themeName,
       })
-      theme.value = themeName
+      settings.value = {
+        ...settings.value,
+        theme: themeName,
+      }
       applyTheme(themeName)
     } catch (e) {
       error.value = `更新主题失败: ${e}`
@@ -165,12 +176,16 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   async function updateScreenshotShortcut(newShortcut: string) {
+    const oldShortcut = settings.value.screenshotShortcut
     try {
       await invoke('update_screenshot_shortcut', {
-        oldShortcut: screenshotShortcut.value,
+        oldShortcut,
         newShortcut,
       })
-      screenshotShortcut.value = newShortcut
+      settings.value = {
+        ...settings.value,
+        screenshotShortcut: newShortcut,
+      }
     } catch (e) {
       error.value = `更新截图快捷键失败: ${e}`
       throw e
@@ -216,6 +231,7 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   return {
+    settings,
     apiKey,
     apiSecret,
     translationProvider,
@@ -231,6 +247,7 @@ export const useSettingsStore = defineStore('settings', () => {
     enableTray,
     theme,
     error,
+    createDraft,
     loadSettings,
     updateApiConfig,
     updateGlobalShortcut,

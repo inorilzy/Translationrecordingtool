@@ -86,7 +86,6 @@ fn native_status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus
     let running = model_dir.is_some();
     OcrServiceStatus {
         running,
-        endpoint: "in-process".to_string(),
         message: if running {
             "原生 ONNX OCR 可用".to_string()
         } else {
@@ -100,11 +99,7 @@ fn native_status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus
         engine: native_ocr::engine_name().to_string(),
         model_profile,
         model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
-        sidecar_path: None,
-        log_path: None,
         preload_on_startup: config.preload_on_startup,
-        rapidocr_version: "-",
-        paddleocr_version: "-",
         ppocr_version: PPOCR_VERSION,
         onnxruntime_version: native_ocr::onnx_runtime_version(),
         lang: OCR_LANG,

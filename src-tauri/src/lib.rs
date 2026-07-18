@@ -23,8 +23,7 @@ use app_state::{
     is_active_screenshot_request, load_persisted_settings, migrate_legacy_app_data,
     next_screenshot_request_id, persist_managed_settings, save_persisted_settings,
     update_and_persist_api_config, update_and_persist_global_shortcuts, update_and_persist_theme,
-    update_and_persist_tray_behavior, AppConfig, PopupRuntimeState, ScreenshotRuntimeState,
-    TrayBehaviorConfig,
+    update_and_persist_tray_behavior, PopupRuntimeState, ScreenshotRuntimeState,
 };
 use database::{
     get_translation_by_id_in_connection, load_favorites_in_connection, load_history_in_connection,
@@ -33,7 +32,7 @@ use database::{
 use ocr_contracts::{OcrRuntimeConfig, OcrServiceStatus};
 use parking_lot::RwLock;
 use settings::{
-    PersistedSettings, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_MODEL_PROFILE,
+    PersistedSettings, SettingsRecord, DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_MODEL_PROFILE,
     DEFAULT_SCREENSHOT_SHORTCUT,
 };
 use std::sync::Arc;
@@ -64,8 +63,7 @@ struct OcrSourceTextPayload {
 #[tauri::command]
 fn update_api_config(
     app: tauri::AppHandle,
-    state: tauri::State<Arc<RwLock<AppConfig>>>,
-    tray_behavior: tauri::State<Arc<RwLock<TrayBehaviorConfig>>>,
+    state: tauri::State<Arc<RwLock<SettingsRecord>>>,
     api_key: String,
     api_secret: String,
     translation_provider: String,
@@ -82,7 +80,6 @@ fn update_api_config(
     update_and_persist_api_config(
         &app,
         state.inner(),
-        tray_behavior.inner(),
         api_key,
         api_secret,
         translation_provider,
@@ -96,8 +93,8 @@ fn update_api_config(
     )
 }
 
-fn ocr_runtime_config_from_state(config: &Arc<RwLock<AppConfig>>) -> OcrRuntimeConfig {
-    config.read().ocr_runtime_config()
+fn ocr_runtime_config_from_state(settings: &Arc<RwLock<SettingsRecord>>) -> OcrRuntimeConfig {
+    settings.read().ocr_runtime_config()
 }
 
 fn normalize_configured_ocr_runtime(
@@ -139,13 +136,12 @@ fn adapt_new_install_ocr_settings(
 #[tauri::command]
 fn update_global_shortcut(
     app: tauri::AppHandle,
-    tray_behavior: tauri::State<Arc<RwLock<TrayBehaviorConfig>>>,
     old_shortcut: String,
     new_shortcut: String,
 ) -> Result<(), String> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
-    let config = app.state::<Arc<RwLock<AppConfig>>>();
+    let config = app.state::<Arc<RwLock<SettingsRecord>>>();
     let screenshot_shortcut = config.read().screenshot_shortcut.clone();
     if new_shortcut == screenshot_shortcut {
         return Err("两个快捷键不能相同".to_string());
@@ -180,7 +176,7 @@ fn update_global_shortcut(
         config_state.global_shortcut = new_shortcut.clone();
     }
 
-    if let Err(error) = persist_managed_settings(&app, config.inner(), tray_behavior.inner()) {
+    if let Err(error) = persist_managed_settings(&app, config.inner()) {
         if let Ok(new) = new_shortcut.parse::<Shortcut>() {
             let _ = app.global_shortcut().unregister(new);
         }
@@ -202,13 +198,12 @@ fn update_global_shortcut(
 #[tauri::command]
 fn update_screenshot_shortcut(
     app: tauri::AppHandle,
-    tray_behavior: tauri::State<Arc<RwLock<TrayBehaviorConfig>>>,
     old_shortcut: String,
     new_shortcut: String,
 ) -> Result<(), String> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
-    let config = app.state::<Arc<RwLock<AppConfig>>>();
+    let config = app.state::<Arc<RwLock<SettingsRecord>>>();
     let global_shortcut = config.read().global_shortcut.clone();
     if new_shortcut == global_shortcut {
         return Err("两个快捷键不能相同".to_string());
@@ -245,7 +240,7 @@ fn update_screenshot_shortcut(
         config_state.screenshot_shortcut = new_shortcut.clone();
     }
 
-    if let Err(error) = persist_managed_settings(&app, config.inner(), tray_behavior.inner()) {
+    if let Err(error) = persist_managed_settings(&app, config.inner()) {
         if let Ok(new) = new_shortcut.parse::<Shortcut>() {
             let _ = app.global_shortcut().unregister(new);
         }
@@ -307,31 +302,24 @@ fn restore_screenshot_shortcut(
 #[tauri::command]
 fn update_tray_behavior(
     app: tauri::AppHandle,
-    app_config: tauri::State<Arc<RwLock<AppConfig>>>,
-    state: tauri::State<Arc<RwLock<TrayBehaviorConfig>>>,
+    state: tauri::State<Arc<RwLock<SettingsRecord>>>,
     enabled: bool,
 ) -> Result<(), String> {
-    update_and_persist_tray_behavior(&app, app_config.inner(), state.inner(), enabled)
+    update_and_persist_tray_behavior(&app, state.inner(), enabled)
 }
 
 #[tauri::command]
 fn update_theme(
     app: tauri::AppHandle,
-    state: tauri::State<Arc<RwLock<AppConfig>>>,
-    tray_behavior: tauri::State<Arc<RwLock<TrayBehaviorConfig>>>,
+    state: tauri::State<Arc<RwLock<SettingsRecord>>>,
     theme: String,
 ) -> Result<(), String> {
-    update_and_persist_theme(&app, state.inner(), tray_behavior.inner(), theme)
+    update_and_persist_theme(&app, state.inner(), theme)
 }
 
 #[tauri::command]
-fn get_settings(
-    state: tauri::State<Arc<RwLock<AppConfig>>>,
-    tray_behavior: tauri::State<Arc<RwLock<TrayBehaviorConfig>>>,
-) -> PersistedSettings {
-    let config = state.read();
-    let tray_behavior = tray_behavior.read();
-    app_state::to_persisted_settings(&config, &tray_behavior)
+fn get_settings(state: tauri::State<Arc<RwLock<SettingsRecord>>>) -> PersistedSettings {
+    state.read().clone()
 }
 
 #[tauri::command]
@@ -420,7 +408,7 @@ async fn translate_image_overlay(
 #[tauri::command]
 async fn check_ocr_service(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
+    state: tauri::State<'_, Arc<RwLock<SettingsRecord>>>,
 ) -> Result<String, String> {
     let config = ocr_runtime_config_from_state(state.inner());
     ocr::ensure_running(&app, &config).await
@@ -429,7 +417,7 @@ async fn check_ocr_service(
 #[tauri::command]
 async fn get_ocr_service_status(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
+    state: tauri::State<'_, Arc<RwLock<SettingsRecord>>>,
 ) -> Result<OcrServiceStatus, String> {
     let config = ocr_runtime_config_from_state(state.inner());
     Ok(ocr::status(&app, &config).await)
@@ -438,7 +426,7 @@ async fn get_ocr_service_status(
 #[tauri::command]
 async fn warmup_ocr_service(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
+    state: tauri::State<'_, Arc<RwLock<SettingsRecord>>>,
 ) -> Result<String, String> {
     let config = ocr_runtime_config_from_state(state.inner());
     ocr::warmup(&app, &config).await
@@ -447,7 +435,7 @@ async fn warmup_ocr_service(
 #[tauri::command]
 async fn restart_ocr_service(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
+    state: tauri::State<'_, Arc<RwLock<SettingsRecord>>>,
 ) -> Result<String, String> {
     let config = ocr_runtime_config_from_state(state.inner());
     ocr::restart(&app, &config).await
@@ -456,7 +444,7 @@ async fn restart_ocr_service(
 #[tauri::command]
 fn get_ocr_log_path(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<RwLock<AppConfig>>>,
+    state: tauri::State<'_, Arc<RwLock<SettingsRecord>>>,
 ) -> Result<String, String> {
     let config = ocr_runtime_config_from_state(state.inner());
     ocr::log_path(&app, &config).map(|path| path.display().to_string())
@@ -595,31 +583,12 @@ pub fn run() {
                 }
             }
 
-            // 初始化状态管理
-            let config = Arc::new(RwLock::new(AppConfig {
-                api_key: persisted_settings.api_key.clone(),
-                api_secret: persisted_settings.api_secret.clone(),
-                translation_provider: persisted_settings.translation_provider.clone(),
-                microsoft_translator_key: persisted_settings.microsoft_translator_key.clone(),
-                microsoft_translator_region: persisted_settings.microsoft_translator_region.clone(),
-                google_api_key: persisted_settings.google_api_key.clone(),
-                ocr_endpoint: persisted_settings.ocr_endpoint.clone(),
-                ocr_engine: persisted_settings.ocr_engine.clone(),
-                ocr_model_profile: persisted_settings.ocr_model_profile.clone(),
-                ocr_preload_on_startup: persisted_settings.ocr_preload_on_startup,
-                global_shortcut: persisted_settings.global_shortcut.clone(),
-                screenshot_shortcut: persisted_settings.screenshot_shortcut.clone(),
-                theme: persisted_settings.theme.clone(),
-            }));
+            // 初始化状态管理：canonical settings record is the runtime authority.
+            let config = Arc::new(RwLock::new(persisted_settings.clone()));
             app.manage(config.clone());
             let translation_workflow =
                 translation_workflow::create_app_workflow(app.handle().clone(), config.clone());
             app.manage(translation_workflow);
-
-            let tray_behavior = Arc::new(RwLock::new(TrayBehaviorConfig {
-                enabled: persisted_settings.enable_tray,
-            }));
-            app.manage(tray_behavior.clone());
 
             let popup_state = Arc::new(RwLock::new(PopupRuntimeState::default()));
             app.manage(popup_state.clone());
@@ -635,12 +604,7 @@ pub fn run() {
 
             ocr::spawn_startup_check(
                 app.handle().clone(),
-                OcrRuntimeConfig {
-                    endpoint: persisted_settings.ocr_endpoint.clone(),
-                    engine: persisted_settings.ocr_engine.clone(),
-                    model_profile: persisted_settings.ocr_model_profile.clone(),
-                    preload_on_startup: persisted_settings.ocr_preload_on_startup,
-                },
+                persisted_settings.ocr_runtime_config(),
             );
 
             // 词典初始化
@@ -703,10 +667,10 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let window_clone = window.clone();
                 let app_handle = app.handle().clone();
-                let tray_behavior = tray_behavior.clone();
+                let settings_for_close = config.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        if tray_behavior.read().enabled {
+                        if settings_for_close.read().enable_tray {
                             let _ = window_clone.hide();
                             api.prevent_close();
                         } else {
@@ -739,7 +703,7 @@ pub fn run() {
                 }
 
                 if let Err(error) =
-                    persist_managed_settings(&app.handle().clone(), &config, &tray_behavior)
+                    persist_managed_settings(&app.handle().clone(), &config)
                 {
                     warn!("持久化默认快捷键失败: {}", error);
                 }
@@ -767,7 +731,6 @@ pub fn run() {
                 if let Err(error) = update_and_persist_global_shortcuts(
                     &app.handle().clone(),
                     &config,
-                    &tray_behavior,
                     global_shortcut,
                     DEFAULT_SCREENSHOT_SHORTCUT.to_string(),
                 ) {

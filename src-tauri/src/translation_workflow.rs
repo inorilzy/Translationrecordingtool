@@ -8,10 +8,10 @@ use parking_lot::RwLock;
 use tauri::AppHandle;
 
 use crate::{
-    app_state::AppConfig,
     database::{open_translations_connection, save_translation_in_connection, TranslationRecord},
     local_dictionary::{self, FreeDictionarySupplement, OfflineDictionaryEntry},
     ocr_contracts::{OcrRecognition, OcrRuntimeConfig, OcrTextBlock},
+    settings::SettingsRecord,
     translation_domain::{TranslationConfig, TranslationContent, TranslationResult},
     translation_flow::{
         self, DictionaryGateway, ProviderGateway, ResolutionError, ResolutionStage,
@@ -428,19 +428,19 @@ impl TranslationRepository for AppTranslationRepository {
 
 #[derive(Clone)]
 pub struct ManagedRuntimeSettings {
-    config: Arc<RwLock<AppConfig>>,
+    settings: Arc<RwLock<SettingsRecord>>,
 }
 
 impl RuntimeSettingsSource for ManagedRuntimeSettings {
     fn translation_config(&self) -> TranslationConfig {
-        self.config.read().translation_runtime_config()
+        self.settings.read().translation_config()
     }
 
     fn screenshot_settings(&self) -> ScreenshotRequestSettings {
-        let config = self.config.read();
+        let settings = self.settings.read();
         ScreenshotRequestSettings {
-            translation: config.translation_runtime_config(),
-            ocr: config.ocr_runtime_config(),
+            translation: settings.translation_config(),
+            ocr: settings.ocr_runtime_config(),
         }
     }
 }
@@ -470,13 +470,13 @@ pub type AppTranslationWorkflow = TranslationWorkflow<
 
 pub fn create_app_workflow(
     app: AppHandle,
-    config: Arc<RwLock<AppConfig>>,
+    settings: Arc<RwLock<SettingsRecord>>,
 ) -> AppTranslationWorkflow {
     TranslationWorkflow::new(
         AppDictionaryGateway { app: app.clone() },
         AppProviderGateway,
         AppTranslationRepository { app: app.clone() },
-        ManagedRuntimeSettings { config },
+        ManagedRuntimeSettings { settings },
         AppOcrGateway { app },
     )
 }

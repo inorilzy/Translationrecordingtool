@@ -135,20 +135,13 @@ const ocrStatusDetail = computed(() => {
 
 onMounted(async () => {
   await store.loadSettings()
-  config.value.apiKey = store.apiKey
-  config.value.apiSecret = store.apiSecret
-  config.value.translationProvider = store.translationProvider
-  config.value.microsoftTranslatorKey = store.microsoftTranslatorKey
-  config.value.microsoftTranslatorRegion = store.microsoftTranslatorRegion
-  config.value.googleApiKey = store.googleApiKey
-  config.value.ocrEndpoint = store.ocrEndpoint
-  config.value.ocrEngine = 'native_onnx'
-  config.value.ocrModelProfile = 'small'
-  config.value.ocrPreloadOnStartup = store.ocrPreloadOnStartup
-  config.value.globalShortcut = store.globalShortcut
-  config.value.screenshotShortcut = store.screenshotShortcut
-  config.value.enableTray = store.enableTray
-  config.value.theme = store.theme
+  const snapshot = store.createDraft()
+  config.value = {
+    ...snapshot,
+    ocrEngine: 'native_onnx',
+    ocrModelProfile: 'small',
+    enableAutostart: false,
+  }
 
   try {
     config.value.enableAutostart = await isAutostartEnabled()

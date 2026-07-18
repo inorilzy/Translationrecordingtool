@@ -6,88 +6,13 @@ use parking_lot::RwLock;
 use std::{fs, path::Path, sync::Arc};
 use tauri::Manager;
 
-use crate::{
-    ocr_contracts::OcrRuntimeConfig,
-    settings::{
-        load_settings, save_settings, settings_file_exists, PersistedSettings,
-        DEFAULT_GLOBAL_SHORTCUT, DEFAULT_OCR_ENDPOINT, DEFAULT_OCR_ENGINE,
-        DEFAULT_OCR_MODEL_PROFILE, DEFAULT_SCREENSHOT_SHORTCUT, DEFAULT_THEME,
-    },
-    translation_domain::TranslationConfig,
+use crate::settings::{
+    load_settings, save_settings, settings_file_exists, SettingsRecord,
 };
 
 // ─── Runtime State ───────────────────────────────────────────────────────────
 
-/// Live application configuration (hot-reloadable via Tauri commands).
-#[derive(Clone)]
-pub struct AppConfig {
-    pub api_key: String,
-    pub api_secret: String,
-    pub translation_provider: String,
-    pub microsoft_translator_key: String,
-    pub microsoft_translator_region: String,
-    pub google_api_key: String,
-    pub ocr_endpoint: String,
-    pub ocr_engine: String,
-    pub ocr_model_profile: String,
-    pub ocr_preload_on_startup: bool,
-    pub global_shortcut: String,
-    pub screenshot_shortcut: String,
-    pub theme: String,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            api_key: String::new(),
-            api_secret: String::new(),
-            translation_provider: "youdao".to_string(),
-            microsoft_translator_key: String::new(),
-            microsoft_translator_region: String::new(),
-            google_api_key: String::new(),
-            ocr_endpoint: DEFAULT_OCR_ENDPOINT.to_string(),
-            ocr_engine: DEFAULT_OCR_ENGINE.to_string(),
-            ocr_model_profile: DEFAULT_OCR_MODEL_PROFILE.to_string(),
-            ocr_preload_on_startup: true,
-            global_shortcut: DEFAULT_GLOBAL_SHORTCUT.to_string(),
-            screenshot_shortcut: DEFAULT_SCREENSHOT_SHORTCUT.to_string(),
-            theme: DEFAULT_THEME.to_string(),
-        }
-    }
-}
-
-impl AppConfig {
-    pub fn ocr_runtime_config(&self) -> OcrRuntimeConfig {
-        OcrRuntimeConfig {
-            endpoint: self.ocr_endpoint.clone(),
-            engine: self.ocr_engine.clone(),
-            model_profile: self.ocr_model_profile.clone(),
-            preload_on_startup: self.ocr_preload_on_startup,
-        }
-    }
-
-    pub fn translation_runtime_config(&self) -> TranslationConfig {
-        TranslationConfig {
-            provider: self.translation_provider.clone(),
-            youdao_app_key: self.api_key.clone(),
-            youdao_app_secret: self.api_secret.clone(),
-            microsoft_key: self.microsoft_translator_key.clone(),
-            microsoft_region: self.microsoft_translator_region.clone(),
-            google_api_key: self.google_api_key.clone(),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct TrayBehaviorConfig {
-    pub enabled: bool,
-}
-
-impl Default for TrayBehaviorConfig {
-    fn default() -> Self {
-        Self { enabled: true }
-    }
-}
+// ─── Popup / Screenshot Runtime ──────────────────────────────────────────────
 
 /// Tracks whether the popup window is ready and which translation request
 /// is currently active (to avoid race conditions on rapid shortcut triggers).
@@ -139,31 +64,9 @@ pub fn is_active_screenshot_request(
 
 // ─── Settings Persistence ────────────────────────────────────────────────────
 
-pub fn to_persisted_settings(
-    config: &AppConfig,
-    tray_behavior: &TrayBehaviorConfig,
-) -> PersistedSettings {
-    PersistedSettings {
-        api_key: config.api_key.clone(),
-        api_secret: config.api_secret.clone(),
-        translation_provider: config.translation_provider.clone(),
-        microsoft_translator_key: config.microsoft_translator_key.clone(),
-        microsoft_translator_region: config.microsoft_translator_region.clone(),
-        google_api_key: config.google_api_key.clone(),
-        ocr_endpoint: config.ocr_endpoint.clone(),
-        ocr_engine: config.ocr_engine.clone(),
-        ocr_model_profile: config.ocr_model_profile.clone(),
-        ocr_preload_on_startup: config.ocr_preload_on_startup,
-        global_shortcut: config.global_shortcut.clone(),
-        screenshot_shortcut: config.screenshot_shortcut.clone(),
-        enable_tray: tray_behavior.enabled,
-        theme: config.theme.clone(),
-    }
-}
-
 pub fn load_persisted_settings(
     app: &tauri::AppHandle,
-) -> Result<(PersistedSettings, bool), String> {
+) -> Result<(SettingsRecord, bool), String> {
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let has_persisted_settings = settings_file_exists(&config_dir);
     load_settings(&config_dir).map(|settings| (settings, has_persisted_settings))
@@ -171,7 +74,7 @@ pub fn load_persisted_settings(
 
 pub fn save_persisted_settings(
     app: &tauri::AppHandle,
-    settings: &PersistedSettings,
+    settings: &SettingsRecord,
 ) -> Result<(), String> {
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     save_settings(&config_dir, settings)
@@ -179,25 +82,20 @@ pub fn save_persisted_settings(
 
 pub fn persist_managed_settings(
     app: &tauri::AppHandle,
-    config: &Arc<RwLock<AppConfig>>,
-    tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
+    settings: &Arc<RwLock<SettingsRecord>>,
 ) -> Result<(), String> {
-    let config_snapshot = config.read().clone();
-    let tray_snapshot = tray_behavior.read().clone();
-    let settings = to_persisted_settings(&config_snapshot, &tray_snapshot);
-    save_persisted_settings(app, &settings)
+    let snapshot = settings.read().clone();
+    save_persisted_settings(app, &snapshot)
 }
 
 // ─── Single-Field Update Helpers ─────────────────────────────────────────────
 //
-// Each helper acquires a write lock on `AppConfig`, applies the update, then
-// persists the combined (config + tray) snapshot to disk.  This removes the
-// repetitive "lock → mutate → persist" boilerplate from individual commands.
+// Each helper acquires a write lock on managed settings, applies the update,
+// then persists the full canonical snapshot to disk.
 
 pub fn update_and_persist_api_config(
     app: &tauri::AppHandle,
-    config: &Arc<RwLock<AppConfig>>,
-    tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
+    settings: &Arc<RwLock<SettingsRecord>>,
     api_key: String,
     api_secret: String,
     translation_provider: String,
@@ -210,7 +108,7 @@ pub fn update_and_persist_api_config(
     ocr_preload_on_startup: bool,
 ) -> Result<(), String> {
     {
-        let mut cfg = config.write();
+        let mut cfg = settings.write();
         cfg.api_key = api_key;
         cfg.api_secret = api_secret;
         cfg.translation_provider = translation_provider;
@@ -222,48 +120,45 @@ pub fn update_and_persist_api_config(
         cfg.ocr_model_profile = ocr_model_profile;
         cfg.ocr_preload_on_startup = ocr_preload_on_startup;
     }
-    persist_managed_settings(app, config, tray_behavior)
+    persist_managed_settings(app, settings)
 }
 
 pub fn update_and_persist_theme(
     app: &tauri::AppHandle,
-    config: &Arc<RwLock<AppConfig>>,
-    tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
+    settings: &Arc<RwLock<SettingsRecord>>,
     theme: String,
 ) -> Result<(), String> {
     {
-        let mut cfg = config.write();
+        let mut cfg = settings.write();
         cfg.theme = theme;
     }
-    persist_managed_settings(app, config, tray_behavior)
+    persist_managed_settings(app, settings)
 }
 
 pub fn update_and_persist_global_shortcuts(
     app: &tauri::AppHandle,
-    config: &Arc<RwLock<AppConfig>>,
-    tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
+    settings: &Arc<RwLock<SettingsRecord>>,
     global_shortcut: String,
     screenshot_shortcut: String,
 ) -> Result<(), String> {
     {
-        let mut cfg = config.write();
+        let mut cfg = settings.write();
         cfg.global_shortcut = global_shortcut;
         cfg.screenshot_shortcut = screenshot_shortcut;
     }
-    persist_managed_settings(app, config, tray_behavior)
+    persist_managed_settings(app, settings)
 }
 
 pub fn update_and_persist_tray_behavior(
     app: &tauri::AppHandle,
-    config: &Arc<RwLock<AppConfig>>,
-    tray_behavior: &Arc<RwLock<TrayBehaviorConfig>>,
+    settings: &Arc<RwLock<SettingsRecord>>,
     enabled: bool,
 ) -> Result<(), String> {
     {
-        let mut tb = tray_behavior.write();
-        tb.enabled = enabled;
+        let mut cfg = settings.write();
+        cfg.enable_tray = enabled;
     }
-    persist_managed_settings(app, config, tray_behavior)
+    persist_managed_settings(app, settings)
 }
 
 // ─── Legacy App Data Migration ───────────────────────────────────────────────

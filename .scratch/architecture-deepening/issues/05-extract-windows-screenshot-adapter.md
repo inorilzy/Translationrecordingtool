@@ -4,11 +4,11 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 截图按钮和截图快捷键继续返回相同的选区信息与 PNG 数据结果。
-- [ ] Windows 原生选区 UI、屏幕捕获、DPI 换算和平台资源生命周期由一个内部 adapter 拥有。
-- [ ] 同一时间只允许一个选区 session；取消、过期 session 恢复和最小选区限制保持现有行为。
-- [ ] 调用方只需要理解 ScreenshotCapture interface，不需要了解 Win32 消息、窗口类或 GDI 资源。
-- [ ] 可确定的区域归一化与 session 行为通过 seam 上方的测试验证；平台资源行为通过 Windows smoke scenario 验证。
-- [ ] 本次迁移不改变截图翻译、OCR、弹窗锚点或最新请求优先规则。
+- [x] 截图按钮和截图快捷键继续返回相同的选区信息与 PNG 数据结果。
+- [x] Windows 原生选区 UI、屏幕捕获、DPI 换算和平台资源生命周期由一个内部 adapter 拥有。
+- [x] 同一时间只允许一个选区 session；取消、过期 session 恢复和最小选区限制保持现有行为。
+- [x] 调用方只需要理解 ScreenshotCapture interface，不需要了解 Win32 消息、窗口类或 GDI 资源。
+- [x] 可确定的区域归一化与 session 行为通过 seam 上方的测试验证；平台资源行为通过 Windows smoke scenario 验证。
+- [x] 本次迁移不改变截图翻译、OCR、弹窗锚点或最新请求优先规则。

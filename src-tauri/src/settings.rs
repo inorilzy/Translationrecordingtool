@@ -1,5 +1,5 @@
 use crate::{
-    ocr_contracts::OcrRuntimeConfig,
+    ocr_contracts::{normalize_engine, normalize_model_profile, OcrRuntimeConfig},
     translation_domain::TranslationConfig,
 };
 use serde::{Deserialize, Serialize};
@@ -18,12 +18,11 @@ const SETTINGS_FILE_NAME: &str = "settings.json";
 
 /// Canonical application settings record.
 ///
-/// This is the single Rust-owned source of defaults, persistence shape, and
-/// runtime configuration projections during the architecture-deepening expand.
-/// Existing callers may continue using compatibility mirrors until they migrate.
+/// Single Rust-owned source of defaults, persistence shape, and runtime
+/// configuration projections.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
-pub struct PersistedSettings {
+pub struct SettingsRecord {
     pub api_key: String,
     pub api_secret: String,
     pub translation_provider: String,
@@ -40,10 +39,10 @@ pub struct PersistedSettings {
     pub theme: String,
 }
 
-/// Expand-phase alias for the canonical settings runtime seam.
-pub type SettingsRecord = PersistedSettings;
+/// Compatibility alias for the serialized settings IPC/record name.
+pub type PersistedSettings = SettingsRecord;
 
-impl Default for PersistedSettings {
+impl Default for SettingsRecord {
     fn default() -> Self {
         Self {
             api_key: String::new(),
@@ -64,7 +63,7 @@ impl Default for PersistedSettings {
     }
 }
 
-impl PersistedSettings {
+impl SettingsRecord {
     pub fn translation_config(&self) -> TranslationConfig {
         TranslationConfig {
             provider: self.translation_provider.clone(),
@@ -82,6 +81,14 @@ impl PersistedSettings {
             engine: self.ocr_engine.clone(),
             model_profile: self.ocr_model_profile.clone(),
             preload_on_startup: self.ocr_preload_on_startup,
+        }
+    }
+
+    pub fn normalize_product_ocr_runtime(&mut self) {
+        self.ocr_engine = normalize_engine(&self.ocr_engine).to_string();
+        self.ocr_model_profile = normalize_model_profile(&self.ocr_model_profile);
+        if self.ocr_engine == "unknown" {
+            self.ocr_engine = DEFAULT_OCR_ENGINE.to_string();
         }
     }
 }
@@ -102,20 +109,22 @@ pub fn settings_file_exists(config_dir: &Path) -> bool {
     settings_file_path(config_dir).is_file()
 }
 
-pub fn load_settings(config_dir: &Path) -> Result<PersistedSettings, String> {
+pub fn load_settings(config_dir: &Path) -> Result<SettingsRecord, String> {
     let settings_path = settings_file_path(config_dir);
     if !settings_path.exists() {
-        return Ok(PersistedSettings::default());
+        return Ok(SettingsRecord::default());
     }
 
     let content = fs::read_to_string(&settings_path)
         .map_err(|e| format!("读取设置文件失败: {} ({})", settings_path.display(), e))?;
 
-    serde_json::from_str(&content)
-        .map_err(|e| format!("解析设置文件失败: {} ({})", settings_path.display(), e))
+    let mut settings: SettingsRecord = serde_json::from_str(&content)
+        .map_err(|e| format!("解析设置文件失败: {} ({})", settings_path.display(), e))?;
+    settings.normalize_product_ocr_runtime();
+    Ok(settings)
 }
 
-pub fn save_settings(config_dir: &Path, settings: &PersistedSettings) -> Result<(), String> {
+pub fn save_settings(config_dir: &Path, settings: &SettingsRecord) -> Result<(), String> {
     fs::create_dir_all(config_dir)
         .map_err(|e| format!("创建设置目录失败: {} ({})", config_dir.display(), e))?;
 
@@ -163,12 +172,12 @@ mod tests {
     #[test]
     fn settings_record_alias_is_canonical_persisted_settings() {
         let defaults = SettingsRecord::default();
-        assert_eq!(defaults, PersistedSettings::default());
+        assert_eq!(defaults, SettingsRecord::default());
     }
 
     #[test]
     fn translation_and_ocr_projections_use_canonical_fields() {
-        let settings = PersistedSettings {
+        let settings = SettingsRecord {
             api_key: "youdao-key".to_string(),
             api_secret: "youdao-secret".to_string(),
             translation_provider: "microsoft".to_string(),
@@ -179,7 +188,7 @@ mod tests {
             ocr_engine: "native_onnx".to_string(),
             ocr_model_profile: "small".to_string(),
             ocr_preload_on_startup: false,
-            ..PersistedSettings::default()
+            ..SettingsRecord::default()
         };
 
         assert_eq!(
@@ -224,7 +233,7 @@ mod tests {
 
     #[test]
     fn defaults_match_frontend_expectations() {
-        let defaults = PersistedSettings::default();
+        let defaults = SettingsRecord::default();
 
         assert_eq!(defaults.api_key, "");
         assert_eq!(defaults.api_secret, "");
@@ -244,13 +253,13 @@ mod tests {
 
         let settings = load_settings(temp_dir.path()).unwrap();
 
-        assert_eq!(settings, PersistedSettings::default());
+        assert_eq!(settings, SettingsRecord::default());
     }
 
     #[test]
     fn save_and_load_round_trip_settings() {
         let temp_dir = TempDirGuard::new("translation-tool-settings-roundtrip");
-        let settings = PersistedSettings {
+        let settings = SettingsRecord {
             api_key: "demo-key".to_string(),
             api_secret: "demo-secret".to_string(),
             translation_provider: "microsoft".to_string(),
@@ -258,7 +267,7 @@ mod tests {
             microsoft_translator_region: "eastasia".to_string(),
             google_api_key: "google-key".to_string(),
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
-            ocr_engine: "paddleocr".to_string(),
+            ocr_engine: "native_onnx".to_string(),
             ocr_model_profile: "small".to_string(),
             ocr_preload_on_startup: true,
             global_shortcut: "Ctrl+Shift+Q".to_string(),
@@ -277,7 +286,7 @@ mod tests {
     #[test]
     fn round_trip_all_fields_zero_values() {
         let temp_dir = TempDirGuard::new("translation-tool-settings-zero");
-        let settings = PersistedSettings {
+        let settings = SettingsRecord {
             api_key: String::new(),
             api_secret: String::new(),
             translation_provider: String::new(),
@@ -285,8 +294,8 @@ mod tests {
             microsoft_translator_region: String::new(),
             google_api_key: String::new(),
             ocr_endpoint: String::new(),
-            ocr_engine: String::new(),
-            ocr_model_profile: String::new(),
+            ocr_engine: DEFAULT_OCR_ENGINE.to_string(),
+            ocr_model_profile: DEFAULT_OCR_MODEL_PROFILE.to_string(),
             ocr_preload_on_startup: false,
             global_shortcut: String::new(),
             screenshot_shortcut: String::new(),
@@ -304,7 +313,7 @@ mod tests {
 
     #[test]
     fn serialization_uses_camel_case_field_names() {
-        let settings = PersistedSettings {
+        let settings = SettingsRecord {
             api_key: "k".to_string(),
             api_secret: "s".to_string(),
             translation_provider: "youdao".to_string(),
@@ -359,7 +368,7 @@ mod tests {
             "theme": "solarized"
         }"#;
 
-        let settings: PersistedSettings = serde_json::from_str(json).unwrap();
+        let settings: SettingsRecord = serde_json::from_str(json).unwrap();
 
         assert_eq!(settings.api_key, "test-key");
         assert_eq!(settings.api_secret, "test-secret");
@@ -375,6 +384,24 @@ mod tests {
         assert_eq!(settings.screenshot_shortcut, "Ctrl+Shift+S");
         assert!(!settings.enable_tray);
         assert_eq!(settings.theme, "solarized");
+    }
+
+    #[test]
+    fn load_normalizes_legacy_ocr_engine_and_profile() {
+        let temp_dir = TempDirGuard::new("translation-tool-settings-legacy-ocr");
+        fs::write(
+            settings_file_path(temp_dir.path()),
+            r#"{
+                "ocrEngine": "paddleocr",
+                "ocrModelProfile": "lite"
+            }"#,
+        )
+        .unwrap();
+
+        let settings = load_settings(temp_dir.path()).unwrap();
+
+        assert_eq!(settings.ocr_engine, DEFAULT_OCR_ENGINE);
+        assert_eq!(settings.ocr_model_profile, DEFAULT_OCR_MODEL_PROFILE);
     }
 
     // ─── Malformed / Error Paths ─────────────────────────────────────────
@@ -405,7 +432,7 @@ mod tests {
     fn save_error_contains_file_path_on_write_failure() {
         // Write to a read-only directory to trigger a write error
         let temp_dir = TempDirGuard::new("translation-tool-settings-readonly");
-        let settings = PersistedSettings::default();
+        let settings = SettingsRecord::default();
 
         // On Windows, we can't easily make a directory read-only in tests,
         // so we verify the error path by pointing to a path inside a file
@@ -424,7 +451,7 @@ mod tests {
         // Frontend may send a subset of fields — serde default must handle it
         let json = r#"{"apiKey": "partial-key"}"#;
 
-        let settings: PersistedSettings = serde_json::from_str(json).unwrap();
+        let settings: SettingsRecord = serde_json::from_str(json).unwrap();
 
         assert_eq!(settings.api_key, "partial-key");
         assert_eq!(settings.api_secret, ""); // default
@@ -443,9 +470,9 @@ mod tests {
 
     #[test]
     fn empty_json_object_produces_full_defaults() {
-        let settings: PersistedSettings = serde_json::from_str("{}").unwrap();
+        let settings: SettingsRecord = serde_json::from_str("{}").unwrap();
 
-        assert_eq!(settings, PersistedSettings::default());
+        assert_eq!(settings, SettingsRecord::default());
     }
 
     // ─── Unknown Fields ──────────────────────────────────────────────────
@@ -459,7 +486,7 @@ mod tests {
             "extraNested": {"a": 1}
         }"#;
 
-        let settings: PersistedSettings = serde_json::from_str(json).unwrap();
+        let settings: SettingsRecord = serde_json::from_str(json).unwrap();
 
         assert_eq!(settings.api_key, "known");
         assert_eq!(settings.theme, "dark");

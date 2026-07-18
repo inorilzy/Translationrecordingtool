@@ -313,19 +313,14 @@ describe('useSettingsStore', () => {
     it('loads OCR service status from backend', async () => {
       const status = {
         running: true,
-        endpoint: 'http://127.0.0.1:8866/ocr',
-        message: 'PaddleOCR 服务正常',
+        message: '原生 ONNX OCR 可用',
         lastError: null,
         engine: 'native_onnx',
         modelProfile: 'small',
         modelDir: null,
-        sidecarPath: null,
-        logPath: 'C:/logs/paddle-ocr-service.log',
         preloadOnStartup: true,
-        rapidocrVersion: '1.4.4',
-        paddleocrVersion: '3.7.0',
         ppocrVersion: 'PP-OCRv6',
-        onnxruntimeVersion: '1.27.0',
+        onnxruntimeVersion: '1.20.1',
         lang: 'ch',
         device: 'cpu',
       }

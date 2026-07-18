@@ -17,6 +17,7 @@ export interface AppSettings {
   theme: string
 }
 
+/** Bootstrap fallback when Rust settings are unavailable. Keep aligned with SettingsRecord::default via Rust defaults tests. */
 export const defaultSettings: AppSettings = {
   apiKey: '',
   apiSecret: '',

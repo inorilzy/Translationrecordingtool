@@ -42,17 +42,12 @@ pub struct OcrRecognition {
 #[serde(rename_all = "camelCase")]
 pub struct OcrServiceStatus {
     pub running: bool,
-    pub endpoint: String,
     pub message: String,
     pub last_error: Option<String>,
     pub engine: String,
     pub model_profile: String,
     pub model_dir: Option<String>,
-    pub sidecar_path: Option<String>,
-    pub log_path: Option<String>,
     pub preload_on_startup: bool,
-    pub rapidocr_version: &'static str,
-    pub paddleocr_version: &'static str,
     pub ppocr_version: &'static str,
     pub onnxruntime_version: &'static str,
     pub lang: &'static str,
