@@ -15,6 +15,7 @@ const windowMocks = vi.hoisted(() => ({
   hide: vi.fn().mockResolvedValue(undefined),
   startDragging: vi.fn().mockResolvedValue(undefined),
   emit: vi.fn().mockResolvedValue(undefined),
+  setSize: vi.fn().mockResolvedValue(undefined),
 }))
 
 const eventMocks = vi.hoisted(() => {
@@ -44,6 +45,7 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
     hide: windowMocks.hide,
     startDragging: windowMocks.startDragging,
     emit: windowMocks.emit,
+    setSize: windowMocks.setSize,
   }),
 }))
 
@@ -180,6 +182,30 @@ describe('PopupWindow runtime contract', () => {
     expect(wrapper.text()).toContain('Hello, world!')
     expect(wrapper.text()).toContain('hi')
     expect(coreMocks.invoke).not.toHaveBeenCalledWith('save_translation', expect.anything())
+  })
+
+  it('renders sentences with a compact layout and bounded window height', async () => {
+    const wrapper = await mountPopup()
+
+    await emitPopupEvent('translation-result', translationRecord({
+      source_text: 'This is a sentence that should use the sentence layout.',
+      translated_text: '这是一个应该使用句子布局的翻译。',
+      explains: [],
+      word_type: null,
+    }))
+
+    expect(wrapper.find('.sentence-result').exists()).toBe(true)
+    expect(wrapper.find('.sentence-translation').text()).toContain('句子布局')
+    expect(wrapper.find('.word').exists()).toBe(false)
+
+    await vi.waitFor(() => {
+      expect(windowMocks.setSize).toHaveBeenCalled()
+    })
+    const calls = windowMocks.setSize.mock.calls
+    const size = calls[calls.length - 1]?.[0] as { width: number; height: number }
+    expect(size.width).toBe(420)
+    expect(size.height).toBeGreaterThanOrEqual(150)
+    expect(size.height).toBeLessThanOrEqual(380)
   })
 
   it('renders workflow failures instead of closing silently', async () => {

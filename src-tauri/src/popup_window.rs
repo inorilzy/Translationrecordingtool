@@ -12,6 +12,9 @@ use crate::app_state::{mark_popup_ready, PopupRuntimeState};
 
 pub const POPUP_WIDTH: i32 = 420;
 pub const POPUP_HEIGHT: i32 = 380;
+/// The frontend grows the popup to its content (max `POPUP_HEIGHT`), so start
+/// small enough to avoid a large empty frame before the first render.
+const POPUP_INITIAL_HEIGHT: f64 = 160.0;
 pub const OFFSET: i32 = 15; // 鼠标偏移量
 pub const MARGIN: i32 = 20; // 屏幕边缘留白
 const RECT_ANCHOR_GAP: i32 = 12;
@@ -317,7 +320,7 @@ pub fn build_popup_window(
     let window =
         tauri::WebviewWindowBuilder::new(app, "popup", tauri::WebviewUrl::App("index.html".into()))
             .title("翻译")
-            .inner_size(420.0, 380.0)
+            .inner_size(POPUP_WIDTH as f64, POPUP_INITIAL_HEIGHT)
             .decorations(false)
             .always_on_top(true)
             .skip_taskbar(true)
