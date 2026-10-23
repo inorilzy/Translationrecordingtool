@@ -2,11 +2,11 @@
 
 一个基于 `Tauri 2 + Vue 3 + Rust + SQLite` 的 Windows 桌面翻译工具，面向日常划词翻译、截图 OCR 翻译、历史记录和本地词典查询。
 
-当前发布版本：`v0.3.0`
+当前发布版本：`v0.3.1`
 
-- Release: <https://github.com/inorilzy/Translationrecordingtool/releases/tag/v0.3.0>
-- 推荐安装包：`translation-tool_0.3.0_x64-setup.exe`
-- MSI 安装包：`translation-tool_0.3.0_x64_en-US.msi`
+- Release: <https://github.com/inorilzy/Translationrecordingtool/releases/tag/v0.3.1>
+- 推荐安装包：`translation-tool_0.3.1_x64-setup.exe`
+- MSI 安装包：`translation-tool_0.3.1_x64_en-US.msi`
 
 ## 产品预览
 
@@ -23,6 +23,13 @@
 - 在线翻译：支持有道、Microsoft Translator、Google Translate，以及无需 Key 的 Google / 微软免费通道。
 - 历史与收藏：翻译记录、收藏、配置保存在本地。
 - 系统托盘：支持关闭时最小化到托盘。
+
+## v0.3.1 亮点
+
+- 没选中任何文本时按划词快捷键不再弹窗，直接静默忽略。
+- 修正“选区为空”与“应用不支持读取”被当成同一种失败的问题，空选区不再触发报错。
+- 开启“自动复制并翻译”后，自动复制没取到内容同样视为未选中，不再弹出与开关状态矛盾的旧提示。
+- 未检测到选中文本时不再作废当前已打开的翻译弹窗。
 
 ## v0.3.0 亮点
 
@@ -122,7 +129,7 @@ flowchart TB
 从 Release 页面下载：
 
 ```text
-translation-tool_0.3.0_x64-setup.exe
+translation-tool_0.3.1_x64-setup.exe
 ```
 
 普通用户推荐使用 `.exe` 安装包。`.msi` 更适合系统管理、批量部署或自动化安装。
@@ -143,8 +150,9 @@ translation-tool_0.3.0_x64-setup.exe
 1. 在任意应用中选中文字。
 2. 按 `Ctrl+Q`。
 3. 应用优先尝试通过 Windows UI Automation 读取选中文本。
-4. 如果读取失败，默认提示手动复制后使用剪贴板翻译；在设置中开启“读取失败时自动复制并翻译”后，应用会显式发送 `Ctrl+C` 并读取剪贴板。
-5. 翻译结果会以自适应高度的弹窗卡片展示。
+4. 如果检测到当前没有选中任何文本，直接忽略本次快捷键，不弹窗。
+5. 如果读取失败，默认提示手动复制后使用剪贴板翻译；在设置中开启“读取失败时自动复制并翻译”后，应用会显式发送 `Ctrl+C` 并读取剪贴板，自动复制同样没取到内容时按“未选中”处理。
+6. 翻译结果会以自适应高度的弹窗卡片展示。
 
 ```mermaid
 flowchart TD
@@ -277,8 +285,8 @@ npm run tauri:build:ocr:native
 产物位置：
 
 ```text
-src-tauri/target/release/bundle/nsis/translation-tool_0.3.0_x64-setup.exe
-src-tauri/target/release/bundle/msi/translation-tool_0.3.0_x64_en-US.msi
+src-tauri/target/release/bundle/nsis/translation-tool_0.3.1_x64-setup.exe
+src-tauri/target/release/bundle/msi/translation-tool_0.3.1_x64_en-US.msi
 ```
 
 ## 常用命令
