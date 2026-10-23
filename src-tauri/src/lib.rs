@@ -11,6 +11,7 @@ mod ocr_contracts;
 
 pub mod popup_window;
 mod screenshot;
+mod selection_fallback;
 mod selection_reader;
 mod settings;
 mod shortcut_handler;
@@ -70,6 +71,7 @@ fn update_api_config(
     microsoft_translator_key: String,
     microsoft_translator_region: String,
     google_api_key: String,
+    clipboard_fallback_enabled: bool,
     ocr_endpoint: String,
     mut ocr_engine: String,
     mut ocr_model_profile: String,
@@ -86,6 +88,7 @@ fn update_api_config(
         microsoft_translator_key,
         microsoft_translator_region,
         google_api_key,
+        clipboard_fallback_enabled,
         ocr_endpoint,
         ocr_engine,
         ocr_model_profile,

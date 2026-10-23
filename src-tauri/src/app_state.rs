@@ -6,7 +6,10 @@ use parking_lot::RwLock;
 use std::{fs, path::Path, sync::Arc};
 use tauri::Manager;
 
-use crate::settings::{load_settings, save_settings, settings_file_exists, SettingsRecord};
+use crate::settings::{
+    load_settings, save_settings, settings_file_exists, SettingsRecord, SETTINGS_FILE_NAME,
+};
+use tracing::warn;
 
 /// Serializes settings writers across candidate construction, file commit and
 /// in-memory publish. Without it, a slow writer could persist snapshot A after
@@ -69,6 +72,11 @@ pub fn is_active_screenshot_request(
 
 pub fn load_persisted_settings(app: &tauri::AppHandle) -> Result<(SettingsRecord, bool), String> {
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    if let Err(error) = migrate_legacy_settings_file(&config_dir) {
+        // A failed migration must not prevent the app from starting; the user
+        // can still re-enter credentials through the settings page.
+        warn!("迁移旧版设置文件失败: {}", error);
+    }
     let has_persisted_settings = settings_file_exists(&config_dir);
     load_settings(&config_dir).map(|settings| (settings, has_persisted_settings))
 }
@@ -151,6 +159,7 @@ pub fn update_and_persist_api_config(
     microsoft_translator_key: String,
     microsoft_translator_region: String,
     google_api_key: String,
+    clipboard_fallback_enabled: bool,
     ocr_endpoint: String,
     ocr_engine: String,
     ocr_model_profile: String,
@@ -163,6 +172,7 @@ pub fn update_and_persist_api_config(
         cfg.microsoft_translator_key = microsoft_translator_key;
         cfg.microsoft_translator_region = microsoft_translator_region;
         cfg.google_api_key = google_api_key;
+        cfg.clipboard_fallback_enabled = clipboard_fallback_enabled;
         cfg.ocr_endpoint = ocr_endpoint;
         cfg.ocr_engine = ocr_engine;
         cfg.ocr_model_profile = ocr_model_profile;
@@ -246,6 +256,38 @@ pub fn migrate_legacy_app_data_dir(
     }
 
     Ok(())
+}
+
+/// Carries the persisted settings (including provider credentials) across the
+/// historical bundle-identifier rename. The legacy folder is only read once:
+/// an existing current settings file always wins.
+pub fn migrate_legacy_settings_file(config_dir: &Path) -> Result<bool, String> {
+    let target_path = config_dir.join(SETTINGS_FILE_NAME);
+    if target_path.exists() {
+        return Ok(false);
+    }
+
+    let Some(parent_dir) = config_dir.parent() else {
+        return Ok(false);
+    };
+    let legacy_path = parent_dir
+        .join(LEGACY_APP_DATA_DIR_NAME)
+        .join(SETTINGS_FILE_NAME);
+    if !legacy_path.is_file() {
+        return Ok(false);
+    }
+
+    fs::create_dir_all(config_dir)
+        .map_err(|e| format!("创建设置目录失败: {} ({})", config_dir.display(), e))?;
+    fs::copy(&legacy_path, &target_path).map_err(|e| {
+        format!(
+            "迁移旧版设置失败: {} -> {} ({})",
+            legacy_path.display(),
+            target_path.display(),
+            e
+        )
+    })?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -365,7 +407,8 @@ mod app_state_tests {
         assert!(matches!(final_theme.as_str(), "dark" | "solarized"));
     }
 
-    use super::migrate_legacy_app_data_dir;
+    use super::{migrate_legacy_app_data_dir, migrate_legacy_settings_file};
+    use crate::settings::{load_settings_record, save_settings_record};
     use std::{
         fs,
         path::{Path, PathBuf},
@@ -442,5 +485,63 @@ mod app_state_tests {
             fs::read(current_dir.join("translations.db")).unwrap(),
             b"new-history"
         );
+    }
+
+    #[test]
+    fn migrates_settings_file_with_credentials_from_legacy_directory() {
+        let temp_dir = TempDirGuard::new("translation-tool-migrate-settings");
+        let current_dir = temp_dir.path().join("com.zhiyu-liu.translation-tool");
+        let legacy_dir = temp_dir.path().join("com.zhiyu_liu.translation-tool");
+        fs::create_dir_all(&legacy_dir).unwrap();
+
+        let legacy_settings = SettingsRecord {
+            translation_provider: "google".to_string(),
+            google_api_key: "migrated-google-key".to_string(),
+            microsoft_translator_key: "migrated-ms-key".to_string(),
+            microsoft_translator_region: "eastasia".to_string(),
+            ..SettingsRecord::default()
+        };
+        save_settings_record(&legacy_dir, &legacy_settings).unwrap();
+
+        assert!(migrate_legacy_settings_file(&current_dir).unwrap());
+        assert_eq!(
+            load_settings_record(&current_dir).unwrap(),
+            legacy_settings
+        );
+        // Migration is idempotent and leaves the legacy file untouched.
+        assert!(!migrate_legacy_settings_file(&current_dir).unwrap());
+        assert!(legacy_dir.join("settings.json").is_file());
+    }
+
+    #[test]
+    fn settings_migration_does_not_overwrite_current_credentials() {
+        let temp_dir = TempDirGuard::new("translation-tool-migrate-settings-existing");
+        let current_dir = temp_dir.path().join("com.zhiyu-liu.translation-tool");
+        let legacy_dir = temp_dir.path().join("com.zhiyu_liu.translation-tool");
+        fs::create_dir_all(&current_dir).unwrap();
+        fs::create_dir_all(&legacy_dir).unwrap();
+
+        let current_settings = SettingsRecord {
+            google_api_key: "current-key".to_string(),
+            ..SettingsRecord::default()
+        };
+        let legacy_settings = SettingsRecord {
+            google_api_key: "legacy-key".to_string(),
+            ..SettingsRecord::default()
+        };
+        save_settings_record(&current_dir, &current_settings).unwrap();
+        save_settings_record(&legacy_dir, &legacy_settings).unwrap();
+
+        assert!(!migrate_legacy_settings_file(&current_dir).unwrap());
+        assert_eq!(load_settings_record(&current_dir).unwrap(), current_settings);
+    }
+
+    #[test]
+    fn settings_migration_is_a_noop_without_legacy_file() {
+        let temp_dir = TempDirGuard::new("translation-tool-migrate-settings-none");
+        let current_dir = temp_dir.path().join("com.zhiyu-liu.translation-tool");
+
+        assert!(!migrate_legacy_settings_file(&current_dir).unwrap());
+        assert!(!current_dir.join("settings.json").exists());
     }
 }

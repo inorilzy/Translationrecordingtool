@@ -28,6 +28,7 @@ describe('normalizeSettings', () => {
     expect(result.translationProvider).toBe(defaultSettings.translationProvider)
     expect(result.microsoftTranslatorKey).toBe(defaultSettings.microsoftTranslatorKey)
     expect(result.microsoftTranslatorRegion).toBe(defaultSettings.microsoftTranslatorRegion)
+    expect(result.clipboardFallbackEnabled).toBe(defaultSettings.clipboardFallbackEnabled)
     expect(result.ocrEndpoint).toBe(defaultSettings.ocrEndpoint)
     expect(result.enableTray).toBe(defaultSettings.enableTray)
   })
@@ -40,6 +41,7 @@ describe('normalizeSettings', () => {
       microsoftTranslatorKey: 'ms-key',
       microsoftTranslatorRegion: 'eastasia',
       googleApiKey: '',
+      clipboardFallbackEnabled: true,
       ocrEndpoint: 'http://127.0.0.1:8866/ocr',
       ocrEngine: 'native_onnx',
       ocrModelProfile: 'small',
@@ -87,6 +89,7 @@ describe('isDefaultSettings', () => {
     expect(isDefaultSettings({ ...defaultSettings, apiKey: 'x' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, translationProvider: 'microsoft' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, microsoftTranslatorKey: 'x' })).toBe(false)
+    expect(isDefaultSettings({ ...defaultSettings, clipboardFallbackEnabled: true })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, ocrEndpoint: 'http://127.0.0.1:8867/ocr' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, ocrModelProfile: 'tiny' })).toBe(false)
     expect(isDefaultSettings({ ...defaultSettings, ocrPreloadOnStartup: false })).toBe(false)

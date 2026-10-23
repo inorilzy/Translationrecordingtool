@@ -18,7 +18,7 @@ pub const DEFAULT_OCR_ENDPOINT: &str = "http://127.0.0.1:8866/ocr";
 pub const DEFAULT_OCR_ENGINE: &str = "native_onnx";
 // 工单 21：small 是唯一正式 OCR profile，默认值与契约常量同源。
 pub const DEFAULT_OCR_MODEL_PROFILE: &str = SUPPORTED_OCR_MODEL_PROFILE;
-const SETTINGS_FILE_NAME: &str = "settings.json";
+pub const SETTINGS_FILE_NAME: &str = "settings.json";
 
 /// Canonical application settings record.
 ///
@@ -33,6 +33,10 @@ pub struct SettingsRecord {
     pub microsoft_translator_key: String,
     pub microsoft_translator_region: String,
     pub google_api_key: String,
+    /// Opt-in: when UI Automation cannot read the selection, send Ctrl+C and
+    /// translate the copied text. Off by default because it replaces the
+    /// current clipboard contents and is not restored.
+    pub clipboard_fallback_enabled: bool,
     pub ocr_endpoint: String,
     pub ocr_engine: String,
     pub ocr_model_profile: String,
@@ -55,6 +59,7 @@ impl Default for SettingsRecord {
             microsoft_translator_key: String::new(),
             microsoft_translator_region: String::new(),
             google_api_key: String::new(),
+            clipboard_fallback_enabled: false,
             ocr_endpoint: DEFAULT_OCR_ENDPOINT.to_string(),
             ocr_engine: DEFAULT_OCR_ENGINE.to_string(),
             ocr_model_profile: DEFAULT_OCR_MODEL_PROFILE.to_string(),
@@ -344,6 +349,7 @@ mod tests {
         assert_eq!(defaults.api_secret, "");
         assert_eq!(defaults.global_shortcut, DEFAULT_GLOBAL_SHORTCUT);
         assert_eq!(defaults.screenshot_shortcut, DEFAULT_SCREENSHOT_SHORTCUT);
+        assert!(!defaults.clipboard_fallback_enabled);
         assert!(defaults.enable_tray);
         assert_eq!(defaults.theme, DEFAULT_THEME);
     }
@@ -371,6 +377,7 @@ mod tests {
             microsoft_translator_key: "ms-key".to_string(),
             microsoft_translator_region: "eastasia".to_string(),
             google_api_key: "google-key".to_string(),
+            clipboard_fallback_enabled: true,
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
             ocr_engine: "native_onnx".to_string(),
             ocr_model_profile: "small".to_string(),
@@ -398,6 +405,7 @@ mod tests {
             microsoft_translator_key: String::new(),
             microsoft_translator_region: String::new(),
             google_api_key: String::new(),
+            clipboard_fallback_enabled: false,
             ocr_endpoint: String::new(),
             ocr_engine: DEFAULT_OCR_ENGINE.to_string(),
             ocr_model_profile: DEFAULT_OCR_MODEL_PROFILE.to_string(),
@@ -565,6 +573,7 @@ mod tests {
             microsoft_translator_key: "mk".to_string(),
             microsoft_translator_region: "global".to_string(),
             google_api_key: "gk".to_string(),
+            clipboard_fallback_enabled: true,
             ocr_endpoint: "http://127.0.0.1:8866/ocr".to_string(),
             ocr_engine: "paddleocr".to_string(),
             ocr_model_profile: "small".to_string(),
@@ -584,6 +593,7 @@ mod tests {
         assert!(json.contains(r#""microsoftTranslatorKey""#));
         assert!(json.contains(r#""microsoftTranslatorRegion""#));
         assert!(json.contains(r#""googleApiKey""#));
+        assert!(json.contains(r#""clipboardFallbackEnabled""#));
         assert!(json.contains(r#""ocrEndpoint""#));
         assert!(json.contains(r#""ocrEngine""#));
         assert!(json.contains(r#""ocrModelProfile""#));
@@ -603,6 +613,7 @@ mod tests {
             "microsoftTranslatorKey": "ms-key",
             "microsoftTranslatorRegion": "eastasia",
             "googleApiKey": "google-key",
+            "clipboardFallbackEnabled": true,
             "ocrEndpoint": "http://127.0.0.1:8866/ocr",
             "ocrEngine": "paddleocr",
             "ocrModelProfile": "lite",
@@ -621,6 +632,7 @@ mod tests {
         assert_eq!(settings.microsoft_translator_key, "ms-key");
         assert_eq!(settings.microsoft_translator_region, "eastasia");
         assert_eq!(settings.google_api_key, "google-key");
+        assert!(settings.clipboard_fallback_enabled);
         assert_eq!(settings.ocr_endpoint, "http://127.0.0.1:8866/ocr");
         assert_eq!(settings.ocr_engine, "paddleocr");
         assert_eq!(settings.ocr_model_profile, "lite");
@@ -760,6 +772,7 @@ mod tests {
         assert_eq!(settings.translation_provider, "youdao");
         assert_eq!(settings.microsoft_translator_key, "");
         assert_eq!(settings.microsoft_translator_region, "");
+        assert!(!settings.clipboard_fallback_enabled);
         assert_eq!(settings.ocr_endpoint, DEFAULT_OCR_ENDPOINT);
         assert_eq!(settings.ocr_engine, DEFAULT_OCR_ENGINE);
         assert_eq!(settings.ocr_model_profile, DEFAULT_OCR_MODEL_PROFILE);

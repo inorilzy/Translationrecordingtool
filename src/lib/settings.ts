@@ -7,6 +7,7 @@ export interface AppSettings {
   microsoftTranslatorKey: string
   microsoftTranslatorRegion: string
   googleApiKey: string
+  clipboardFallbackEnabled: boolean
   ocrEndpoint: string
   ocrEngine: string
   ocrModelProfile: string
@@ -25,6 +26,7 @@ export const defaultSettings: AppSettings = {
   microsoftTranslatorKey: '',
   microsoftTranslatorRegion: '',
   googleApiKey: '',
+  clipboardFallbackEnabled: false,
   ocrEndpoint: 'http://127.0.0.1:8866/ocr',
   ocrEngine: 'native_onnx',
   ocrModelProfile: 'small',
@@ -72,6 +74,7 @@ export function isDefaultSettings(settings: AppSettings) {
     && settings.microsoftTranslatorKey === defaultSettings.microsoftTranslatorKey
     && settings.microsoftTranslatorRegion === defaultSettings.microsoftTranslatorRegion
     && settings.googleApiKey === defaultSettings.googleApiKey
+    && settings.clipboardFallbackEnabled === defaultSettings.clipboardFallbackEnabled
     && settings.ocrEndpoint === defaultSettings.ocrEndpoint
     && settings.ocrEngine === defaultSettings.ocrEngine
     && settings.ocrModelProfile === defaultSettings.ocrModelProfile

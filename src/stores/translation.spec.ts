@@ -536,7 +536,7 @@ describe('useTranslationStore', () => {
 
       const settingsKeys = [
         'apiKey', 'apiSecret', 'translationProvider', 'microsoftTranslatorKey',
-        'microsoftTranslatorRegion', 'ocrEndpoint', 'globalShortcut', 'screenshotShortcut',
+        'microsoftTranslatorRegion', 'clipboardFallbackEnabled', 'ocrEndpoint', 'globalShortcut', 'screenshotShortcut',
         'enableTray', 'theme', 'loadSettings', 'updateGlobalShortcut',
         'updateScreenshotShortcut', 'updateApiConfig', 'updateTrayBehavior',
         'updateTheme', 'checkOcrService', 'getOcrServiceStatus',

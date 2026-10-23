@@ -366,6 +366,8 @@ impl ProviderGateway for AppProviderGateway {
     ) -> impl Future<Output = Result<TranslationContent, String>> + Send + 'a {
         async move {
             match config.provider.trim().to_ascii_lowercase().as_str() {
+                "google_free" => translator::translate_with_google_free(text).await,
+                "microsoft_free" => translator::translate_with_microsoft_free(text).await,
                 "microsoft" => {
                     if config.microsoft_key.trim().is_empty() {
                         return Err("使用微软翻译需要配置 Microsoft Translator Key".to_string());

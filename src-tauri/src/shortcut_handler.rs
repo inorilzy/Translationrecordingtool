@@ -10,6 +10,7 @@ use crate::{
         close_popup_window, get_cursor_position, point_anchor, rect_anchor,
         show_loading_popup_with_message, show_popup_failure, show_popup_translation, PopupAnchor,
     },
+    settings::SettingsRecord,
     translation_workflow::{AppTranslationWorkflow, WorkflowStage},
 };
 
@@ -63,12 +64,36 @@ pub fn handle_shortcut(app: tauri::AppHandle, popup_state: Arc<RwLock<PopupRunti
         info!("开始执行选中文本翻译流程");
         let request_id = next_popup_request_id(&popup_state);
         let anchor = point_anchor(get_cursor_position());
-        // 生产入口只调用 UI Automation 读取器；该路径不注入按键、不读写剪贴板。
+        // UI Automation remains the default path. The clipboard fallback is an
+        // explicit opt-in and is the only path that injects Ctrl+C or touches
+        // the clipboard; it never restores previous clipboard contents.
+        let fallback_enabled = app
+            .state::<Arc<RwLock<SettingsRecord>>>()
+            .read()
+            .clipboard_fallback_enabled;
         let text = match read_selection_for_popup(crate::selection_reader::read_selected_text) {
             Ok(text) => text,
             Err(message) => {
-                let _ = show_popup_failure(&app, &popup_state, request_id, anchor, message);
-                return;
+                if fallback_enabled {
+                    info!("UI Automation 未读到选区，尝试剪贴板回退");
+                    match crate::selection_fallback::copy_selection_and_read(&app) {
+                        Ok(text) => text,
+                        Err(error) => {
+                            warn!("剪贴板回退失败，提示用户手动复制: {}", error);
+                            let _ = show_popup_failure(
+                                &app,
+                                &popup_state,
+                                request_id,
+                                anchor,
+                                message,
+                            );
+                            return;
+                        }
+                    }
+                } else {
+                    let _ = show_popup_failure(&app, &popup_state, request_id, anchor, message);
+                    return;
+                }
             }
         };
 
@@ -335,10 +360,10 @@ mod tests {
         assert!(MANUAL_COPY_HINT.contains("剪贴板翻译"));
     }
 
-    /// 生产源码静态守卫：划词相关模块不得再出现模拟按键或剪贴板备份/恢复实现。
+    /// 默认划词路径静态守卫：不得出现模拟按键或剪贴板备份/恢复实现。
     /// 关键字用 concat! 拼接，避免本测试自身命中；只检查 #[cfg(test)] 之前的生产代码。
     #[test]
-    fn production_selection_path_has_no_key_injection_or_clipboard_restore() {
+    fn default_selection_path_has_no_key_injection_or_clipboard_restore() {
         let forbidden = [
             concat!("en", "igo"),
             concat!("Send", "Input"),
@@ -363,6 +388,30 @@ mod tests {
                 assert!(!production.contains(token), "{name} 仍包含 {token}");
             }
         }
+    }
+
+    /// 剪贴板回退是显式 opt-in：只允许在新模块里模拟 Ctrl+C，
+    /// 且永远不备份/恢复旧剪贴板内容。
+    #[test]
+    fn clipboard_fallback_is_opt_in_and_never_restores_clipboard() {
+        let source = include_str!("selection_fallback.rs");
+        assert!(source.contains("Key::Control"));
+        assert!(source.contains("Unicode('c')"));
+        for forbidden in [
+            concat!("backup_", "clipboard"),
+            concat!("restore_", "clipboard"),
+            concat!("Empty", "Clipboard"),
+            concat!("SetClipboard", "Data"),
+            concat!("write_", "clipboard"),
+        ] {
+            assert!(!source.contains(forbidden), "回退模块包含 {forbidden}");
+        }
+
+        let handler = include_str!("shortcut_handler.rs");
+        let production = handler.split("#[cfg(test)]").next().unwrap();
+        assert!(production.contains("clipboard_fallback_enabled"));
+        assert!(production.contains("if fallback_enabled"));
+        assert!(production.contains("selection_fallback::copy_selection_and_read"));
     }
 
     #[test]

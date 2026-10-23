@@ -5,8 +5,42 @@ mod platform {
         COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
     };
     use windows::Win32::UI::Accessibility::{
-        CUIAutomation, IUIAutomation, IUIAutomationTextPattern, UIA_TextPatternId,
+        CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern,
+        UIA_TextPatternId,
     };
+
+    /// Chromium browsers often report the focused element as a generic group
+    /// or container while the selectable text lives on an ancestor Document.
+    /// Walk a bounded ancestor chain so Chrome/Edge selections are not lost.
+    const MAX_TEXT_PATTERN_ANCESTOR_DEPTH: usize = 12;
+
+    fn find_text_pattern(
+        automation: &IUIAutomation,
+        focused: &IUIAutomationElement,
+    ) -> Result<IUIAutomationTextPattern, String> {
+        let walker = unsafe { automation.ControlViewWalker() }
+            .map_err(|error| format!("创建 UI Automation 遍历器失败: {}", error))?;
+
+        let mut element = focused.clone();
+        for depth in 0..=MAX_TEXT_PATTERN_ANCESTOR_DEPTH {
+            if let Ok(pattern) = unsafe {
+                element.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId)
+            } {
+                return Ok(pattern);
+            }
+
+            if depth == MAX_TEXT_PATTERN_ANCESTOR_DEPTH {
+                break;
+            }
+
+            match unsafe { walker.GetParentElement(&element) } {
+                Ok(parent) => element = parent,
+                Err(_) => break,
+            }
+        }
+
+        Err("当前控件及父级均不支持直接读取选中文本".to_string())
+    }
 
     pub fn read_selected_text() -> Result<String, String> {
         let _com = ComApartment::initialize()?;
@@ -22,11 +56,7 @@ mod platform {
                 .map_err(|error| format!("获取当前焦点控件失败: {}", error))?
         };
 
-        let text_pattern: IUIAutomationTextPattern = unsafe {
-            focused
-                .GetCurrentPatternAs(UIA_TextPatternId)
-                .map_err(|error| format!("当前控件不支持直接读取选中文本: {}", error))?
-        };
+        let text_pattern = find_text_pattern(&automation, &focused)?;
 
         let selection = unsafe {
             text_pattern

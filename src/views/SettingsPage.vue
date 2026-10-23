@@ -12,6 +12,7 @@ import {
   EyeOff,
   Keyboard,
   MonitorCog,
+  MousePointer2,
   Palette,
   Play,
   RefreshCw,
@@ -31,6 +32,7 @@ const config = ref({
   microsoftTranslatorKey: '',
   microsoftTranslatorRegion: '',
   googleApiKey: '',
+  clipboardFallbackEnabled: false,
   ocrEndpoint: 'http://127.0.0.1:8866/ocr',
   ocrEngine: 'native_onnx',
   ocrModelProfile: 'small',
@@ -52,9 +54,25 @@ const showMicrosoftKey = ref(false)
 const showGoogleKey = ref(false)
 
 const providerOptions: SelectOption[] = [
-  { label: 'Google 翻译', value: 'google' },
-  { label: '微软翻译', value: 'microsoft' },
-  { label: '有道翻译', value: 'youdao' },
+  {
+    type: 'group',
+    label: '免费通道（无需 Key）',
+    key: 'free',
+    children: [
+      { label: 'Google 翻译（免费）', value: 'google_free' },
+      { label: '微软翻译（免费）', value: 'microsoft_free' },
+    ],
+  },
+  {
+    type: 'group',
+    label: '官方 API（需要 Key）',
+    key: 'official',
+    children: [
+      { label: 'Google 翻译', value: 'google' },
+      { label: '微软翻译', value: 'microsoft' },
+      { label: '有道翻译', value: 'youdao' },
+    ],
+  },
 ]
 
 
@@ -81,14 +99,21 @@ const providerName = computed(() => {
   switch (config.value.translationProvider) {
     case 'google':
       return 'Google Cloud Translation'
+    case 'google_free':
+      return 'Google 翻译（免费通道）'
     case 'microsoft':
       return 'Microsoft Translator'
+    case 'microsoft_free':
+      return '微软翻译（免费通道）'
     default:
       return '有道翻译'
   }
 })
 
 const providerConfigured = computed(() => {
+  if (config.value.translationProvider.endsWith('_free')) {
+    return true
+  }
   if (config.value.translationProvider === 'microsoft') {
     return config.value.microsoftTranslatorKey.trim().length > 0
   }
@@ -217,6 +242,7 @@ async function saveApiConfig() {
     && config.value.microsoftTranslatorKey === store.microsoftTranslatorKey
     && config.value.microsoftTranslatorRegion === store.microsoftTranslatorRegion
     && config.value.googleApiKey === store.googleApiKey
+    && config.value.clipboardFallbackEnabled === store.clipboardFallbackEnabled
     && config.value.ocrEndpoint === store.ocrEndpoint
     && config.value.ocrEngine === store.ocrEngine
     && config.value.ocrModelProfile === store.ocrModelProfile
@@ -233,6 +259,7 @@ async function saveApiConfig() {
       microsoftTranslatorKey: config.value.microsoftTranslatorKey,
       microsoftTranslatorRegion: config.value.microsoftTranslatorRegion,
       googleApiKey: config.value.googleApiKey,
+      clipboardFallbackEnabled: config.value.clipboardFallbackEnabled,
       ocrEndpoint: config.value.ocrEndpoint,
       ocrEngine: 'native_onnx',
       ocrModelProfile: 'small',
@@ -399,7 +426,49 @@ async function changeTheme() {
           @update:value="saveApiConfig"
         />
 
-        <template v-if="config.translationProvider === 'google'">
+        <template v-if="config.translationProvider === 'google_free'">
+          <label class="field-label">连接方式</label>
+          <div class="free-channel-note">
+            <n-tag type="success" size="small" round>无需 API Key</n-tag>
+            <span>使用 Google 翻译公开接口，免费但可能受网络环境或频率限制。</span>
+          </div>
+
+          <div />
+          <n-button
+            text
+            tag="a"
+            href="https://translate.google.com"
+            target="_blank"
+            type="primary"
+            class="external-link"
+          >
+            <template #icon><ExternalLink :size="16" /></template>
+            打开 Google 翻译
+          </n-button>
+        </template>
+
+        <template v-else-if="config.translationProvider === 'microsoft_free'">
+          <label class="field-label">连接方式</label>
+          <div class="free-channel-note">
+            <n-tag type="success" size="small" round>无需 API Key</n-tag>
+            <span>使用 Edge 翻译公开接口，免费但可能受网络环境或频率限制。</span>
+          </div>
+
+          <div />
+          <n-button
+            text
+            tag="a"
+            href="https://www.bing.com/translator"
+            target="_blank"
+            type="primary"
+            class="external-link"
+          >
+            <template #icon><ExternalLink :size="16" /></template>
+            打开 Bing 翻译
+          </n-button>
+        </template>
+
+        <template v-else-if="config.translationProvider === 'google'">
           <label class="field-label">
             Google API Key
             <n-tooltip trigger="hover">
@@ -498,20 +567,36 @@ async function changeTheme() {
         </template>
 
         <template v-else>
-          <label class="field-label">有道 AppID</label>
+          <label class="field-label">
+            应用 ID（App Key）
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <ShieldQuestion :size="15" class="field-help" />
+              </template>
+              有道智云控制台里的「应用 ID」，对应文本翻译 API 的 appKey。
+            </n-tooltip>
+          </label>
           <n-input
             v-model:value="config.apiKey"
             size="medium"
-            placeholder="请输入有道翻译应用ID"
+            placeholder="粘贴有道智云控制台的「应用 ID」"
             @blur="saveApiConfig"
           />
 
-          <label class="field-label">有道 App Secret</label>
+          <label class="field-label">
+            应用密钥（App Secret）
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <ShieldQuestion :size="15" class="field-help" />
+              </template>
+              有道智云控制台里的「应用密钥」，用于生成 v3 签名。
+            </n-tooltip>
+          </label>
           <n-input
             v-model:value="config.apiSecret"
             :type="showYoudaoSecret ? 'text' : 'password'"
             size="medium"
-            placeholder="请输入有道翻译 App Secret"
+            placeholder="粘贴有道智云控制台的「应用密钥」"
             @blur="saveApiConfig"
           >
             <template #suffix>
@@ -520,6 +605,9 @@ async function changeTheme() {
               </button>
             </template>
           </n-input>
+
+          <div />
+          <p class="field-note">控制台里的「API Key」用于有道大模型等其他接口；本应用的文本翻译 v3 不需要填写。</p>
 
           <div />
           <n-button
@@ -531,7 +619,7 @@ async function changeTheme() {
             class="external-link"
           >
             <template #icon><ExternalLink :size="16" /></template>
-            点击这里获取有道翻译 API 密钥
+            打开有道智云控制台
           </n-button>
         </template>
       </div>
@@ -630,6 +718,23 @@ async function changeTheme() {
         </n-input>
         <div />
         <p class="field-note">{{ capturingShortcut === 'screenshot' ? '正在监听截图快捷键' : `当前快捷键：${config.screenshotShortcut}` }}</p>
+      </div>
+    </section>
+
+    <section class="settings-panel compact-panel">
+      <div class="compact-heading">
+        <MousePointer2 :size="19" :stroke-width="2" />
+        <h2>划词翻译</h2>
+      </div>
+      <div class="switch-row">
+        <div>
+          <strong>UI Automation 读取失败时，自动复制并翻译</strong>
+          <p>会向当前窗口发送 Ctrl+C，并用复制到的文本翻译；会覆盖当前剪贴板内容且不恢复。终端类应用可能把 Ctrl+C 当作中断，请谨慎开启。</p>
+        </div>
+        <n-switch
+          v-model:value="config.clipboardFallbackEnabled"
+          @update:value="saveApiConfig"
+        />
       </div>
     </section>
 
@@ -792,6 +897,15 @@ async function changeTheme() {
   margin: -5px 0 0;
   color: var(--color-app-text-muted);
   font-size: 13px;
+}
+
+.free-channel-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--color-app-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .external-link {

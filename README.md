@@ -20,7 +20,7 @@
 - 截图 OCR 翻译：默认快捷键 `Ctrl+Shift+Q`，截图后 OCR、翻译并弹出结果卡片。
 - OCR 原文回填：截图 OCR 识别出的文本会同步到主界面输入框，方便手动修正。
 - 本地词典优先：单词优先查本地 `ECDICT + WordNet`，再用 Free Dictionary 补全音标、例句等信息。
-- 在线翻译：支持有道、Microsoft Translator、Google Translate。
+- 在线翻译：支持有道、Microsoft Translator、Google Translate，以及无需 Key 的 Google / 微软免费通道。
 - 历史与收藏：翻译记录、收藏、配置保存在本地。
 - 系统托盘：支持关闭时最小化到托盘。
 
@@ -121,8 +121,10 @@ translation-tool_0.2.1_x64-setup.exe
 
 打开设置页，在“翻译服务”中选择：
 
-- 有道翻译：填写 `App ID` 和 `App Secret`。
+- 有道翻译：填写控制台里的「应用 ID（App Key）」和「应用密钥（App Secret）」；「API Key」用于有道大模型等其他接口，不参与文本翻译 v3 签名，无需填写。
 - 微软翻译：填写 `Microsoft Translator Key` 和 `Region`。
+- Google 翻译：填写 `Google Cloud Translation API Key`。
+- Google / 微软免费通道：无需 Key，直接使用公开翻译接口。适合个人临时使用，可能受网络环境、频率限制或上游接口变动影响；需要稳定服务时仍建议配置官方 Key。
 
 单词查询会优先走本地词典；句子翻译、本地词典未命中、截图 OCR 翻译结果会使用当前选择的在线翻译服务。
 
@@ -169,7 +171,7 @@ native_onnx / PP-OCRv6 small / ONNX Runtime
 - 后端：`Rust`
 - 数据库：`SQLite`
 - OCR：`ONNX Runtime`、`PP-OCRv6 small`
-- 翻译服务：有道翻译、Microsoft Translator、Free Dictionary
+- 翻译服务：有道翻译、Microsoft Translator、Google Translate、Google/微软免费通道、Free Dictionary
 - 本地词典：`ECDICT`、`WordNet`
 
 ## 目录结构
@@ -311,14 +313,14 @@ npm run test:dependencies      # 合成依赖兼容测试与本地浏览器 HMR
 - UI Automation 不能覆盖所有应用。读不到选中文字时需要手动复制后触发剪贴板翻译，或改用截图 OCR。
 - 为避免覆盖用户并发复制的内容，已取消划词失败后的自动复制及剪贴板恢复。主动复制译文等明确操作仍会写入剪贴板。
 - 截图 OCR 依赖模型能力，复杂背景、小字号、低清晰度图片可能需要手动修正。
-- 句子翻译和部分在线补全能力需要外部 API Key。
+- 官方 API 通道需要外部 API Key；也可以选择无需 Key 的 Google/微软免费通道，但该通道为公开接口，稳定性和频率上限不受本应用控制。
 - 当前正式支持范围为 Windows；Linux/macOS 分支保留，但未完成对应目标编译及原生行为验证，不承诺可用于生产。
 
 ## 隐私说明
 
 - 历史记录、收藏和配置默认保存在本机。
 - 单词优先查本地词典；词典资源缺失或读取失败会明确报错，不自动向在线服务降级。正常查无词仍按既有流程调用在线服务。
-- 句子翻译、本地未命中、截图 OCR 后的翻译会调用当前配置的在线翻译服务。
+- 句子翻译、本地未命中、截图 OCR 后的翻译会调用当前配置的在线翻译服务；选择免费通道时，原文会发送到 Google / Microsoft 的公开翻译接口。
 - 运行日志不记录原文、译文、完整服务响应或敏感查询 URL；历史记录与运行日志是不同的数据存储。
 - API Key 只应保存在本机配置中，不要提交到 Git。
 

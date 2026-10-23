@@ -38,6 +38,7 @@ describe('useSettingsStore', () => {
       expect(store.translationProvider).toBe('youdao')
       expect(store.microsoftTranslatorKey).toBe('')
       expect(store.microsoftTranslatorRegion).toBe('')
+      expect(store.clipboardFallbackEnabled).toBe(false)
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.ocrEngine).toBe('native_onnx')
       expect(store.ocrModelProfile).toBe('small')
@@ -58,6 +59,7 @@ describe('useSettingsStore', () => {
         translationProvider: 'microsoft',
         microsoftTranslatorKey: 'ms-key',
         microsoftTranslatorRegion: 'eastasia',
+        clipboardFallbackEnabled: true,
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
         ocrEngine: 'native_onnx',
         ocrModelProfile: 'tiny',
@@ -74,6 +76,7 @@ describe('useSettingsStore', () => {
       expect(store.translationProvider).toBe('microsoft')
       expect(store.microsoftTranslatorKey).toBe('ms-key')
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
+      expect(store.clipboardFallbackEnabled).toBe(true)
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.ocrEngine).toBe('native_onnx')
       expect(store.ocrModelProfile).toBe('tiny')
@@ -95,6 +98,7 @@ describe('useSettingsStore', () => {
       expect(store.translationProvider).toBe('youdao')
       expect(store.microsoftTranslatorKey).toBe('')
       expect(store.microsoftTranslatorRegion).toBe('')
+      expect(store.clipboardFallbackEnabled).toBe(false)
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.ocrEngine).toBe('native_onnx')
       expect(store.ocrModelProfile).toBe('small')
@@ -128,6 +132,7 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'new-ms-key',
         microsoftTranslatorRegion: 'eastasia',
         googleApiKey: 'new-google-key',
+        clipboardFallbackEnabled: true,
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
         ocrEngine: 'native_onnx',
         ocrModelProfile: 'small',
@@ -141,6 +146,7 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'new-ms-key',
         microsoftTranslatorRegion: 'eastasia',
         googleApiKey: 'new-google-key',
+        clipboardFallbackEnabled: true,
         ocrEndpoint: 'http://127.0.0.1:8866/ocr',
         ocrEngine: 'native_onnx',
         ocrModelProfile: 'small',
@@ -152,6 +158,7 @@ describe('useSettingsStore', () => {
       expect(store.microsoftTranslatorKey).toBe('new-ms-key')
       expect(store.microsoftTranslatorRegion).toBe('eastasia')
       expect(store.googleApiKey).toBe('new-google-key')
+      expect(store.clipboardFallbackEnabled).toBe(true)
       expect(store.ocrEndpoint).toBe('http://127.0.0.1:8866/ocr')
       expect(store.ocrEngine).toBe('native_onnx')
       expect(store.ocrModelProfile).toBe('small')
@@ -169,6 +176,7 @@ describe('useSettingsStore', () => {
         microsoftTranslatorKey: 'bad-ms-key',
         microsoftTranslatorRegion: 'westus',
         googleApiKey: 'bad-google-key',
+        clipboardFallbackEnabled: false,
         ocrEndpoint: 'http://bad.local/ocr',
         ocrEngine: 'native_onnx',
         ocrModelProfile: 'tiny',

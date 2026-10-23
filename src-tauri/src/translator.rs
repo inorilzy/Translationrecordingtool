@@ -256,11 +256,7 @@ pub async fn translate_with_microsoft(
         err_msg
     })?;
 
-    let translated_text = result
-        .first()
-        .and_then(|item| item.translations.first())
-        .map(|item| item.text.clone())
-        .ok_or_else(|| "未获取到微软翻译结果".to_string())?;
+    let translated_text = parse_microsoft_translation_items(result)?;
 
     Ok(TranslationContent {
         translated_text,
@@ -390,6 +386,147 @@ pub async fn translate_with_google(
     })
 }
 
+// ─── Free (no-key) provider channels ────────────────────────────────────────
+//
+// These are the endpoints behind Google's web translator and Microsoft Edge's
+// built-in translation. They need no user key, but they are undocumented and
+// may be rate-limited or change without notice. The Google widget key below is
+// a public client credential shipped with Google's own web widget, not a user
+// secret. Source text and provider response bodies are never logged.
+
+const GOOGLE_FREE_TRANSLATE_ENDPOINT: &str = "https://translate-pa.googleapis.com/v1/translateHtml";
+const GOOGLE_FREE_TRANSLATE_API_KEY: &str = "AIzaSyATBXajvzQLTDHEQbcpq0Ihe0vWDHmO520";
+const GOOGLE_FREE_TRANSLATE_CLIENT: &str = "wt_lib";
+const MICROSOFT_FREE_TRANSLATE_ENDPOINT: &str =
+    "https://edge.microsoft.com/translate/translatetext?from=&to=zh-Hans&isEnterpriseClient=false";
+const FREE_CHANNEL_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/// Both free channels parse the request text as HTML, so plain text must be
+/// escaped before sending. Response entities are decoded exactly once.
+fn escape_translation_markup(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('\u{a0}', "&nbsp;")
+}
+
+fn unescape_translation_markup(text: &str) -> String {
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#x27;", "'")
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+}
+
+fn parse_google_free_response(value: &serde_json::Value) -> Result<String, String> {
+    let translated = value
+        .get(0)
+        .and_then(serde_json::Value::as_array)
+        .and_then(|translations| translations.get(0))
+        .and_then(serde_json::Value::as_str)
+        .map(unescape_translation_markup)
+        .unwrap_or_default();
+
+    if translated.trim().is_empty() {
+        return Err("未获取到 Google 翻译（免费接口）结果".to_string());
+    }
+    Ok(translated)
+}
+
+pub async fn translate_with_google_free(text: &str) -> Result<TranslationContent, String> {
+    info!("调用 Google 翻译免费接口");
+
+    let body = serde_json::json!([
+        [[escape_translation_markup(text)], "auto", "zh-CN"],
+        GOOGLE_FREE_TRANSLATE_CLIENT
+    ]);
+
+    let response = crate::http_client::shared_client()
+        .post(GOOGLE_FREE_TRANSLATE_ENDPOINT)
+        .header(reqwest::header::USER_AGENT, FREE_CHANNEL_USER_AGENT)
+        .header("X-Goog-API-Key", GOOGLE_FREE_TRANSLATE_API_KEY)
+        .header(reqwest::header::CONTENT_TYPE, "application/json+protobuf")
+        .body(serde_json::to_vec(&body).map_err(|e| format!("构造请求失败: {}", e))?)
+        .send()
+        .await
+        .map_err(|e| {
+            let err_msg = provider_http_error("Google 翻译（免费接口）", "请求失败", e);
+            error!("{}", err_msg);
+            err_msg
+        })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let message = format!(
+            "Google 翻译（免费接口）返回错误: HTTP {}",
+            status.as_u16()
+        );
+        error!("{}", message);
+        return Err(message);
+    }
+
+    let result: serde_json::Value = response.json().await.map_err(|e| {
+        let err_msg = provider_http_error("Google 翻译（免费接口）", "解析响应失败", e);
+        error!("{}", err_msg);
+        err_msg
+    })?;
+
+    Ok(TranslationContent {
+        translated_text: parse_google_free_response(&result)?,
+        ..TranslationContent::default()
+    })
+}
+
+fn parse_microsoft_translation_items(
+    result: Vec<MicrosoftTranslatorItem>,
+) -> Result<String, String> {
+    result
+        .iter()
+        .flat_map(|item| item.translations.iter())
+        .find(|item| !item.text.trim().is_empty())
+        .map(|item| unescape_translation_markup(&item.text))
+        .ok_or_else(|| "未获取到微软翻译结果".to_string())
+}
+
+pub async fn translate_with_microsoft_free(text: &str) -> Result<TranslationContent, String> {
+    info!("调用微软翻译免费接口");
+
+    let body = serde_json::json!([escape_translation_markup(text)]);
+    let response = crate::http_client::shared_client()
+        .post(MICROSOFT_FREE_TRANSLATE_ENDPOINT)
+        .header(reqwest::header::USER_AGENT, FREE_CHANNEL_USER_AGENT)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            let err_msg = provider_http_error("微软翻译（免费接口）", "请求失败", e);
+            error!("{}", err_msg);
+            err_msg
+        })?;
+
+    if !response.status().is_success() {
+        let message = format!(
+            "微软翻译（免费接口）返回错误: HTTP {}",
+            response.status().as_u16()
+        );
+        error!("{}", message);
+        return Err(message);
+    }
+
+    let result: Vec<MicrosoftTranslatorItem> = response.json().await.map_err(|e| {
+        let err_msg = provider_http_error("微软翻译（免费接口）", "解析响应失败", e);
+        error!("{}", err_msg);
+        err_msg
+    })?;
+
+    Ok(TranslationContent {
+        translated_text: parse_microsoft_translation_items(result)?,
+        ..TranslationContent::default()
+    })
+}
+
 pub async fn fetch_free_dictionary_supplement(
     word: &str,
 ) -> Result<Option<FreeDictionarySupplement>, String> {
@@ -510,6 +647,76 @@ fn push_unique(items: &mut Vec<String>, value: String) {
         .any(|item| item.trim().eq_ignore_ascii_case(trimmed));
     if !exists {
         items.push(trimmed.to_string());
+    }
+}
+
+#[cfg(test)]
+mod free_channel_tests {
+    use super::*;
+
+    #[test]
+    fn google_free_response_reads_first_translated_text() {
+        let value = serde_json::json!([["你好"], ["en"]]);
+        assert_eq!(parse_google_free_response(&value).unwrap(), "你好");
+    }
+
+    #[test]
+    fn google_free_response_decodes_escaped_markup_once() {
+        let value = serde_json::json!([["a &lt; b &amp; c"], ["en"]]);
+        assert_eq!(parse_google_free_response(&value).unwrap(), "a < b & c");
+    }
+
+    #[test]
+    fn google_free_response_rejects_missing_or_empty_content() {
+        for value in [
+            serde_json::json!([]),
+            serde_json::json!([[]]),
+            serde_json::json!([["   "], ["en"]]),
+            serde_json::json!({"error": "SYNTHETIC_ERROR"}),
+        ] {
+            assert_eq!(
+                parse_google_free_response(&value).unwrap_err(),
+                "未获取到 Google 翻译（免费接口）结果"
+            );
+        }
+    }
+
+    #[test]
+    fn microsoft_response_parser_returns_first_non_empty_translation() {
+        let result: Vec<MicrosoftTranslatorItem> = serde_json::from_value(serde_json::json!([
+            {"translations": [{"text": "   "}, {"text": "你好"}]},
+            {"translations": [{"text": "再见"}]}
+        ]))
+        .unwrap();
+        assert_eq!(parse_microsoft_translation_items(result).unwrap(), "你好");
+        assert_eq!(
+            parse_microsoft_translation_items(Vec::new()).unwrap_err(),
+            "未获取到微软翻译结果"
+        );
+    }
+
+    #[test]
+    fn free_channel_markup_escape_round_trips_plain_text() {
+        for text in [
+            "a < b & c > d",
+            "quote \" and apostrophe ' stay literal",
+            "entity-looking &lt; text stays source text",
+            "中文 & English",
+        ] {
+            assert_eq!(unescape_translation_markup(&escape_translation_markup(text)), text);
+        }
+    }
+
+    #[test]
+    fn microsoft_free_response_decodes_escaped_markup_once() {
+        let result: Vec<MicrosoftTranslatorItem> = serde_json::from_value(serde_json::json!([
+            {"translations": [{"text": "a &lt; b &amp; c"}]}
+        ]))
+        .unwrap();
+        assert_eq!(
+            parse_microsoft_translation_items(result).unwrap(),
+            "a < b & c"
+        );
     }
 }
 

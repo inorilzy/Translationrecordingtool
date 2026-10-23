@@ -43,6 +43,7 @@ type ApiConfigPatch = Pick<
   | 'microsoftTranslatorKey'
   | 'microsoftTranslatorRegion'
   | 'googleApiKey'
+  | 'clipboardFallbackEnabled'
   | 'ocrEndpoint'
   | 'ocrEngine'
   | 'ocrModelProfile'
@@ -75,6 +76,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const microsoftTranslatorKey = field('microsoftTranslatorKey')
   const microsoftTranslatorRegion = field('microsoftTranslatorRegion')
   const googleApiKey = field('googleApiKey')
+  const clipboardFallbackEnabled = field('clipboardFallbackEnabled')
   const ocrEndpoint = field('ocrEndpoint')
   const ocrEngine = field('ocrEngine')
   const ocrModelProfile = field('ocrModelProfile')
@@ -113,6 +115,7 @@ export const useSettingsStore = defineStore('settings', () => {
         microsoftTranslatorKey: patch.microsoftTranslatorKey,
         microsoftTranslatorRegion: patch.microsoftTranslatorRegion,
         googleApiKey: patch.googleApiKey,
+        clipboardFallbackEnabled: patch.clipboardFallbackEnabled,
         ocrEndpoint: patch.ocrEndpoint,
         ocrEngine: patch.ocrEngine,
         ocrModelProfile: patch.ocrModelProfile,
@@ -249,6 +252,7 @@ export const useSettingsStore = defineStore('settings', () => {
     microsoftTranslatorKey,
     microsoftTranslatorRegion,
     googleApiKey,
+    clipboardFallbackEnabled,
     ocrEndpoint,
     ocrEngine,
     ocrModelProfile,
