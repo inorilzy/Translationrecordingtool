@@ -315,15 +315,25 @@ impl GoogleTranslateResponse {
     fn service_error(&self, status: reqwest::StatusCode) -> Option<String> {
         if matches!(status.as_u16(), 403 | 429) {
             if let Some(error) = &self.error {
-                let quota_limited = error.errors.iter().any(|error| matches!(
-                    error.reason,
-                    GoogleReason::UserRateLimitExceeded
-                        | GoogleReason::RateLimitExceeded
-                        | GoogleReason::DailyLimitExceeded
-                ));
-                if quota_limited {
+                let daily_limited = error
+                    .errors
+                    .iter()
+                    .any(|error| error.reason == GoogleReason::DailyLimitExceeded);
+                let per_minute_limited = error.errors.iter().any(|error| {
+                    matches!(
+                        error.reason,
+                        GoogleReason::UserRateLimitExceeded | GoogleReason::RateLimitExceeded
+                    )
+                });
+                if daily_limited || per_minute_limited {
+                    let detail = if daily_limited {
+                        "每日配额已用完（Daily Limit Exceeded）"
+                    } else {
+                        "触发了每分钟速率限制（User Rate Limit Exceeded），不是每月字符额度"
+                    };
                     return Some(format!(
-                        "Google 官方翻译配额或速率受限（HTTP {}）。请稍后重试，或在 Google Cloud 控制台检查 Cloud Translation API 配额；也可在设置中手动选择 Google 翻译（免费）或微软翻译。应用不会自动切换服务或启用付费。",
+                        "Google 官方翻译{}（HTTP {}）。请检查 Google Cloud 结算状态和 Cloud Translation 配额；也可在设置中手动选择 Google 翻译（免费）或微软翻译。应用不会自动切换服务或启用付费。",
+                        detail,
                         status.as_u16()
                     ));
                 }
@@ -820,7 +830,7 @@ mod google_error_tests {
 
     #[test]
     fn google_quota_errors_give_safe_actionable_guidance() {
-        for reason in ["userRateLimitExceeded", "rateLimitExceeded", "dailyLimitExceeded"] {
+        for reason in ["userRateLimitExceeded", "rateLimitExceeded"] {
             let response: GoogleTranslateResponse = serde_json::from_value(serde_json::json!({
                 "error": {
                     "message": FAKE_KEY,
@@ -829,11 +839,20 @@ mod google_error_tests {
             })).unwrap();
             for status in [reqwest::StatusCode::FORBIDDEN, reqwest::StatusCode::TOO_MANY_REQUESTS] {
                 let message = response.service_error(status).unwrap();
-                assert!(message.contains("配额或速率受限"));
+                assert!(message.contains("每分钟速率限制"));
+                assert!(message.contains("不是每月字符额度"));
                 assert!(message.contains("不会自动切换服务或启用付费"));
                 assert_no_credential(&message);
             }
         }
+        let daily: GoogleTranslateResponse = serde_json::from_value(serde_json::json!({
+            "error": {"errors": [{"reason": "dailyLimitExceeded"}]}
+        })).unwrap();
+        assert!(daily
+            .service_error(reqwest::StatusCode::FORBIDDEN)
+            .unwrap()
+            .contains("每日配额已用完"));
+
         let response: GoogleTranslateResponse = serde_json::from_value(serde_json::json!({
             "error": {"errors": [{"reason": FAKE_KEY}]}
         })).unwrap();
