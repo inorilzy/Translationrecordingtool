@@ -2,7 +2,10 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::{LazyLock, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        LazyLock, Mutex,
+    },
     time::Instant,
 };
 
@@ -11,10 +14,13 @@ use ppocr_rs::{OcrLite, OcrOptions};
 use tauri::{AppHandle, Manager};
 use tracing::{info, warn};
 
-use crate::ocr_contracts::OcrRuntimeConfig;
+use crate::ocr_contracts::{
+    normalize_model_profile, OcrEngineSnapshot, OcrRuntimeConfig, SUPPORTED_OCR_MODEL_PROFILE,
+};
 
 const OCR_MODEL_RESOURCE_DIR: &str = "ocr-models";
-const DEFAULT_PACKAGED_MODEL_PROFILE: &str = "small";
+// 工单 21：打包默认 profile 与产品唯一正式 profile 同源，避免两处常量漂移。
+const DEFAULT_PACKAGED_MODEL_PROFILE: &str = SUPPORTED_OCR_MODEL_PROFILE;
 const NATIVE_ONNX_VERSION: &str = "1.20.1";
 
 struct NativeOcrRuntime {
@@ -24,6 +30,19 @@ struct NativeOcrRuntime {
 }
 
 static RUNTIME: LazyLock<Mutex<Option<NativeOcrRuntime>>> = LazyLock::new(|| Mutex::new(None));
+
+// Lifecycle diagnostics, separate from the inference locks: a status query
+// never waits for a running recognition, and never holds RUNTIME/engine while
+// reading these. `initialized` may describe an older engine kept after a failed
+// switch; `last_failure_profile` says which profile that error belongs to.
+#[derive(Default)]
+struct Lifecycle {
+    initialized: Option<(String, PathBuf)>,
+    in_progress: bool,
+    last_failure: Option<(String, String)>,
+}
+
+static LIFECYCLE: LazyLock<Mutex<Lifecycle>> = LazyLock::new(|| Mutex::new(Lifecycle::default()));
 
 pub fn engine_name() -> &'static str {
     "native_onnx"
@@ -123,27 +142,270 @@ pub fn recognize_text(
 }
 
 pub fn ensure_initialized(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
-    let (profile, model_dir) =
-        packaged_model_config(app, &config.model_profile).ok_or_else(|| {
-            format!(
+    let profile = normalize_model_profile(&config.model_profile);
+    let model_dir = packaged_model_dir(app, &profile).ok_or_else(|| {
+        format!(
             "未找到原生 OCR profile={} 的本地模型。请先运行 npm run ocr:models:win -- -Profile {}",
-            normalize_model_profile(&config.model_profile),
-            normalize_model_profile(&config.model_profile)
+            profile, profile
         )
-        })?;
+    })?;
 
     let mut guard = RUNTIME
         .lock()
         .map_err(|_| "原生 OCR 状态锁定失败".to_string())?;
-    if let Some(runtime) = guard.as_ref() {
-        if runtime.profile == profile && runtime.model_dir == model_dir {
-            return Ok(format!("原生 ONNX OCR 已就绪: {}", model_dir.display()));
+    let running = guard
+        .as_ref()
+        .filter(|runtime| runtime.profile == profile && runtime.model_dir == model_dir)
+        .is_some();
+    let outcome = initialize_locked(&profile, &model_dir, running, || {
+        build_runtime(app, &profile, &model_dir)
+    });
+    match outcome {
+        Ok(InitOutcome::Reused) => {}
+        Ok(InitOutcome::Built(runtime)) => *guard = Some(runtime),
+        // The previous engine (if any) stays installed; only diagnostics change.
+        Err(error) => return Err(error),
+    }
+    Ok(format!("原生 ONNX OCR 已就绪: {}", model_dir.display()))
+}
+
+enum InitOutcome<T> {
+    Reused,
+    Built(T),
+}
+
+/// Reuse-or-build decision shared by production and tests. Lifecycle is only
+/// updated through short locks; RUNTIME is never taken here.
+fn initialize_locked<T, B>(
+    profile: &str,
+    model_dir: &Path,
+    running: bool,
+    build: B,
+) -> Result<InitOutcome<T>, String>
+where
+    B: FnOnce() -> Result<T, String>,
+{
+    if running {
+        // Reusing the live engine means nothing failed; an older error for
+        // another profile is no longer relevant.
+        lifecycle(|state| {
+            state.last_failure = None;
+            state.initialized = Some((profile.to_string(), model_dir.to_path_buf()));
+        });
+        return Ok(InitOutcome::Reused);
+    }
+    struct ProgressGuard;
+    impl Drop for ProgressGuard {
+        fn drop(&mut self) {
+            lifecycle(|state| state.in_progress = false);
+        }
+    }
+    lifecycle(|state| {
+        state.in_progress = true;
+        if state.last_failure.as_ref().is_some_and(|(failed, _)| failed == profile) {
+            state.last_failure = None;
+        }
+    });
+    let _progress = ProgressGuard;
+    let outcome = build();
+    match outcome {
+        Ok(runtime) => {
+            lifecycle(|state| {
+                state.last_failure = None;
+                state.initialized = Some((profile.to_string(), model_dir.to_path_buf()));
+            });
+            Ok(InitOutcome::Built(runtime))
+        }
+        Err(error) => {
+            // Keep any previously working engine and only record the failure.
+            lifecycle(|state| state.last_failure = Some((profile.to_string(), error.clone())));
+            Err(error)
+        }
+    }
+}
+
+pub fn engine_snapshot(app: &AppHandle, model_profile: &str) -> OcrEngineSnapshot {
+    let (profile, model_dir) = model_status(app, model_profile);
+    engine_snapshot_for(&profile, model_dir.as_deref())
+}
+
+/// Pure status projection over the lifecycle facts. It never touches RUNTIME,
+/// so a long-running recognition cannot hide an otherwise healthy engine.
+pub fn engine_snapshot_for(profile: &str, model_dir: Option<&Path>) -> OcrEngineSnapshot {
+    let state = lifecycle(|state| Lifecycle {
+        initialized: state.initialized.clone(),
+        in_progress: state.in_progress,
+        last_failure: state.last_failure.clone(),
+    });
+    let initialized_matches = state
+        .initialized
+        .as_ref()
+        .map_or(false, |(ready, path)| ready == profile && model_dir == Some(path.as_path()));
+    let last_error = state
+        .last_failure
+        .as_ref()
+        .filter(|(failed, _)| failed == profile)
+        .map(|(_, error)| error.clone());
+    OcrEngineSnapshot {
+        models_available: model_dir.is_some(),
+        initialized_profile: initialized_matches.then(|| profile.to_string()),
+        last_error,
+        initializing: state.in_progress,
+        last_failure_profile: state.last_failure.map(|(failed, _)| failed),
+    }
+}
+
+fn lifecycle<R>(access: impl FnOnce(&mut Lifecycle) -> R) -> R {
+    access(&mut LIFECYCLE.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct TestState {
+        previous: Lifecycle,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for TestState {
+        fn drop(&mut self) {
+            lifecycle(|state| *state = std::mem::take(&mut self.previous));
         }
     }
 
-    let runtime = build_runtime(app, &profile, &model_dir)?;
-    *guard = Some(runtime);
-    Ok(format!("原生 ONNX OCR 已就绪: {}", model_dir.display()))
+    fn reset() -> TestState {
+        let lock = TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = lifecycle(std::mem::take);
+        TestState { previous, _lock: lock }
+    }
+
+    #[test]
+    fn status_keeps_healthy_engine_without_reading_inference_state() {
+        let _state = reset();
+        let dir = PathBuf::from("C:/models/small");
+        lifecycle(|state| {
+            state.initialized = Some(("small".to_string(), dir.clone()));
+        });
+        let status = engine_snapshot_for("small", Some(&dir));
+        assert_eq!(status.initialized_profile.as_deref(), Some("small"));
+        let contract = crate::ocr_contracts::OcrServiceStatus::from_snapshot(
+            &status,
+            "small".to_string(),
+            Some(dir.display().to_string()),
+        );
+        assert_eq!(contract.state, crate::ocr_contracts::OcrRuntimeState::Ready);
+    }
+
+    #[test]
+    fn failed_attempt_does_not_clear_a_working_engine() {
+        // 纯生命周期测试：直接调用 initialize_locked，不经 profile 归一；
+        // "medium" 只是“另一 profile 键”的测试标签，不代表产品支持 medium（工单 21）。
+        let _state = reset();
+        let old = PathBuf::from("C:/models/small");
+        let attempted = PathBuf::from("C:/models/medium");
+        lifecycle(|state| state.initialized = Some(("small".to_string(), old.clone())));
+        let result = initialize_locked::<(), _>("medium", &attempted, false, || {
+            Err("injected init failure".to_string())
+        });
+        assert!(result.is_err());
+        let status = engine_snapshot_for("small", Some(&old));
+        assert_eq!(status.initialized_profile.as_deref(), Some("small"));
+        assert_eq!(status.last_failure_profile.as_deref(), Some("medium"));
+        assert_eq!(status.last_error, None, "failure belongs to medium");
+        let medium = engine_snapshot_for("medium", Some(&attempted));
+        assert_eq!(medium.last_error.as_deref(), Some("injected init failure"));
+    }
+
+    #[test]
+    fn retry_success_clears_failure_and_marks_initialized() {
+        let _state = reset();
+        let dir = PathBuf::from("C:/models/small");
+        assert!(initialize_locked::<(), _>("small", &dir, false, || Err("first failure".into())).is_err());
+        assert_eq!(
+            engine_snapshot_for("small", Some(&dir))
+                .last_error
+                .as_deref(),
+            Some("first failure")
+        );
+        // Run the same production build branch with a DLL-free fake engine.
+        let built = initialize_locked("small", &dir, false, || Ok(42_u32));
+        assert!(matches!(built, Ok(InitOutcome::Built(42))));
+        let status = engine_snapshot_for("small", Some(&dir));
+        assert_eq!(status.last_error, None);
+        assert_eq!(status.initialized_profile.as_deref(), Some("small"));
+    }
+
+    #[test]
+    fn in_progress_is_reported_and_cleared() {
+        let _state = reset();
+        let dir = PathBuf::from("C:/models/small");
+        assert!(initialize_locked::<(), _>("small", &dir, false, || {
+            Err("previous attempt failed".to_string())
+        }).is_err());
+        let failed = engine_snapshot_for("small", Some(&dir));
+        assert_eq!(crate::ocr_contracts::OcrServiceStatus::from_snapshot(
+            &failed, "small".to_string(), None,
+        ).state, crate::ocr_contracts::OcrRuntimeState::Failed);
+        let worker_dir = dir.clone();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            initialize_locked("small", &worker_dir, false, || {
+                started_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                Ok(())
+            })
+        });
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let during = engine_snapshot_for("small", Some(&dir));
+        let contract = crate::ocr_contracts::OcrServiceStatus::from_snapshot(
+            &during, "small".to_string(), None,
+        );
+        release_tx.send(()).unwrap();
+        assert!(matches!(handle.join().unwrap(), Ok(InitOutcome::Built(()))));
+        assert_eq!(contract.state, crate::ocr_contracts::OcrRuntimeState::Initializing);
+        let after = engine_snapshot_for("small", Some(&dir));
+        assert!(!after.initializing);
+        assert_eq!(crate::ocr_contracts::OcrServiceStatus::from_snapshot(
+            &after, "small".to_string(), None,
+        ).state, crate::ocr_contracts::OcrRuntimeState::Ready);
+    }
+
+    #[test]
+    fn build_panic_clears_in_progress() {
+        let _state = reset();
+        let dir = PathBuf::from("C:/models/small");
+        let result = std::panic::catch_unwind(|| {
+            initialize_locked::<(), _>("small", &dir, false, || panic!("injected panic"))
+        });
+        assert!(result.is_err());
+        assert!(!engine_snapshot_for("small", Some(&dir)).initializing);
+    }
+
+    #[test]
+    fn concurrent_status_queries_never_block_behind_initialization() {
+        let _state = reset();
+        let dir = PathBuf::from("C:/models/small");
+        // Hold the heavy inference lock the way recognize_text does; status
+        // must still answer from the lifecycle record without waiting.
+        let runtime = RUNTIME.lock().unwrap();
+        lifecycle(|state| state.initialized = Some(("small".to_string(), dir.clone())));
+        let (tx, rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            tx.send(engine_snapshot_for("small", Some(&dir))).unwrap();
+        });
+        let status = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("status must not wait for the inference lock");
+        assert_eq!(status.initialized_profile.as_deref(), Some("small"));
+        drop(runtime);
+        handle.join().unwrap();
+    }
 }
 
 pub fn model_status(app: &AppHandle, model_profile: &str) -> (String, Option<PathBuf>) {
@@ -345,7 +607,6 @@ fn decode_image(image_base64: &str) -> Result<image::RgbImage, String> {
     Ok(image)
 }
 
-
 fn bounding_box(points: &[ppocr_rs::Point]) -> (f64, f64, f64, f64) {
     let min_x = points.iter().map(|point| point.x).min().unwrap_or(0);
     let min_y = points.iter().map(|point| point.y).min().unwrap_or(0);
@@ -358,7 +619,6 @@ fn bounding_box(points: &[ppocr_rs::Point]) -> (f64, f64, f64, f64) {
         (max_y.saturating_sub(min_y)).max(1) as f64,
     )
 }
-
 
 fn packaged_model_config(app: &AppHandle, model_profile: &str) -> Option<(String, PathBuf)> {
     let profile = normalize_model_profile(model_profile);
@@ -400,13 +660,8 @@ fn packaged_model_dir(app: &AppHandle, model_profile: &str) -> Option<PathBuf> {
     candidates.into_iter().find(|path| has_model_subdirs(path))
 }
 
-fn normalize_model_profile(model_profile: &str) -> String {
-    match model_profile.trim() {
-        "tiny" | "lite" => "tiny".to_string(),
-        "medium" | "accurate" => "medium".to_string(),
-        _ => "small".to_string(),
-    }
-}
+// 工单 21：本地 normalize_model_profile（tiny/lite→tiny、medium/accurate→medium）已删除，
+// 统一复用 ocr_contracts::normalize_model_profile，运行时与 settings 加载/更新规则一致。
 
 fn has_model_subdirs(path: &Path) -> bool {
     path.join("det").join("inference.onnx").is_file()

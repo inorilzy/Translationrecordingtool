@@ -10,10 +10,21 @@ import {
   type AppSettings,
 } from '../lib/settings'
 
+export type OcrRuntimeState =
+  | 'modelsUnavailable'
+  | 'notInitialized'
+  | 'initializing'
+  | 'ready'
+  | 'failed'
+
 export interface OcrServiceStatus {
-  running: boolean
+  /** True only when the engine for the selected profile is initialized. */
+  initialized: boolean
+  state: OcrRuntimeState
   message: string
   lastError?: string | null
+  initializedProfile?: string | null
+  lastFailureProfile?: string | null
   engine: string
   modelProfile: string
   modelDir?: string | null

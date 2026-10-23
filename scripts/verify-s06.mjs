@@ -34,7 +34,7 @@ function runStage(name, cmd, args, options = {}) {
   const result = spawnSync(cmd, args, {
     cwd: options.cwd ?? rootDir,
     stdio: "inherit",
-    shell: true,
+    shell: cmd === "npm",
     env: { ...process.env, ...(options.env ?? {}) },
     timeout: options.timeout ?? 600_000, // 10 min default
   });
@@ -64,14 +64,14 @@ const stages = [
   },
   {
     name: "Rust Unit Tests",
-    cmd: "cargo",
-    args: ["test", "--manifest-path", "src-tauri/Cargo.toml"],
+    cmd: process.execPath,
+    args: ["scripts/rust-test.mjs", "test", "--locked"],
     timeout: 900_000, // 15 min for Rust tests
   },
   {
     name: "Rust Compiler Check",
-    cmd: "cargo",
-    args: ["check", "--manifest-path", "src-tauri/Cargo.toml"],
+    cmd: process.execPath,
+    args: ["scripts/rust-test.mjs", "check", "--tests", "--locked"],
     timeout: 600_000,
   },
   {

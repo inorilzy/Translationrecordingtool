@@ -13,11 +13,10 @@ use crate::{
     translation_workflow::{AppTranslationWorkflow, WorkflowStage},
 };
 
-#[derive(Debug, PartialEq, Eq)]
-enum SelectionTextSource {
-    UiAutomation,
-    ClipboardFallback,
-}
+/// UI Automation 无法给出选文时的弹窗提示。
+/// 工单09：不再自动模拟 Ctrl+C 读取/恢复剪贴板，改由用户手动复制后走现有剪贴板翻译。
+const MANUAL_COPY_HINT: &str = "未能直接读取选中文本（当前应用可能不支持 UI Automation）。\
+为保护剪贴板内容，已不再自动模拟复制，请手动复制后在主窗口使用“剪贴板翻译”。";
 
 pub fn register_shortcut_handler(
     app: &tauri::AppHandle,
@@ -64,14 +63,11 @@ pub fn handle_shortcut(app: tauri::AppHandle, popup_state: Arc<RwLock<PopupRunti
         info!("开始执行选中文本翻译流程");
         let request_id = next_popup_request_id(&popup_state);
         let anchor = point_anchor(get_cursor_position());
-        let text = match read_selected_text_with_fallback(&app) {
-            Ok((text, source)) => {
-                info!("读取到选中文本({:?}): {}", source, text);
-                text
-            }
-            Err(error) => {
-                error!("读取选中文本失败: {}", error);
-                close_if_active(&app, &popup_state, request_id);
+        // 生产入口只调用 UI Automation 读取器；该路径不注入按键、不读写剪贴板。
+        let text = match read_selection_for_popup(crate::selection_reader::read_selected_text) {
+            Ok(text) => text,
+            Err(message) => {
+                let _ = show_popup_failure(&app, &popup_state, request_id, anchor, message);
                 return;
             }
         };
@@ -96,7 +92,7 @@ pub fn handle_shortcut(app: tauri::AppHandle, popup_state: Arc<RwLock<PopupRunti
             .await
         {
             if is_active_popup_request(&popup_state, request_id) {
-                error!("选中文本翻译失败: {}", error);
+                log_translation_failure("选中文本", &error);
             }
         }
     });
@@ -151,7 +147,7 @@ pub fn handle_screenshot_shortcut(
             .await
         {
             if is_active_popup_request(&popup_state, request_id) {
-                error!("截图 OCR 翻译失败: {}", error);
+                log_translation_failure("截图 OCR", &error);
             }
         }
     });
@@ -249,86 +245,41 @@ fn present_popup_stage(
     }
 }
 
-fn read_selected_text_with_fallback(
-    app: &tauri::AppHandle,
-) -> Result<(String, SelectionTextSource), String> {
-    select_text_source(crate::selection_reader::read_selected_text(), || {
-        copy_selection_and_read_clipboard(app)
-    })
-}
-
-fn select_text_source<F>(
-    ui_automation_result: Result<String, String>,
-    clipboard_fallback: F,
-) -> Result<(String, SelectionTextSource), String>
-where
-    F: FnOnce() -> Result<String, String>,
-{
-    match ui_automation_result {
-        Ok(text) if !text.trim().is_empty() => {
-            Ok((text.trim().to_string(), SelectionTextSource::UiAutomation))
-        }
-        Ok(_) => {
-            warn!("UI Automation 未读取到选中文本，回退到剪贴板复制");
-            clipboard_fallback().map(|text| {
-                (
-                    text.trim().to_string(),
-                    SelectionTextSource::ClipboardFallback,
-                )
-            })
-        }
-        Err(error) => {
-            warn!(
-                "UI Automation 读取选中文本失败，回退到剪贴板复制: {}",
-                error
-            );
-            clipboard_fallback().map(|text| {
-                (
-                    text.trim().to_string(),
-                    SelectionTextSource::ClipboardFallback,
-                )
-            })
-        }
-    }
-}
-
-fn read_selection_and_restore_clipboard<R, W>(
-    previous_clipboard: Option<String>,
-    read_selected: R,
-    restore: W,
-) -> Result<String, String>
+/// 划词入口唯一的选文来源：只消费 UI Automation 读取结果。
+/// 成功返回去空白文本；空值或失败统一返回手动复制提示，绝不回退到模拟按键或剪贴板。
+/// 日志只记录字符数与 UIA 错误（UIA 错误为系统/控件诊断，不含选中内容）。
+fn read_selection_for_popup<R>(read_ui_automation: R) -> Result<String, &'static str>
 where
     R: FnOnce() -> Result<String, String>,
-    W: FnOnce(&str) -> Result<(), String>,
 {
-    let selected_text = read_selected();
-
-    if let Some(previous_text) = previous_clipboard {
-        if let Err(error) = restore(&previous_text) {
-            warn!("恢复原剪贴板失败: {}", error);
+    match read_ui_automation() {
+        Ok(text) if !text.trim().is_empty() => {
+            let text = text.trim().to_string();
+            info!(
+                "UI Automation 读取到选中文本，字符数: {}",
+                text.chars().count()
+            );
+            Ok(text)
+        }
+        Ok(_) => {
+            warn!("UI Automation 未读取到选中文本，提示用户手动复制");
+            Err(MANUAL_COPY_HINT)
+        }
+        Err(error) => {
+            warn!("UI Automation 读取选中文本失败，提示用户手动复制: {}", error);
+            Err(MANUAL_COPY_HINT)
         }
     }
-
-    selected_text
 }
 
-fn copy_selection_and_read_clipboard(app: &tauri::AppHandle) -> Result<String, String> {
-    let previous_clipboard = crate::clipboard::read_clipboard(app).ok();
-    let baseline_clipboard_sequence = crate::clipboard::clipboard_sequence_number();
-
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    use enigo::{Enigo, Key, Keyboard, Settings};
-    let mut enigo = Enigo::new(&Settings::default())
-        .map_err(|error| format!("初始化键盘模拟失败: {}", error))?;
-    enigo.key(Key::Control, enigo::Direction::Press).ok();
-    enigo.key(Key::Unicode('c'), enigo::Direction::Click).ok();
-    enigo.key(Key::Control, enigo::Direction::Release).ok();
-
-    read_selection_and_restore_clipboard(
-        previous_clipboard,
-        || crate::clipboard::read_clipboard_after_update(app, baseline_clipboard_sequence, 6, 80),
-        |text| crate::clipboard::write_clipboard(app, text),
-    )
+/// 翻译失败消息可能拼入原文（例如“未找到单词 "xxx" 的释义”），因此这里只记录范围与长度。
+/// 具体原因已通过弹窗展示给用户；provider 层另有已去除 URL/响应体的错误日志。
+fn log_translation_failure(scope: &str, message: &str) {
+    error!(
+        "{}翻译失败，错误消息字符数: {}",
+        scope,
+        message.chars().count()
+    );
 }
 
 fn close_if_active(
@@ -344,84 +295,91 @@ fn close_if_active(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use crate::logger::capture_logs_for_test;
+    use std::cell::Cell;
+
+    const SELECTION_MARKER: &str = "SYNTHETIC_SELECTION_MARKER_7f3a";
 
     #[test]
-    fn ui_automation_result_is_preferred_without_touching_clipboard() {
-        let fallback_calls = AtomicUsize::new(0);
+    fn ui_automation_success_returns_trimmed_text() {
+        let calls = Cell::new(0);
+        let result = read_selection_for_popup(|| {
+            calls.set(calls.get() + 1);
+            Ok("  direct text  ".to_string())
+        });
+        assert_eq!(result, Ok("direct text".to_string()));
+        assert_eq!(calls.get(), 1);
+    }
 
-        let result = select_text_source(Ok("  direct text  ".to_string()), || {
-            fallback_calls.fetch_add(1, Ordering::SeqCst);
-            Ok("clipboard text".to_string())
-        })
-        .unwrap();
+    #[test]
+    fn empty_ui_automation_result_asks_for_manual_copy() {
+        for empty in ["", "   ", "\r\n\t"] {
+            assert_eq!(
+                read_selection_for_popup(|| Ok(empty.to_string())),
+                Err(MANUAL_COPY_HINT)
+            );
+        }
+    }
 
+    #[test]
+    fn ui_automation_failure_asks_for_manual_copy() {
         assert_eq!(
-            result,
-            ("direct text".to_string(), SelectionTextSource::UiAutomation)
-        );
-        assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
-    }
-
-    #[test]
-    fn empty_ui_automation_result_uses_clipboard_fallback() {
-        let result = select_text_source(Ok("   ".to_string()), || {
-            Ok("  clipboard text  ".to_string())
-        })
-        .unwrap();
-
-        assert_eq!(
-            result,
-            (
-                "clipboard text".to_string(),
-                SelectionTextSource::ClipboardFallback
-            )
+            read_selection_for_popup(|| Err("当前控件不支持直接读取选中文本".to_string())),
+            Err(MANUAL_COPY_HINT)
         );
     }
 
     #[test]
-    fn ui_automation_failure_uses_clipboard_fallback() {
-        let result = select_text_source(Err("unsupported".to_string()), || {
-            Ok("clipboard text".to_string())
-        })
-        .unwrap();
+    fn manual_copy_hint_points_to_existing_clipboard_translation() {
+        assert!(MANUAL_COPY_HINT.contains("手动复制"));
+        assert!(MANUAL_COPY_HINT.contains("剪贴板翻译"));
+    }
 
-        assert_eq!(result.1, SelectionTextSource::ClipboardFallback);
+    /// 生产源码静态守卫：划词相关模块不得再出现模拟按键或剪贴板备份/恢复实现。
+    /// 关键字用 concat! 拼接，避免本测试自身命中；只检查 #[cfg(test)] 之前的生产代码。
+    #[test]
+    fn production_selection_path_has_no_key_injection_or_clipboard_restore() {
+        let forbidden = [
+            concat!("en", "igo"),
+            concat!("Send", "Input"),
+            concat!("keybd", "_event"),
+            concat!("Key::", "Control"),
+            concat!("backup_", "clipboard"),
+            concat!("restore_", "clipboard"),
+            concat!("Empty", "Clipboard"),
+            concat!("SetClipboard", "Data"),
+            concat!("Clipboard", "Fallback"),
+        ];
+        let sources = [
+            ("shortcut_handler.rs", include_str!("shortcut_handler.rs")),
+            ("clipboard.rs", include_str!("clipboard.rs")),
+            ("selection_reader.rs", include_str!("selection_reader.rs")),
+            ("translation_workflow.rs", include_str!("translation_workflow.rs")),
+            ("lib.rs", include_str!("lib.rs")),
+        ];
+        for (name, source) in sources {
+            let production = source.split("#[cfg(test)]").next().unwrap();
+            for token in forbidden {
+                assert!(!production.contains(token), "{name} 仍包含 {token}");
+            }
+        }
     }
 
     #[test]
-    fn clipboard_fallback_restores_previous_text_after_success() {
-        let restored = std::cell::RefCell::new(None);
-
-        let selected = read_selection_and_restore_clipboard(
-            Some("original".to_string()),
-            || Ok("selected".to_string()),
-            |text| {
-                *restored.borrow_mut() = Some(text.to_string());
-                Ok(())
-            },
-        )
-        .unwrap();
-
-        assert_eq!(selected, "selected");
-        assert_eq!(restored.into_inner().as_deref(), Some("original"));
-    }
-
-    #[test]
-    fn clipboard_fallback_restores_previous_text_after_read_failure() {
-        let restored = std::cell::RefCell::new(None);
-
-        let error = read_selection_and_restore_clipboard(
-            Some("original".to_string()),
-            || Err("clipboard did not update".to_string()),
-            |text| {
-                *restored.borrow_mut() = Some(text.to_string());
-                Ok(())
-            },
-        )
-        .unwrap_err();
-
-        assert_eq!(error, "clipboard did not update");
-        assert_eq!(restored.into_inner().as_deref(), Some("original"));
+    fn selection_logs_omit_synthetic_marker() {
+        let logs = capture_logs_for_test(|| {
+            let text = format!("  {SELECTION_MARKER} private text  ");
+            assert!(read_selection_for_popup(|| Ok(text)).is_ok());
+            assert!(read_selection_for_popup(|| Ok(String::new())).is_err());
+            assert!(read_selection_for_popup(|| Err("uia failed".into())).is_err());
+            log_translation_failure(
+                "选中文本",
+                &format!("未找到单词 \"{SELECTION_MARKER}\" 的释义"),
+            );
+        });
+        // 确认日志确实被捕获，避免“空日志”导致假通过。
+        assert!(logs.contains("字符数"));
+        assert!(logs.contains("提示用户手动复制"));
+        assert!(!logs.contains(SELECTION_MARKER), "{logs}");
     }
 }

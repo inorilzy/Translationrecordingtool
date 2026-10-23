@@ -73,33 +73,46 @@ export const useTranslationStore = defineStore('translation', () => {
     }
   }
 
-  async function loadHistory() {
+  let historyLoadId = 0
+
+  async function loadHistory(isCurrent: () => boolean = () => true) {
+    const loadId = ++historyLoadId
     try {
-      history.value = await invoke<Translation[]>('load_history')
+      const records = await invoke<Translation[]>('load_history')
+      if (loadId === historyLoadId && isCurrent()) {
+        history.value = records
+      }
     } catch (e) {
-      error.value = formatStoreError('加载历史记录失败', e)
+      if (loadId === historyLoadId && isCurrent()) {
+        error.value = formatStoreError('加载历史记录失败', e)
+      }
     }
   }
 
-  async function loadFavorites() {
+  async function loadFavorites(isCurrent: () => boolean = () => true) {
     try {
-      return await invoke<Translation[]>('load_favorites')
+      const records = await invoke<Translation[]>('load_favorites')
+      if (!isCurrent()) return null
+      return records
     } catch (e) {
-      error.value = formatStoreError('加载收藏列表失败', e)
-      return []
-    }
-  }
-
-  async function getTranslationById(id: number) {
-    try {
-      return await invoke<Translation>('get_translation_by_id', { id })
-    } catch (e) {
-      error.value = formatStoreError('查询翻译记录失败', e)
+      if (isCurrent()) error.value = formatStoreError('加载收藏列表失败', e)
       return null
     }
   }
 
-  async function toggleFavorite(id: number, isFavorite: boolean) {
+  async function getTranslationById(id: number, isCurrent: () => boolean = () => true) {
+    try {
+      const record = await invoke<Translation>('get_translation_by_id', { id })
+      if (!isCurrent()) return null
+      return record
+    } catch (e) {
+      if (isCurrent()) error.value = formatStoreError('查询翻译记录失败', e)
+      return null
+    }
+  }
+
+  async function toggleFavorite(id: number, isFavorite: boolean): Promise<boolean> {
+    error.value = ''
     try {
       await invoke('toggle_favorite', {
         id,
@@ -113,12 +126,19 @@ export const useTranslationStore = defineStore('translation', () => {
           is_favorite: isFavorite ? 1 : 0,
         }
       }
+      return true
     } catch (e) {
       error.value = formatStoreError('更新收藏状态失败', e)
+      return false
     }
   }
 
   async function translateFromClipboard() {
+    if (loading.value) {
+      error.value = '已有翻译任务进行中，请稍候'
+      return null
+    }
+
     loading.value = true
     error.value = ''
 
@@ -136,6 +156,11 @@ export const useTranslationStore = defineStore('translation', () => {
   }
 
   async function translateText(text: string) {
+    if (loading.value) {
+      error.value = '已有翻译任务进行中，请稍候'
+      return null
+    }
+
     loading.value = true
     error.value = ''
 

@@ -111,7 +111,7 @@ Packaging profile:
 
 - `tauri.ocr-native.conf.json`: selects `native_onnx` with packaged `small` PP-OCRv6 models and `onnxruntime.dll`.
 
-Persisted `ocrEngine` / `ocrModelProfile` values are normalized to native ONNX (`tiny` / `small` / `medium`). Missing packaged models fail before recognition with the selected profile in the error or status.
+OCR model profile contract (ticket 21): `small` is the only supported profile. `ocr_contracts::normalize_model_profile` is the single normalization rule, shared by settings load (`SettingsRecord::normalize_product_ocr_runtime`), settings update (`update_api_config` via `settings::normalize_product_ocr_fields`), and `native_ocr` runtime lookup. Persisted `ocrEngine` values are normalized to `native_onnx`; persisted `ocrModelProfile` values — empty, `tiny` / `lite`, `medium` / `accurate`, or any unknown value — are migrated to `small`. No other profile has packaged models or support. Missing packaged `small` models fail before recognition with the profile in the error or status.
 
 ## Popup ownership
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
+import { useMainWindowRevalidation } from '../lib/main-window-revalidation'
 import { useTranslationStore } from '../stores/translation'
 import TranslationCard from '../components/TranslationCard.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -16,9 +17,7 @@ const filteredHistory = computed(() => {
   )
 })
 
-onMounted(() => {
-  store.loadHistory()
-})
+useMainWindowRevalidation((isCurrent) => store.loadHistory(isCurrent))
 </script>
 
 <template>
@@ -26,6 +25,8 @@ onMounted(() => {
     <div class="page-header">
       <h1>历史记录</h1>
     </div>
+
+    <div v-if="store.error" class="error-message" role="alert">{{ store.error }}</div>
 
     <!-- 搜索框 -->
     <div v-if="store.history.length > 0" class="search-box">

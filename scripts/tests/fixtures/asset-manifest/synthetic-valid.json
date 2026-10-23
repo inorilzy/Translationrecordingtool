@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "assets": [
+    {
+      "id": "ocr-model/small/det",
+      "kind": "ocr-model",
+      "identity": {
+        "profile": "small",
+        "role": "det",
+        "repo": "PaddlePaddle/PP-OCRv6_small_det_onnx",
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "files": [
+        {
+          "name": "inference.onnx",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/inference.onnx",
+          "size": 101,
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        {
+          "name": "inference.json",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/inference.json",
+          "size": 102,
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        {
+          "name": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/inference.yml",
+          "size": 103,
+          "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      ],
+      "approval": {
+        "status": "approved",
+        "approvedBy": "SYNTHETIC-FIXTURE",
+        "approvedAt": "2026-10-22",
+        "method": "SYNTHETIC test data only; no real review was performed",
+        "evidence": ["SYNTHETIC: not real evidence, values are placeholders"]
+      }
+    },
+    {
+      "id": "ocr-model/small/rec",
+      "kind": "ocr-model",
+      "identity": {
+        "profile": "small",
+        "role": "rec",
+        "repo": "PaddlePaddle/PP-OCRv6_small_rec_onnx",
+        "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "files": [
+        {
+          "name": "inference.onnx",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/inference.onnx",
+          "size": 201,
+          "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        {
+          "name": "inference.json",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/inference.json",
+          "size": 202,
+          "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        {
+          "name": "inference.yml",
+          "url": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/inference.yml",
+          "size": 203,
+          "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      ],
+      "approval": {
+        "status": "approved",
+        "approvedBy": "SYNTHETIC-FIXTURE",
+        "approvedAt": "2026-10-22",
+        "method": "SYNTHETIC test data only; no real review was performed",
+        "evidence": ["SYNTHETIC: not real evidence, values are placeholders"]
+      }
+    },
+    {
+      "id": "ort-runtime/1.20.1/win-x64",
+      "kind": "ort-runtime",
+      "identity": {
+        "version": "1.20.1",
+        "platform": "win",
+        "arch": "x64"
+      },
+      "files": [
+        {
+          "name": "onnxruntime-win-x64-1.20.1.zip",
+          "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-win-x64-1.20.1.zip",
+          "size": 301,
+          "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+        },
+        {
+          "name": "onnxruntime.dll",
+          "fromArchive": "onnxruntime-win-x64-1.20.1.zip",
+          "archivePath": "onnxruntime-win-x64-1.20.1/lib/onnxruntime.dll",
+          "size": 302,
+          "sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+        }
+      ],
+      "approval": {
+        "status": "approved",
+        "approvedBy": "SYNTHETIC-FIXTURE",
+        "approvedAt": "2026-10-22",
+        "method": "SYNTHETIC test data only; no real review was performed",
+        "evidence": ["SYNTHETIC: not real evidence, values are placeholders"]
+      }
+    },
+    {
+      "id": "dictionary-input/ecdict",
+      "kind": "dictionary-input",
+      "identity": {
+        "source": "ecdict",
+        "repo": "skywind3000/ECDICT",
+        "revision": "cccccccccccccccccccccccccccccccccccccccc"
+      },
+      "files": [
+        {
+          "name": "ecdict.csv",
+          "url": "https://raw.githubusercontent.com/skywind3000/ECDICT/cccccccccccccccccccccccccccccccccccccccc/ecdict.csv",
+          "size": 401,
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+        }
+      ],
+      "approval": {
+        "status": "approved",
+        "approvedBy": "SYNTHETIC-FIXTURE",
+        "approvedAt": "2026-10-22",
+        "method": "SYNTHETIC test data only; no real review was performed",
+        "evidence": ["SYNTHETIC: not real evidence, values are placeholders"]
+      }
+    },
+    {
+      "id": "dictionary-input/wordnet",
+      "kind": "dictionary-input",
+      "identity": {
+        "source": "wordnet",
+        "version": "3.0"
+      },
+      "files": [
+        {
+          "name": "WNdb-3.0.tar.gz",
+          "url": "https://wordnetcode.princeton.edu/3.0/WNdb-3.0.tar.gz",
+          "size": 501,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "approval": {
+        "status": "approved",
+        "approvedBy": "SYNTHETIC-FIXTURE",
+        "approvedAt": "2026-10-22",
+        "method": "SYNTHETIC test data only; no real review was performed",
+        "evidence": ["SYNTHETIC: not real evidence, values are placeholders"]
+      }
+    }
+  ]
+}

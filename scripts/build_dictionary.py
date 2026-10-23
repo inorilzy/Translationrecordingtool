@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import os
+import tempfile
 import sqlite3
 import sys
 import tarfile
 import urllib.request
 from pathlib import Path
 
-ECDICT_URL = "https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv"
-WORDNET_URL = "https://wordnetcode.princeton.edu/3.0/WNdb-3.0.tar.gz"
+from asset_manifest import find_asset, load_manifest, verify_file
+
+ECDICT_REVISION = "bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b"
+WORDNET_VERSION = "3.0"
+ECDICT_URL = f"https://raw.githubusercontent.com/skywind3000/ECDICT/{ECDICT_REVISION}/ecdict.csv"
+WORDNET_URL = f"https://wordnetcode.princeton.edu/{WORDNET_VERSION}/WNdb-{WORDNET_VERSION}.tar.gz"
+
 WORDNET_DATA_FILES = ("data.noun", "data.verb", "data.adj", "data.adv")
 
 
-def download(url: str, target: Path) -> Path:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        print(f"[cache] {target}")
-        return target
-
+def fetch_url(url: str, target: Path) -> None:
+    """Transport only; the caller verifies the temporary file before publication."""
     print(f"[download] {url}")
     with urllib.request.urlopen(url) as response, target.open("wb") as output:
         while True:
@@ -26,13 +29,56 @@ def download(url: str, target: Path) -> Path:
                 break
             output.write(chunk)
 
+
+def validate_ecdict(path: Path, _entry: dict) -> None:
+    """Structural validation only: no trusted upstream digest is available."""
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle, strict=True)
+        if not reader.fieldnames or "word" not in reader.fieldnames:
+            raise RuntimeError("ECDICT CSV missing word column")
+        valid_rows = 0
+        for row in reader:
+            if None in row or any(value is None for value in row.values()):
+                raise RuntimeError("ECDICT CSV malformed row")
+            if row["word"].strip():
+                valid_rows += 1
+        if not valid_rows:
+            raise RuntimeError("ECDICT CSV has no valid words")
+
+
+def validate_wordnet(path: Path, _entry: dict) -> None:
+    """Check required members and read their bytes without extracting to disk."""
+    with tarfile.open(path, "r:gz") as archive:
+        for name, extracted in iter_wordnet_members(archive):
+            with extracted:
+                size = 0
+                while chunk := extracted.read(1024 * 1024):
+                    size += len(chunk)
+                if not size:
+                    raise RuntimeError(f"WordNet archive has empty {name}")
+
+
+def download(file_entry: dict, target: Path, *, downloader=None, validator=verify_file) -> Path:
+    """Reject corrupt caches; never overwrite a cache with unverified bytes."""
+    if target.exists():
+        validator(target, file_entry)
+        print(f"[cache] {target}")
+        return target
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # Same filesystem as target, unique per attempt, removed on every failure.
+    with tempfile.TemporaryDirectory(prefix=".dictionary-download-", dir=target.parent) as directory:
+        temporary = Path(directory) / file_entry["name"]
+        (downloader or fetch_url)(file_entry["url"], temporary)
+        validator(temporary, file_entry)
+        os.replace(temporary, target)
     return target
 
 
 def create_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(
         """
-        PRAGMA journal_mode = WAL;
+        PRAGMA journal_mode = DELETE;
         PRAGMA synchronous = NORMAL;
 
         CREATE TABLE IF NOT EXISTS meta (
@@ -99,12 +145,12 @@ def import_ecdict(connection: sqlite3.Connection, csv_path: Path) -> None:
             batch.append(
                 (
                     word,
-                    row["phonetic"].strip() or None,
-                    row["definition"].strip() or None,
-                    row["translation"].strip() or None,
-                    row["pos"].strip() or None,
-                    row["exchange"].strip() or None,
-                    row["tag"].strip() or None,
+                    row.get("phonetic", "").strip() or None,
+                    row.get("definition", "").strip() or None,
+                    row.get("translation", "").strip() or None,
+                    row.get("pos", "").strip() or None,
+                    row.get("exchange", "").strip() or None,
+                    row.get("tag", "").strip() or None,
                 )
             )
 
@@ -153,8 +199,8 @@ def iter_wordnet_members(archive: tarfile.TarFile):
     members = {Path(member.name).name: member for member in archive.getmembers()}
     for file_name in WORDNET_DATA_FILES:
         member = members.get(file_name)
-        if member is None:
-            raise RuntimeError(f"WordNet archive missing {file_name}")
+        if member is None or not member.isfile():
+            raise RuntimeError(f"WordNet archive missing regular file {file_name}")
         extracted = archive.extractfile(member)
         if extracted is None:
             raise RuntimeError(f"Unable to extract {file_name}")
@@ -246,29 +292,62 @@ def flush_wordnet_batches(
         example_batch.clear()
 
 
-def build_dictionary(output_path: Path, cache_dir: Path) -> None:
-    ecdict_path = download(ECDICT_URL, cache_dir / "ecdict.csv")
-    wordnet_path = download(WORDNET_URL, cache_dir / "WNdb-3.0.tar.gz")
+def validate_database(connection: sqlite3.Connection) -> None:
+    if connection.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+        raise RuntimeError("Dictionary SQLite quick_check failed")
+    for table in ("ecdict_entries", "wordnet_glosses"):
+        if not connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone():
+            raise RuntimeError(f"Dictionary table {table} is empty")
+
+
+def build_dictionary(
+    output_path: Path, cache_dir: Path, *,
+    manifest_path: Path | None = None, downloader=None,
+) -> None:
+    if manifest_path is not None:
+        # Optional strict mode resolves both identities before any writes.
+        # No synthetic opt-in exists in the production entry point.
+        manifest = load_manifest(manifest_path)
+        entries = [find_asset(manifest, "dictionary-input", {"source": source})["files"][0]
+                   for source in ("ecdict", "wordnet")]
+        paths = [cache_dir / entry["name"] for entry in entries]
+        validators = [verify_file, verify_file]
+    else:
+        # Fixed official inputs, structurally checked without inventing digests.
+        entries = [{"name": "ecdict.csv", "url": ECDICT_URL},
+                   {"name": f"WNdb-{WORDNET_VERSION}.tar.gz", "url": WORDNET_URL}]
+        paths = [cache_dir / "ecdict" / ECDICT_REVISION / entries[0]["name"],
+                 cache_dir / "wordnet" / WORDNET_VERSION / entries[1]["name"]]
+        validators = [validate_ecdict, validate_wordnet]
+    if any(output_path.resolve() == path.resolve() for path in paths):
+        raise ValueError("Dictionary output must not overwrite an input cache")
+    ecdict_path, wordnet_path = [
+        download(entry, path, downloader=downloader, validator=validator)
+        for entry, path, validator in zip(entries, paths, validators)
+    ]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    if output_path.exists():
-        output_path.unlink()
-
-    connection = sqlite3.connect(output_path)
-    try:
-        create_schema(connection)
-        import_ecdict(connection, ecdict_path)
-        import_wordnet(connection, wordnet_path)
-        connection.executemany(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-            [
-                ("ecdict_url", ECDICT_URL),
-                ("wordnet_url", WORDNET_URL),
-            ],
-        )
-        connection.commit()
-    finally:
-        connection.close()
+    # Keep the old database untouched until a fully committed, checked standalone
+    # database is closed. DELETE journal avoids publishing a DB dependent on a WAL.
+    with tempfile.TemporaryDirectory(prefix=".dictionary-build-", dir=output_path.parent) as directory:
+        temporary = Path(directory) / "dictionary.db"
+        connection = sqlite3.connect(temporary)
+        try:
+            create_schema(connection)
+            import_ecdict(connection, ecdict_path)
+            import_wordnet(connection, wordnet_path)
+            connection.executemany(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                [("ecdict_url", entries[0]["url"]), ("wordnet_url", entries[1]["url"])],
+            )
+            connection.commit()
+            validate_database(connection)
+        finally:
+            connection.close()
+        # Never pair a new main file with an old live/hot SQLite journal.
+        if any(Path(str(output_path) + suffix).exists() for suffix in ("-wal", "-shm", "-journal")):
+            raise RuntimeError("Dictionary output has SQLite sidecars; close its users before rebuilding")
+        os.replace(temporary, output_path)
 
     print(f"[ok] built dictionary database: {output_path}")
 
@@ -285,9 +364,13 @@ def main() -> int:
         default=str(Path(".cache") / "dictionary"),
         help="download cache directory",
     )
+    parser.add_argument(
+        "--manifest", default=None,
+        help="optional strict release asset manifest (synthetic manifests are rejected)",
+    )
     args = parser.parse_args()
 
-    build_dictionary(Path(args.output), Path(args.cache_dir))
+    build_dictionary(Path(args.output), Path(args.cache_dir), manifest_path=Path(args.manifest) if args.manifest is not None else None)
     return 0
 
 

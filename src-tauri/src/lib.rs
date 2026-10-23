@@ -101,11 +101,8 @@ fn normalize_configured_ocr_runtime(
     ocr_engine: &mut String,
     ocr_model_profile: &mut String,
 ) -> Result<(), String> {
-    // Product ships a single OCR stack: native ONNX + small profile.
-    let _ = ocr_engine;
-    let _ = ocr_model_profile;
-    *ocr_engine = "native_onnx".to_string();
-    *ocr_model_profile = DEFAULT_OCR_MODEL_PROFILE.to_string();
+    // 工单 21：更新路径复用 settings 加载同一归一规则（native ONNX + 唯一正式 profile small）。
+    settings::normalize_product_ocr_fields(ocr_engine, ocr_model_profile);
     Ok(())
 }
 
@@ -613,7 +610,7 @@ pub fn run() {
                     info!("本地词典已就绪: {}", path.display());
                 }
                 Ok(None) => {
-                    warn!("未找到内置词典资源，单词查询将使用 Free Dictionary");
+                    warn!("未找到内置词典资源；单词查询将明确失败，不会自动使用在线词典降级");
                 }
                 Err(error) => {
                     error!("初始化本地词典失败: {}", error);
@@ -823,5 +820,21 @@ mod tests {
 
         assert_eq!(engine, "native_onnx");
         assert_eq!(profile, "small");
+    }
+
+    #[test]
+    fn update_path_migrates_every_legacy_profile_to_small() {
+        // 工单 21：与 settings.rs 加载迁移表保持同一组输入。
+        for raw in ["", "  ", "tiny", "lite", "medium", "accurate", "MEDIUM", "unknown-profile"] {
+            for raw_engine in ["", "native_onnx", "paddleocr", "bogus-engine"] {
+                let mut engine = raw_engine.to_string();
+                let mut profile = raw.to_string();
+
+                normalize_configured_ocr_runtime(&mut engine, &mut profile).unwrap();
+
+                assert_eq!(engine, "native_onnx", "engine {raw_engine:?}");
+                assert_eq!(profile, "small", "profile {raw:?}");
+            }
+        }
     }
 }

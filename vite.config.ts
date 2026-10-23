@@ -17,7 +17,8 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // 本机 IPv6 回环监听不可连接：显式绑定 IPv4，与 tauri.conf.json 的 devUrl 保持一致。
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

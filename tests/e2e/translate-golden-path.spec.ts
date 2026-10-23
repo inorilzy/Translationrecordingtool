@@ -85,14 +85,6 @@ test.beforeEach(async ({ page }) => {
               access_count: 0,
               is_favorite: 0,
             }
-          case 'save_translation': {
-            const persisted = {
-              ...(args?.translation as Record<string, unknown>),
-              access_count: 1,
-            }
-            history.unshift(persisted as never)
-            return persisted
-          }
           case 'plugin:event|listen': {
             const event = String(args?.event ?? '')
             const handlerId = Number(args?.handler)
@@ -135,6 +127,7 @@ test('main window golden path translates text and shows result', async ({ page }
   await page.getByRole('textbox').fill('hello world')
   await page.locator('.translate-btn').click()
 
-  await expect(page.getByRole('heading', { name: '翻译结果' })).toBeVisible()
-  await expect(page.getByText('测试译文')).toBeVisible()
+  const resultRegion = page.getByRole('region', { name: '翻译结果' })
+  await expect(resultRegion).toBeVisible()
+  await expect(resultRegion.getByText('测试译文')).toBeVisible()
 })

@@ -6,9 +6,12 @@ use parking_lot::RwLock;
 use std::{fs, path::Path, sync::Arc};
 use tauri::Manager;
 
-use crate::settings::{
-    load_settings, save_settings, settings_file_exists, SettingsRecord,
-};
+use crate::settings::{load_settings, save_settings, settings_file_exists, SettingsRecord};
+
+/// Serializes settings writers across candidate construction, file commit and
+/// in-memory publish. Without it, a slow writer could persist snapshot A after
+/// a newer snapshot B, and readers could observe A last.
+static SETTINGS_COMMIT_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
 // ─── Runtime State ───────────────────────────────────────────────────────────
 
@@ -64,9 +67,7 @@ pub fn is_active_screenshot_request(
 
 // ─── Settings Persistence ────────────────────────────────────────────────────
 
-pub fn load_persisted_settings(
-    app: &tauri::AppHandle,
-) -> Result<(SettingsRecord, bool), String> {
+pub fn load_persisted_settings(app: &tauri::AppHandle) -> Result<(SettingsRecord, bool), String> {
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let has_persisted_settings = settings_file_exists(&config_dir);
     load_settings(&config_dir).map(|settings| (settings, has_persisted_settings))
@@ -76,6 +77,7 @@ pub fn save_persisted_settings(
     app: &tauri::AppHandle,
     settings: &SettingsRecord,
 ) -> Result<(), String> {
+    let _commit = SETTINGS_COMMIT_LOCK.lock();
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     save_settings(&config_dir, settings)
 }
@@ -84,14 +86,61 @@ pub fn persist_managed_settings(
     app: &tauri::AppHandle,
     settings: &Arc<RwLock<SettingsRecord>>,
 ) -> Result<(), String> {
+    let _commit = SETTINGS_COMMIT_LOCK.lock();
     let snapshot = settings.read().clone();
-    save_persisted_settings(app, &snapshot)
+    save_persisted_settings_without_commit_lock(app, &snapshot)
+}
+
+fn save_persisted_settings_without_commit_lock(
+    app: &tauri::AppHandle,
+    settings: &SettingsRecord,
+) -> Result<(), String> {
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    save_settings(&config_dir, settings)
 }
 
 // ─── Single-Field Update Helpers ─────────────────────────────────────────────
 //
-// Each helper acquires a write lock on managed settings, applies the update,
-// then persists the full canonical snapshot to disk.
+// Persistence is the commit point: each helper builds a candidate from the
+// canonical record, writes it, and only then publishes it to memory. Writers
+// serialize on SETTINGS_COMMIT_LOCK so a slow write cannot be followed by a
+// later writer committing an older snapshot. A failed save leaves the runtime
+// record untouched.
+
+fn update_and_persist<F>(
+    app: &tauri::AppHandle,
+    settings: &Arc<RwLock<SettingsRecord>>,
+    apply: F,
+) -> Result<(), String>
+where
+    F: FnOnce(&mut SettingsRecord),
+{
+    let _commit = SETTINGS_COMMIT_LOCK.lock();
+    commit_candidate(settings, apply, |snapshot| {
+        save_persisted_settings_without_commit_lock(app, snapshot)
+    })
+}
+
+/// Same transaction as the production helpers, with persistence injected so
+/// failure/commit ordering can be tested without the app config directory.
+fn commit_candidate<F, P>(
+    settings: &Arc<RwLock<SettingsRecord>>,
+    apply: F,
+    persist: P,
+) -> Result<(), String>
+where
+    F: FnOnce(&mut SettingsRecord),
+    P: FnOnce(&SettingsRecord) -> Result<(), String>,
+{
+    let snapshot = {
+        let mut cfg = settings.read().clone();
+        apply(&mut cfg);
+        cfg
+    };
+    persist(&snapshot)?;
+    *settings.write() = snapshot;
+    Ok(())
+}
 
 pub fn update_and_persist_api_config(
     app: &tauri::AppHandle,
@@ -107,8 +156,7 @@ pub fn update_and_persist_api_config(
     ocr_model_profile: String,
     ocr_preload_on_startup: bool,
 ) -> Result<(), String> {
-    {
-        let mut cfg = settings.write();
+    update_and_persist(app, settings, |cfg| {
         cfg.api_key = api_key;
         cfg.api_secret = api_secret;
         cfg.translation_provider = translation_provider;
@@ -119,8 +167,7 @@ pub fn update_and_persist_api_config(
         cfg.ocr_engine = ocr_engine;
         cfg.ocr_model_profile = ocr_model_profile;
         cfg.ocr_preload_on_startup = ocr_preload_on_startup;
-    }
-    persist_managed_settings(app, settings)
+    })
 }
 
 pub fn update_and_persist_theme(
@@ -128,11 +175,7 @@ pub fn update_and_persist_theme(
     settings: &Arc<RwLock<SettingsRecord>>,
     theme: String,
 ) -> Result<(), String> {
-    {
-        let mut cfg = settings.write();
-        cfg.theme = theme;
-    }
-    persist_managed_settings(app, settings)
+    update_and_persist(app, settings, |cfg| cfg.theme = theme)
 }
 
 pub fn update_and_persist_global_shortcuts(
@@ -141,12 +184,10 @@ pub fn update_and_persist_global_shortcuts(
     global_shortcut: String,
     screenshot_shortcut: String,
 ) -> Result<(), String> {
-    {
-        let mut cfg = settings.write();
+    update_and_persist(app, settings, |cfg| {
         cfg.global_shortcut = global_shortcut;
         cfg.screenshot_shortcut = screenshot_shortcut;
-    }
-    persist_managed_settings(app, settings)
+    })
 }
 
 pub fn update_and_persist_tray_behavior(
@@ -154,11 +195,7 @@ pub fn update_and_persist_tray_behavior(
     settings: &Arc<RwLock<SettingsRecord>>,
     enabled: bool,
 ) -> Result<(), String> {
-    {
-        let mut cfg = settings.write();
-        cfg.enable_tray = enabled;
-    }
-    persist_managed_settings(app, settings)
+    update_and_persist(app, settings, |cfg| cfg.enable_tray = enabled)
 }
 
 // ─── Legacy App Data Migration ───────────────────────────────────────────────
@@ -213,6 +250,121 @@ pub fn migrate_legacy_app_data_dir(
 
 #[cfg(test)]
 mod app_state_tests {
+    use super::commit_candidate;
+    use crate::settings::SettingsRecord;
+    use parking_lot::RwLock;
+    use std::sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Barrier,
+    };
+
+    fn state(theme: &str) -> Arc<RwLock<SettingsRecord>> {
+        Arc::new(RwLock::new(SettingsRecord {
+            theme: theme.to_string(),
+            ..SettingsRecord::default()
+        }))
+    }
+
+    #[test]
+    fn failed_persistence_does_not_publish_runtime_fields() {
+        let settings = state("light");
+        let before = settings.read().clone();
+        let result = commit_candidate(
+            &settings,
+            |cfg| {
+                cfg.theme = "dark".into();
+                cfg.api_key = "rejected-key".into();
+                cfg.enable_tray = false;
+            },
+            |_| Err("injected save failure".to_string()),
+        );
+        assert!(result.is_err());
+        assert_eq!(*settings.read(), before);
+        // A later successful save must not carry the rejected fields.
+        commit_candidate(
+            &settings,
+            |cfg| cfg.global_shortcut = "Ctrl+F9".into(),
+            |_| Ok(()),
+        )
+        .unwrap();
+        let after = settings.read().clone();
+        assert_eq!(after.theme, "light");
+        assert_eq!(after.api_key, "");
+        assert!(after.enable_tray);
+        assert_eq!(after.global_shortcut, "Ctrl+F9");
+    }
+
+    #[test]
+    fn successful_persistence_publishes_exact_persisted_snapshot() {
+        let settings = state("light");
+        let persisted = std::sync::Mutex::new(None);
+        commit_candidate(
+            &settings,
+            |cfg| {
+                cfg.theme = "dark".into();
+                cfg.enable_tray = false;
+            },
+            |snapshot| {
+                *persisted.lock().unwrap() = Some(snapshot.clone());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(persisted.lock().unwrap().as_ref(), Some(&*settings.read()));
+        assert_eq!(settings.read().theme, "dark");
+    }
+
+    #[test]
+    fn memory_is_not_published_until_persist_returns() {
+        let settings = state("light");
+        let published_early = AtomicBool::new(false);
+        commit_candidate(
+            &settings,
+            |cfg| cfg.theme = "dark".into(),
+            |_| {
+                published_early.store(settings.read().theme == "dark", Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(!published_early.load(Ordering::SeqCst));
+        assert_eq!(settings.read().theme, "dark");
+    }
+
+    #[test]
+    fn concurrent_commits_are_not_lost_and_last_persisted_value_wins() {
+        let settings = state("light");
+        let commits = Arc::new(AtomicUsize::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+        let run = |value: &'static str| {
+            let settings = settings.clone();
+            let commits = commits.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                commit_candidate(
+                    &settings,
+                    |cfg| cfg.theme = value.into(),
+                    |snapshot| {
+                        commits.fetch_add(1, Ordering::SeqCst);
+                        assert_eq!(snapshot.theme, value);
+                        Ok(())
+                    },
+                )
+                .unwrap();
+            })
+        };
+        let first = run("dark");
+        let second = run("solarized");
+        first.join().unwrap();
+        second.join().unwrap();
+        assert_eq!(commits.load(Ordering::SeqCst), 2);
+        // Each commit publishes exactly its own persisted snapshot, and the
+        // last one held the lock, so file and memory agree on one of them.
+        let final_theme = settings.read().theme.clone();
+        assert!(matches!(final_theme.as_str(), "dark" | "solarized"));
+    }
+
     use super::migrate_legacy_app_data_dir;
     use std::{
         fs,

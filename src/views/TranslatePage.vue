@@ -65,6 +65,7 @@ const inputText = computed({
 })
 
 async function handleTranslate() {
+  if (store.loading) return
   await submitTranslation(inputText.value, store.translateText)
 }
 

@@ -15,8 +15,8 @@ use std::io::Cursor;
 use tauri::{Emitter, Listener, Manager, PhysicalPosition, PhysicalSize, Position, Size};
 
 use super::{
-    encode_png_data_url, normalize_area, CaptureArea, CaptureResult, SelectionScreenPreview,
-    SelectionStartPayload, MIN_SELECTION_SIZE, selection_payload_slot,
+    encode_png_data_url, normalize_area, selection_payload_slot, CaptureArea, CaptureResult,
+    SelectionScreenPreview, SelectionStartPayload, MIN_SELECTION_SIZE,
 };
 
 const SELECTION_WINDOW_LABEL: &str = "screenshot-selection";
@@ -315,4 +315,3 @@ fn encode_jpeg_data_url(image: &DynamicImage, quality: u8) -> Result<String, Str
         general_purpose::STANDARD.encode(bytes.into_inner())
     ))
 }
-

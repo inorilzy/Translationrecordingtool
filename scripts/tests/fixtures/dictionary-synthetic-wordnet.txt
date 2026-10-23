@@ -1,0 +1,1 @@
+00000001 00 n 02 apple 0 synthetic_fruit 0 000 | a synthetic fruit; "a synthetic example"

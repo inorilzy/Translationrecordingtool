@@ -1,3 +1,7 @@
+// 工单09：划词翻译已取消“UI Automation 失败后自动模拟 Ctrl+C 并恢复剪贴板”的回退。
+// 原先仅供该回退使用的快照备份、所有权 token、恢复事务实现已删除；
+// 本模块只保留用户主动触发的剪贴板读写能力。
+
 pub fn read_clipboard(app: &tauri::AppHandle) -> Result<String, String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
 

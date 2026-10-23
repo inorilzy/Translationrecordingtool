@@ -66,6 +66,69 @@ pub struct Definition {
     pub antonyms: Option<Vec<String>>,
 }
 
+// Only explicitly recognized provider codes may enter logs or propagated errors.
+// Unknown strings can contain echoed credentials, input, or forged log lines.
+fn safe_youdao_error_code(code: &str) -> &str {
+    match code {
+        "0" | "101" | "102" | "103" | "104" | "105" | "106" | "107" | "108" | "109"
+        | "110" | "111" | "112" | "113" | "201" | "202" | "203" | "301" | "302"
+        | "303" | "304" | "401" | "411" | "412" => code,
+        _ => "unknown",
+    }
+}
+
+fn validate_youdao_response(result: &YoudaoResponse) -> Result<(), String> {
+    let code = safe_youdao_error_code(&result.error_code);
+    debug!(
+        "有道翻译 API 响应: 错误码 {}, 译文条数 {}",
+        code,
+        result.translation.as_ref().map_or(0, Vec::len)
+    );
+    if result.error_code != "0" {
+        let message = format!("翻译失败，错误码: {}", code);
+        error!("{}", message);
+        return Err(message);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod youdao_log_tests {
+    use super::*;
+
+    #[test]
+    fn response_logs_allow_only_known_codes_and_never_response_content() {
+        for (raw_code, safe_code) in [
+            ("SYNTHETIC_ERROR_CODE\nforged log", "unknown"),
+            ("401 SYNTHETIC_ERROR_CODE", "unknown"),
+            ("999999", "unknown"),
+            ("401", "401"),
+            ("0", "0"),
+        ] {
+            let response: YoudaoResponse = serde_json::from_value(serde_json::json!({
+                "errorCode": raw_code,
+                "translation": ["SYNTHETIC_TRANSLATION"],
+                "basic": {"phonetic": "SYNTHETIC_PHONETIC", "explains": ["SYNTHETIC_EXPLAINS"]}
+            })).unwrap();
+            let logs = crate::logger::capture_logs_for_test(|| {
+                let result = validate_youdao_response(&response);
+                if raw_code == "0" {
+                    assert!(result.is_ok());
+                } else {
+                    assert_eq!(result.unwrap_err(), format!("翻译失败，错误码: {}", safe_code));
+                }
+            });
+            assert!(logs.contains(&format!("有道翻译 API 响应: 错误码 {}, 译文条数 1", safe_code)));
+            if raw_code != "0" {
+                assert!(logs.contains(&format!("翻译失败，错误码: {}", safe_code)));
+            }
+            for marker in ["SYNTHETIC_ERROR_CODE", "forged log", "SYNTHETIC_TRANSLATION", "SYNTHETIC_PHONETIC", "SYNTHETIC_EXPLAINS", "999999"] {
+                assert!(!logs.contains(marker));
+            }
+        }
+    }
+}
+
 pub async fn translate_text(
     text: &str,
     app_key: &str,
@@ -111,24 +174,18 @@ pub async fn translate_text(
         .send()
         .await
         .map_err(|e| {
-            let err_msg = format!("有道翻译 API 请求失败: {}", e);
+            let err_msg = provider_http_error("有道翻译 API", "请求失败", e);
             error!("{}", err_msg);
             err_msg
         })?;
 
     let result: YoudaoResponse = response.json().await.map_err(|e| {
-        let err_msg = format!("有道翻译 API 解析响应失败: {}", e);
+        let err_msg = provider_http_error("有道翻译 API", "解析响应失败", e);
         error!("{}", err_msg);
         err_msg
     })?;
 
-    debug!("有道翻译 API 响应: {:?}", result);
-
-    if result.error_code != "0" {
-        let err_msg = format!("翻译失败，错误码: {}", result.error_code);
-        error!("{}", err_msg);
-        return Err(err_msg);
-    }
+    validate_youdao_response(&result)?;
 
     let translated_text = result
         .translation
@@ -181,21 +238,20 @@ pub async fn translate_with_microsoft(
     }
 
     let response = request.send().await.map_err(|e| {
-        let err_msg = format!("微软翻译 API 请求失败: {}", e);
+        let err_msg = provider_http_error("微软翻译 API", "请求失败", e);
         error!("{}", err_msg);
         err_msg
     })?;
 
     if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        let err_msg = format!("微软翻译 API 返回错误: {} {}", status, body);
+        // 工单03：错误响应体可能回显输入或账户信息，只保留 HTTP 状态码。
+        let err_msg = microsoft_status_error(response.status());
         error!("{}", err_msg);
         return Err(err_msg);
     }
 
     let result: Vec<MicrosoftTranslatorItem> = response.json().await.map_err(|e| {
-        let err_msg = format!("微软翻译 API 解析响应失败: {}", e);
+        let err_msg = provider_http_error("微软翻译 API", "解析响应失败", e);
         error!("{}", err_msg);
         err_msg
     })?;
@@ -236,9 +292,35 @@ struct GoogleTranslationItem {
     translated_text: Option<String>,
 }
 
+// Do not retain provider error details: they may echo credentials or user input.
 #[derive(Debug, Deserialize)]
-struct GoogleApiError {
-    message: Option<String>,
+struct GoogleApiError {}
+
+impl GoogleTranslateResponse {
+    fn service_error(&self, status: reqwest::StatusCode) -> Option<String> {
+        if self.error.is_some() || !status.is_success() {
+            Some(format!(
+                "Google 翻译 API 返回错误: HTTP {}",
+                status.as_u16()
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+fn google_http_error(stage: &str, error: reqwest::Error) -> String {
+    format!("Google 翻译 API {}: {}", stage, error.without_url())
+}
+
+/// 通用 provider HTTP 错误格式化：去除 URL（可能含查询单词或凭据），只保留阶段与错误类别。
+/// reqwest::Error 的 Display 不展开 source，因此不会带出响应体片段。
+fn provider_http_error(provider: &str, stage: &str, error: reqwest::Error) -> String {
+    format!("{} {}: {}", provider, stage, error.without_url())
+}
+
+fn microsoft_status_error(status: reqwest::StatusCode) -> String {
+    format!("微软翻译 API 返回错误: HTTP {}", status.as_u16())
 }
 
 pub async fn translate_with_google(
@@ -270,29 +352,19 @@ pub async fn translate_with_google(
         .send()
         .await
         .map_err(|e| {
-            let err_msg = format!("Google 翻译 API 请求失败: {}", e);
+            let err_msg = google_http_error("请求失败", e);
             error!("{}", err_msg);
             err_msg
         })?;
 
     let status = response.status();
     let result: GoogleTranslateResponse = response.json().await.map_err(|e| {
-        let err_msg = format!("Google 翻译 API 解析响应失败: {}", e);
+        let err_msg = google_http_error("解析响应失败", e);
         error!("{}", err_msg);
         err_msg
     })?;
 
-    if let Some(error) = result.error {
-        let message = error
-            .message
-            .unwrap_or_else(|| format!("HTTP {}", status.as_u16()));
-        let err_msg = format!("Google 翻译 API 返回错误: {}", message);
-        error!("{}", err_msg);
-        return Err(err_msg);
-    }
-
-    if !status.is_success() {
-        let err_msg = format!("Google 翻译 API 返回错误: HTTP {}", status.as_u16());
+    if let Some(err_msg) = result.service_error(status) {
         error!("{}", err_msg);
         return Err(err_msg);
     }
@@ -323,30 +395,34 @@ pub async fn fetch_free_dictionary_supplement(
 ) -> Result<Option<FreeDictionarySupplement>, String> {
     let url = format!("https://api.dictionaryapi.dev/api/v2/entries/en/{}", word);
 
-    debug!("查询 Free Dictionary API: {}", url);
+    // 工单03：URL 路径包含查询单词，日志只记录字符数。
+    debug!("查询 Free Dictionary API，单词字符数: {}", word.chars().count());
 
     let response = crate::http_client::shared_client()
         .get(&url)
         .send()
         .await
         .map_err(|e| {
-            let err_msg = format!("Free Dictionary API 请求失败: {}", e);
+            let err_msg = provider_http_error("Free Dictionary API", "请求失败", e);
             error!("{}", err_msg);
             err_msg
         })?;
 
     if !response.status().is_success() {
-        debug!("Free Dictionary API 未找到该单词");
+        debug!(
+            "Free Dictionary API 未找到该单词: HTTP {}",
+            response.status().as_u16()
+        );
         return Ok(None);
     }
 
     let results: Vec<FreeDictionaryResponse> = response.json().await.map_err(|e| {
-        let err_msg = format!("Free Dictionary API 解析响应失败: {}", e);
+        let err_msg = provider_http_error("Free Dictionary API", "解析响应失败", e);
         error!("{}", err_msg);
         err_msg
     })?;
 
-    debug!("Free Dictionary API 响应: {:?}", results);
+    debug!("Free Dictionary API 响应条目数: {}", results.len());
 
     let Some(first) = results.first() else {
         return Ok(None);
@@ -404,10 +480,11 @@ pub async fn fetch_free_dictionary_supplement(
         }
     }
 
+    // 音标/音频 URL 属于词条内容，只记录是否存在与数量。
     debug!(
-        "解析词典信息 - 音标: {:?}, 音频: {:?}, 释义数量: {}, 例句数量: {}, 近义词数量: {}",
-        phonetic,
-        audio_url,
+        "解析词典信息 - 有音标: {}, 有音频: {}, 释义数量: {}, 例句数量: {}, 近义词数量: {}",
+        phonetic.is_some(),
+        audio_url.is_some(),
         explains.len(),
         examples.len(),
         synonyms.len()
@@ -433,5 +510,130 @@ fn push_unique(items: &mut Vec<String>, value: String) {
         .any(|item| item.trim().eq_ignore_ascii_case(trimmed));
     if !exists {
         items.push(trimmed.to_string());
+    }
+}
+
+#[cfg(test)]
+mod google_error_tests {
+    use super::*;
+
+    const FAKE_KEY: &str = "audit-only key+/=&?";
+
+    fn assert_no_credential(message: &str) {
+        assert!(!message.contains(FAKE_KEY));
+        assert!(!message.contains(urlencoding::encode(FAKE_KEY).as_ref()));
+        assert!(!message.contains("?key="));
+    }
+
+    fn error_with_credential_url() -> reqwest::Error {
+        // Construct an error without sending a request or reading app settings.
+        let url = reqwest::Url::parse(&format!(
+            "https://translation.googleapis.com/language/translate/v2?key={}",
+            urlencoding::encode(FAKE_KEY)
+        ))
+        .unwrap();
+        reqwest::Client::new()
+            .get("http://[")
+            .build()
+            .unwrap_err()
+            .with_url(url)
+    }
+
+    #[test]
+    fn google_request_error_removes_credential_url() {
+        let error = error_with_credential_url();
+        assert!(error.to_string().contains("?key="));
+        let message = google_http_error("请求失败", error);
+        assert_no_credential(&message);
+        assert!(message.contains("请求失败"));
+    }
+
+    #[test]
+    fn google_decode_error_formatter_removes_credential_url() {
+        // Even if a reqwest version attaches a URL to a decode error, the same
+        // production formatter must remove it before logging or returning it.
+        let message = google_http_error("解析响应失败", error_with_credential_url());
+        assert_no_credential(&message);
+        assert!(message.contains("解析响应失败"));
+    }
+
+    #[test]
+    fn google_service_error_does_not_echo_provider_details() {
+        let response: GoogleTranslateResponse = serde_json::from_value(serde_json::json!({
+            "error": {
+                "message": format!("bad key: {} / ?key={}", FAKE_KEY, urlencoding::encode(FAKE_KEY)),
+                "details": [{"key": FAKE_KEY}]
+            }
+        }))
+        .unwrap();
+        for status in [reqwest::StatusCode::BAD_REQUEST, reqwest::StatusCode::OK] {
+            let message = response.service_error(status).unwrap();
+            assert_no_credential(&message);
+            assert_eq!(
+                message,
+                format!("Google 翻译 API 返回错误: HTTP {}", status.as_u16())
+            );
+        }
+    }
+
+    #[test]
+    fn google_service_error_handles_http_failure_without_error_body() {
+        let response: GoogleTranslateResponse = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            response
+                .service_error(reqwest::StatusCode::BAD_GATEWAY)
+                .as_deref(),
+            Some("Google 翻译 API 返回错误: HTTP 502")
+        );
+        assert!(response.service_error(reqwest::StatusCode::OK).is_none());
+    }
+}
+
+#[cfg(test)]
+mod log_privacy_tests {
+    use super::*;
+
+    const WORD_MARKER: &str = "syntheticwordmarkerzx";
+
+    #[test]
+    fn provider_http_error_removes_url_with_query_word() {
+        // 构造携带含单词路径 URL 的 reqwest 错误，不发送任何请求。
+        let url = reqwest::Url::parse(&format!(
+            "https://api.dictionaryapi.dev/api/v2/entries/en/{WORD_MARKER}"
+        ))
+        .unwrap();
+        let error = reqwest::Client::new()
+            .get("http://[")
+            .build()
+            .unwrap_err()
+            .with_url(url);
+        assert!(error.to_string().contains(WORD_MARKER), "前置条件：原始错误带 URL");
+        let message = provider_http_error("Free Dictionary API", "请求失败", error);
+        assert!(!message.contains(WORD_MARKER), "{message}");
+        assert!(!message.contains("dictionaryapi.dev"), "{message}");
+        assert!(message.starts_with("Free Dictionary API 请求失败"));
+    }
+
+    #[test]
+    fn microsoft_status_error_keeps_only_status_code() {
+        assert_eq!(
+            microsoft_status_error(reqwest::StatusCode::UNAUTHORIZED),
+            "微软翻译 API 返回错误: HTTP 401"
+        );
+    }
+
+    /// 静态守卫：生产代码不得再以 Debug 格式整体输出 provider 响应结构。
+    #[test]
+    fn production_code_does_not_debug_print_whole_responses() {
+        let source = include_str!("translator.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        for forbidden in [
+            concat!("响应: {:?}\", ", "result"),
+            concat!("响应: {:?}\", ", "results"),
+            concat!("API: {}\", ", "url"),
+            concat!("response.", "text()"),
+        ] {
+            assert!(!production.contains(forbidden), "仍包含 {forbidden}");
+        }
     }
 }

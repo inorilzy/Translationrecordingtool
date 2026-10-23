@@ -312,9 +312,11 @@ describe('useSettingsStore', () => {
   describe('getOcrServiceStatus', () => {
     it('loads OCR service status from backend', async () => {
       const status = {
-        running: true,
-        message: '原生 ONNX OCR 可用',
+        initialized: true,
+        state: 'ready',
+        message: '原生 ONNX OCR 已就绪',
         lastError: null,
+        initializedProfile: 'small',
         engine: 'native_onnx',
         modelProfile: 'small',
         modelDir: null,

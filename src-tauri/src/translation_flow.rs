@@ -78,10 +78,11 @@ where
     )?;
 
     let is_word = is_single_word(text);
+    // 工单03：日志不记录原文，只保留类型和字符数作为诊断信息。
     info!(
-        "翻译文本: {}, 类型: {}",
-        text,
-        if is_word { "单词" } else { "句子" }
+        "开始翻译，类型: {}, 字符数: {}",
+        if is_word { "单词" } else { "句子" },
+        text.chars().count()
     );
 
     if is_word {
@@ -117,6 +118,7 @@ where
                     }
                 }
                 Err(error) => {
+                    // 补全错误由 translator 生成且已去除 URL（URL 路径含查询单词）。
                     warn!("Free Dictionary 补全失败: {}", error);
                     local_result
                 }
@@ -564,30 +566,36 @@ mod tests {
 
     #[test]
     fn local_lookup_error_stops_before_online_collaborators() {
-        tauri::async_runtime::block_on(async {
-            let dictionary = FakeDictionary {
-                local: None,
-                local_error: Some("local database unavailable".to_string()),
-                supplements: Mutex::new(VecDeque::from([Ok(None)])),
-            };
-            let providers = FakeProviders::default();
+        for error_message in [
+            "本地词典资源不可用，请重新安装或检查 dictionary.db",
+            "local database unavailable",
+        ] {
+            tauri::async_runtime::block_on(async {
+                let dictionary = FakeDictionary {
+                    local: None,
+                    local_error: Some(error_message.to_string()),
+                    supplements: Mutex::new(VecDeque::from([Ok(None)])),
+                };
+                let providers = FakeProviders::default();
 
-            let error = resolve_translation(
-                &dictionary,
-                &providers,
-                &TranslationConfig::default(),
-                "hello",
-                |_| Ok(()),
-                || false,
-            )
-            .await
-            .unwrap_err()
-            .into_message();
+                let error = resolve_translation(
+                    &dictionary,
+                    &providers,
+                    &TranslationConfig::default(),
+                    "hello",
+                    |_| Ok(()),
+                    || false,
+                )
+                .await
+                .unwrap_err()
+                .into_message();
 
-            assert_eq!(error, "local database unavailable");
-            assert_eq!(dictionary.supplements.lock().len(), 1);
-            assert!(providers.calls.lock().is_empty());
-        });
+                // 缺资源和读取失败都必须 fail-fast：不得请求在线词典或翻译服务。
+                assert_eq!(error, error_message);
+                assert_eq!(dictionary.supplements.lock().len(), 1);
+                assert!(providers.calls.lock().is_empty());
+            });
+        }
     }
 
     #[test]
@@ -649,5 +657,85 @@ mod tests {
                 "未找到单词 \"hello\" 的释义；在线翻译回退失败: provider unavailable"
             );
         });
+    }
+
+    /// 工单03：成功/失败/本地命中三条路径的日志都不得包含原文或译文 marker。
+    /// 只捕获内存日志，不读取任何真实日志文件。
+    #[test]
+    fn resolution_logs_omit_source_and_translation_markers() {
+        const SOURCE_MARKER: &str = "syntheticsourcemarkerqz";
+        const SENTENCE_MARKER: &str = "SYNTHETIC_SENTENCE_MARKER_91c2";
+        const TRANSLATION_MARKER: &str = "SYNTHETIC_TRANSLATION_MARKER_5be0";
+
+        let logs = crate::logger::capture_logs_for_test(|| {
+            tauri::async_runtime::block_on(async {
+                let config = TranslationConfig {
+                    youdao_app_key: "key".to_string(),
+                    youdao_app_secret: "secret".to_string(),
+                    ..TranslationConfig::default()
+                };
+
+                // 句子 → 远程成功
+                let providers = FakeProviders {
+                    youdao: Mutex::new(VecDeque::from([Ok(remote_content(TRANSLATION_MARKER))])),
+                    ..FakeProviders::default()
+                };
+                let sentence = format!("{SENTENCE_MARKER} private sentence");
+                let result = resolve_translation(
+                    &FakeDictionary::default(),
+                    &providers,
+                    &config,
+                    &sentence,
+                    |_| Ok(()),
+                    || false,
+                )
+                .await
+                .unwrap();
+                assert_eq!(result.translated_text, TRANSLATION_MARKER);
+
+                // 单词 → 本地命中，补全失败
+                let mut entry = local_entry();
+                entry.translated_text = TRANSLATION_MARKER.to_string();
+                let dictionary = FakeDictionary {
+                    local: Some(entry),
+                    local_error: None,
+                    supplements: Mutex::new(VecDeque::from([Err("network down".to_string())])),
+                };
+                resolve_translation(
+                    &dictionary,
+                    &FakeProviders::default(),
+                    &config,
+                    SOURCE_MARKER,
+                    |_| Ok(()),
+                    || false,
+                )
+                .await
+                .unwrap();
+
+                // 单词 → 本地未命中，词典无结果，远程失败
+                let providers = FakeProviders {
+                    youdao: Mutex::new(VecDeque::from([Err("provider unavailable".to_string())])),
+                    ..FakeProviders::default()
+                };
+                let error = resolve_translation(
+                    &FakeDictionary::default(),
+                    &providers,
+                    &config,
+                    SOURCE_MARKER,
+                    |_| Ok(()),
+                    || false,
+                )
+                .await
+                .unwrap_err()
+                .into_message();
+                // 返回给 UI 的错误仍可包含单词（不是日志），这里只确认路径确实走到失败分支。
+                assert!(error.contains(SOURCE_MARKER));
+            });
+        });
+
+        assert!(logs.contains("字符数"), "日志应被捕获: {logs}");
+        for marker in [SOURCE_MARKER, SENTENCE_MARKER, TRANSLATION_MARKER] {
+            assert!(!logs.contains(marker), "日志泄露 {marker}: {logs}");
+        }
     }
 }

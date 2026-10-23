@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
+import { useMainWindowRevalidation } from '../lib/main-window-revalidation'
 import { useRouter } from 'vue-router'
 import { useTranslationStore } from '../stores/translation'
 import EmptyState from '../components/EmptyState.vue'
@@ -9,13 +10,10 @@ const router = useRouter()
 const store = useTranslationStore()
 const favorites = ref<Translation[]>([])
 
-onMounted(async () => {
-  await loadFavorites()
+const loadFavorites = useMainWindowRevalidation(async (isCurrent) => {
+  const records = await store.loadFavorites(isCurrent)
+  if (records !== null && isCurrent()) favorites.value = records
 })
-
-async function loadFavorites() {
-  favorites.value = await store.loadFavorites()
-}
 
 function goToDetail(id: number | undefined) {
   if (id) {
@@ -30,8 +28,9 @@ function formatTime(timestamp: number) {
 async function removeFavorite(id: number | undefined, event: Event) {
   event.stopPropagation()
   if (id) {
-    await store.toggleFavorite(id, false)
-    await loadFavorites()
+    if (await store.toggleFavorite(id, false)) {
+      await loadFavorites()
+    }
   }
 }
 </script>
@@ -42,13 +41,15 @@ async function removeFavorite(id: number | undefined, event: Event) {
       <h1>收藏列表</h1>
     </div>
 
+    <div v-if="store.error" class="error-message" role="alert">{{ store.error }}</div>
+
     <EmptyState
-      v-if="favorites.length === 0"
+      v-if="favorites.length === 0 && !store.error"
       message="暂无收藏"
       icon="⭐"
     />
 
-    <div v-else class="favorites-grid">
+    <div v-else-if="favorites.length > 0" class="favorites-grid">
       <div
         v-for="item in favorites"
         :key="item.id"

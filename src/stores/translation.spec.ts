@@ -148,6 +148,70 @@ describe('useTranslationStore', () => {
     })
   })
 
+  describe('translation busy ownership', () => {
+    it.each(['text', 'clipboard', 'image', 'screenshot'] as const)(
+      'rejects competing entries while %s owns loading',
+      async (entry) => {
+        const pending = deferred<Translation | number | { requestId: number; imageBase64: string }>()
+        invokeMock.mockImplementationOnce(() => pending.promise)
+        const store = useTranslationStore()
+        const previous = createTranslationRecord({ id: 20, sourceText: 'previous' })
+        const completed = createTranslationRecord({ id: 21, sourceText: 'first' })
+        store.currentTranslation = previous
+        const first = entry === 'text' ? store.translateText('first')
+          : entry === 'clipboard' ? store.translateFromClipboard()
+            : entry === 'image' ? store.translateImage('image')
+              : store.translateScreenshot()
+
+        expect(store.loading).toBe(true)
+        await expect(store.translateText('second')).resolves.toBeNull()
+        await expect(store.translateFromClipboard()).resolves.toBeNull()
+        await expect(store.translateImage('second image')).resolves.toBeNull()
+        await expect(store.translateScreenshot()).resolves.toBeNull()
+        expect(invokeMock).toHaveBeenCalledTimes(1)
+        expect(store.loading).toBe(true)
+        expect(store.currentTranslation).toEqual(previous)
+        expect(store.history).toEqual([])
+
+        if (entry === 'image' || entry === 'screenshot') {
+          invokeMock.mockResolvedValueOnce({
+            imageBase64: 'image', imageWidth: 10, imageHeight: 10, blocks: [], record: completed,
+          })
+          pending.resolve(entry === 'image' ? 21 : { requestId: 21, imageBase64: 'image' })
+        } else {
+          pending.resolve(completed)
+        }
+        await expect(first).resolves.toEqual(completed)
+        expect(store.loading).toBe(false)
+        expect(store.currentTranslation).toEqual(completed)
+        expect(store.history).toEqual([completed])
+
+        invokeMock.mockResolvedValueOnce(previous)
+        await expect(store.translateText('next')).resolves.toEqual(previous)
+        expect(store.loading).toBe(false)
+        expect(store.error).toBe('')
+      },
+    )
+
+    it.each(['text', 'clipboard'] as const)('releases busy after %s fails', async (entry) => {
+      const pending = deferred<Translation>()
+      invokeMock.mockImplementationOnce(() => pending.promise)
+      const store = useTranslationStore()
+      const first = entry === 'text' ? store.translateText('first') : store.translateFromClipboard()
+      await expect(store.translateText('second')).resolves.toBeNull()
+      expect(store.loading).toBe(true)
+      expect(invokeMock).toHaveBeenCalledTimes(1)
+      pending.reject(new Error('provider failed'))
+      await expect(first).resolves.toBeNull()
+      expect(store.loading).toBe(false)
+      expect(store.error).toBe('翻译失败: provider failed')
+      const record = createTranslationRecord({})
+      invokeMock.mockResolvedValueOnce(record)
+      await expect(store.translateFromClipboard()).resolves.toEqual(record)
+      expect(store.error).toBe('')
+    })
+  })
+
   describe('translateImage', () => {
     it('starts an image request and uses the backend-persisted record', async () => {
       const persisted = createTranslationRecord({ id: 9, sourceText: 'pasted image text' })
@@ -377,13 +441,13 @@ describe('useTranslationStore', () => {
       expect(store.error).toBe('')
     })
 
-    it('returns empty array and sets error on failure', async () => {
+    it('returns null and sets error on failure without claiming an empty list', async () => {
       invokeMock.mockRejectedValueOnce(new Error('load favorites failed'))
 
       const store = useTranslationStore()
       const result = await store.loadFavorites()
 
-      expect(result).toEqual([])
+      expect(result).toBeNull()
       expect(store.error).toContain('加载收藏列表失败')
     })
   })
@@ -419,7 +483,7 @@ describe('useTranslationStore', () => {
       store.history = [record]
       store.currentTranslation = record
 
-      await store.toggleFavorite(1, true)
+      await expect(store.toggleFavorite(1, true)).resolves.toBe(true)
 
       expect(invokeMock).toHaveBeenCalledWith('toggle_favorite', {
         id: 1,
@@ -446,15 +510,23 @@ describe('useTranslationStore', () => {
       expect(store.currentTranslation?.is_favorite).toBe(0)
     })
 
-    it('sets error state when toggle_favorite rejects', async () => {
+    it.each([0, 1])('preserves favorite=%s on failure and clears errors after retry', async (isFavorite) => {
       invokeMock.mockRejectedValueOnce(new Error('toggle failed'))
-
       const store = useTranslationStore()
-      store.history = [createTranslationRecord({ id: 1 })]
+      const record = createTranslationRecord({ id: 1, isFavorite })
+      store.history = [record]
+      store.currentTranslation = record
 
-      await store.toggleFavorite(1, true)
-
+      await expect(store.toggleFavorite(1, !isFavorite)).resolves.toBe(false)
       expect(store.error).toContain('更新收藏状态失败')
+      expect(store.history[0].is_favorite).toBe(isFavorite)
+      expect(store.currentTranslation.is_favorite).toBe(isFavorite)
+
+      invokeMock.mockResolvedValueOnce(undefined)
+      await expect(store.toggleFavorite(1, !isFavorite)).resolves.toBe(true)
+      expect(store.history[0].is_favorite).toBe(isFavorite ? 0 : 1)
+      expect(store.currentTranslation.is_favorite).toBe(isFavorite ? 0 : 1)
+      expect(store.error).toBe('')
     })
   })
 

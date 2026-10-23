@@ -86,6 +86,30 @@ describe('TranslatePage mounted interactions', () => {
     expect(translationStore.translateText).toHaveBeenCalledWith('hello world')
   })
 
+  it.each(['ctrlKey', 'metaKey'] as const)('blocks repeated %s submissions while busy', async (modifier) => {
+    let finish!: () => void
+    vi.mocked(translationStore.translateText).mockImplementationOnce(async () => {
+      translationStore.loading = true
+      await new Promise<void>((resolve) => { finish = resolve })
+      translationStore.loading = false
+      return null
+    })
+    const wrapper = await mountPage()
+    await wrapper.get('textarea').setValue('first')
+    await wrapper.get('textarea').trigger('keydown', { key: 'Enter', [modifier]: true })
+    await wrapper.get('textarea').setValue('second')
+    await wrapper.get('textarea').trigger('keydown', { key: 'Enter', ctrlKey: true })
+    await wrapper.get('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+    expect(translationStore.translateText).toHaveBeenCalledTimes(1)
+    expect(translationStore.translateText).toHaveBeenCalledWith('first')
+    expect(translationStore.loading).toBe(true)
+    finish()
+    await vi.waitFor(() => expect(translationStore.loading).toBe(false))
+    await wrapper.get('textarea').trigger('keydown', { key: 'Enter', [modifier]: true })
+    expect(translationStore.translateText).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
   it('does not submit blank text and keeps translate button disabled', async () => {
     const wrapper = await mountPage()
     const button = wrapper.get('.translate-btn')

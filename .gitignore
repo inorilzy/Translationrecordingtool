@@ -15,6 +15,7 @@ dist-ssr
 src-tauri/resources/dictionary.db
 src-tauri/binaries/*.exe
 src-tauri/binaries/*.dll
+src-tauri/binaries/.ort-staging-*/
 !src-tauri/binaries/.gitkeep
 .ocr-sidecar-build/
 .ocr-model-cache/

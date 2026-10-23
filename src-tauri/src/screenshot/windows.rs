@@ -16,8 +16,7 @@ use windows_sys::Win32::{
     Graphics::Gdi::{
         BitBlt, CreateCompatibleDC, CreateDIBSection, CreateSolidBrush, DeleteDC, DeleteObject,
         SelectObject, AC_SRC_ALPHA, AC_SRC_OVER, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
-        BLENDFUNCTION, CAPTUREBLT, DIB_RGB_COLORS, HBITMAP, HBRUSH, HDC, HGDIOBJ, RGBQUAD,
-        SRCCOPY,
+        BLENDFUNCTION, CAPTUREBLT, DIB_RGB_COLORS, HBITMAP, HBRUSH, HDC, HGDIOBJ, RGBQUAD, SRCCOPY,
     },
     System::LibraryLoader::GetModuleHandleW,
     UI::{
@@ -25,17 +24,17 @@ use windows_sys::Win32::{
         Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, VK_ESCAPE, VK_RETURN},
         WindowsAndMessaging::{
             CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-            GetSystemMetrics, GetWindowLongPtrW, LoadCursorW, PostQuitMessage,
-            RegisterClassExW, SetCursor, SetForegroundWindow, SetLayeredWindowAttributes,
-            SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, UnregisterClassW,
-            UpdateLayeredWindow, CREATESTRUCTW, CS_DBLCLKS, GWLP_USERDATA, HCURSOR, IDC_CROSS,
-            IDC_HAND, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
-            LWA_ALPHA, MSG, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
-            SM_YVIRTUALSCREEN, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW,
-            SW_HIDE, SW_SHOW, ULW_ALPHA, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-            WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_RBUTTONDOWN,
-            WM_SETCURSOR, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-            WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
+            GetSystemMetrics, GetWindowLongPtrW, LoadCursorW, PostQuitMessage, RegisterClassExW,
+            SetCursor, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW,
+            SetWindowPos, ShowWindow, TranslateMessage, UnregisterClassW, UpdateLayeredWindow,
+            CREATESTRUCTW, CS_DBLCLKS, GWLP_USERDATA, HCURSOR, IDC_CROSS, IDC_HAND, IDC_SIZEALL,
+            IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LWA_ALPHA, MSG, SM_CXVIRTUALSCREEN,
+            SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_HIDEWINDOW,
+            SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW, ULW_ALPHA, WM_KEYDOWN,
+            WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE,
+            WM_NCDESTROY, WM_RBUTTONDOWN, WM_SETCURSOR, WNDCLASSEXW, WS_EX_LAYERED,
+            WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+            WS_VISIBLE,
         },
     },
 };
@@ -877,9 +876,7 @@ fn hit_resize_handle(rect: NativeRect, point: NativePoint) -> Option<ResizeHandl
     ];
 
     handles.iter().find_map(|(handle, x, y)| {
-        if (point.x - *x).abs() <= HANDLE_HIT_RADIUS
-            && (point.y - *y).abs() <= HANDLE_HIT_RADIUS
-        {
+        if (point.x - *x).abs() <= HANDLE_HIT_RADIUS && (point.y - *y).abs() <= HANDLE_HIT_RADIUS {
             Some(*handle)
         } else {
             None
@@ -1041,8 +1038,7 @@ unsafe fn move_window_relative(hwnd: HWND, bounds: NativeBounds, rect: NativeRec
 }
 
 unsafe fn move_window(hwnd: HWND, x: i32, y: i32, width: i32, height: i32, show: bool) {
-    let flags =
-        SWP_NOZORDER | SWP_NOACTIVATE | if show { SWP_SHOWWINDOW } else { SWP_HIDEWINDOW };
+    let flags = SWP_NOZORDER | SWP_NOACTIVATE | if show { SWP_SHOWWINDOW } else { SWP_HIDEWINDOW };
     SetWindowPos(hwnd, null_mut(), x, y, width.max(0), height.max(0), flags);
 }
 
@@ -1107,10 +1103,7 @@ fn toolbar_rect_for_selection(selection: NativeRect, bounds: NativeBounds) -> Na
     }
 }
 
-fn toolbar_button_at(
-    state: &NativeSelectionState,
-    point: NativePoint,
-) -> Option<ToolbarButton> {
+fn toolbar_button_at(state: &NativeSelectionState, point: NativePoint) -> Option<ToolbarButton> {
     let rect = state.toolbar_rect?;
     if !rect.contains(point) {
         return None;

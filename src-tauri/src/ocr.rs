@@ -5,7 +5,7 @@ use tracing::{info, warn};
 
 use crate::{
     native_ocr,
-    ocr_contracts::{OcrRuntimeConfig, OcrServiceStatus, OCR_DEVICE, OCR_LANG, PPOCR_VERSION},
+    ocr_contracts::{OcrRuntimeConfig, OcrServiceStatus},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,11 +58,9 @@ pub async fn ensure_running(app: &AppHandle, config: &OcrRuntimeConfig) -> Resul
     let _ = adapter_kind(&config.engine);
     let app = app.clone();
     let config = config.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        native_ocr::ensure_initialized(&app, &config)
-    })
-    .await
-    .map_err(|error| format!("原生 OCR 初始化任务失败: {}", error))?
+    tauri::async_runtime::spawn_blocking(move || native_ocr::ensure_initialized(&app, &config))
+        .await
+        .map_err(|error| format!("原生 OCR 初始化任务失败: {}", error))?
 }
 
 pub async fn warmup(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<String, String> {
@@ -83,28 +81,15 @@ pub fn log_path(_app: &AppHandle, _config: &OcrRuntimeConfig) -> Result<PathBuf,
 
 fn native_status(app: &AppHandle, config: &OcrRuntimeConfig) -> OcrServiceStatus {
     let (model_profile, model_dir) = native_ocr::model_status(app, &config.model_profile);
-    let running = model_dir.is_some();
-    OcrServiceStatus {
-        running,
-        message: if running {
-            "原生 ONNX OCR 可用".to_string()
-        } else {
-            "未找到 PP-OCRv6 ONNX 模型目录".to_string()
-        },
-        last_error: if running {
-            None
-        } else {
-            Some("请先下载 PP-OCRv6 ONNX 模型".to_string())
-        },
-        engine: native_ocr::engine_name().to_string(),
+    let mut status = OcrServiceStatus::from_snapshot(
+        &native_ocr::engine_snapshot(app, &config.model_profile),
         model_profile,
-        model_dir: model_dir.as_ref().map(|path| path.display().to_string()),
-        preload_on_startup: config.preload_on_startup,
-        ppocr_version: PPOCR_VERSION,
-        onnxruntime_version: native_ocr::onnx_runtime_version(),
-        lang: OCR_LANG,
-        device: OCR_DEVICE,
-    }
+        model_dir.as_ref().map(|path| path.display().to_string()),
+    );
+    status.engine = native_ocr::engine_name().to_string();
+    status.preload_on_startup = config.preload_on_startup;
+    status.onnxruntime_version = native_ocr::onnx_runtime_version().to_string();
+    status
 }
 
 #[cfg(test)]

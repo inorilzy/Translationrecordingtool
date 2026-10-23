@@ -16,7 +16,7 @@
 
 - 划词翻译：默认快捷键 `Ctrl+Q`。
 - 无剪贴板优先：Windows 下优先使用 UI Automation 直接读取当前选中文本。
-- 剪贴板兜底：如果目标应用不支持 UI Automation，会临时模拟 `Ctrl+C`，读取后尽量恢复原文本剪贴板。
+- 安全取词：如果目标应用不支持 UI Automation，不自动模拟 `Ctrl+C` 或恢复剪贴板；请手动复制后使用剪贴板翻译，或使用截图 OCR。
 - 截图 OCR 翻译：默认快捷键 `Ctrl+Shift+Q`，截图后 OCR、翻译并弹出结果卡片。
 - OCR 原文回填：截图 OCR 识别出的文本会同步到主界面输入框，方便手动修正。
 - 本地词典优先：单词优先查本地 `ECDICT + WordNet`，再用 Free Dictionary 补全音标、例句等信息。
@@ -96,7 +96,7 @@ flowchart TB
   Commands --> Storage[本地存储]
 
   Selection --> UIA[Windows UI Automation]
-  Selection --> Clipboard[剪贴板回退]
+  Commands --> Clipboard[用户主动剪贴板翻译]
   OCR --> Runtime[ONNX Runtime + PP-OCRv6 Small]
   Translate --> Microsoft[Microsoft Translator]
   Translate --> Youdao[有道翻译]
@@ -131,7 +131,7 @@ translation-tool_0.2.1_x64-setup.exe
 1. 在任意应用中选中文字。
 2. 按 `Ctrl+Q`。
 3. 应用优先尝试通过 Windows UI Automation 读取选中文本。
-4. 如果读取失败，自动回退到临时 `Ctrl+C` 并恢复原文本剪贴板。
+4. 如果读取失败，提示手动复制后使用剪贴板翻译；应用不会自动注入复制按键或回滚剪贴板。
 5. 翻译结果会以弹窗卡片展示。
 
 ```mermaid
@@ -139,11 +139,9 @@ flowchart TD
   A[按下划词翻译快捷键] --> B[尝试 UI Automation 读取选中文本]
   B --> C{读取成功?}
   C -->|是| D[翻译并弹出结果]
-  C -->|否| E[保存原文本剪贴板]
-  E --> F[模拟 Ctrl+C]
-  F --> G[读取剪贴板文本]
-  G --> H[恢复原文本剪贴板]
-  H --> D
+  C -->|否| E[提示手动复制或截图 OCR]
+  E --> F[用户主动触发剪贴板翻译]
+  F --> D
 ```
 
 注意：UI Automation 依赖目标软件暴露选区文本。浏览器、系统输入框、Office、标准控件通常支持较好；图片、视频字幕、游戏、自绘 UI、部分 PDF 页面仍建议用截图 OCR。
@@ -208,8 +206,8 @@ Translationrecordingtool/
 
 需要：
 
-- Node.js 18+
-- Rust stable
+- Node.js ≥24.0.0（推荐 24 LTS；当前仅实测 24.14.1）。package.json 的 engines 要求 `>=24.0.0`，开启 engine-strict 时会拒绝 20/22。部分上游依赖仍声明 20/22 的 engine 范围，但本项目不将 20/22 列为受支持版本。
+- Rust stable ≥1.90（当前 Tauri 配套依赖要求；不代表已实测所有符合该范围的工具链）
 - Tauri 2 Windows 依赖
 - PowerShell
 
@@ -218,6 +216,14 @@ Translationrecordingtool/
 ```bash
 npm install
 ```
+
+### 准备模型、运行库和词典
+
+个人使用直接运行下面的准备命令即可，**不需要 `release-assets.json` 或人工审批**。默认从官方固定版本/revision 下载，保留临时下载、格式检查和失败不覆盖原文件的保护；OCR 模型只准备 `small`，并核对内置的官方来源 SHA-256。
+
+ONNX Runtime 固定为 Windows x64 1.20.1，检查下载包大小、指定 DLL 和文件版本；ECDICT 固定 commit，WordNet 固定 3.0，检查输入结构后再生成词典。上游没有提供可用摘要的文件不伪造校验值，也不宣称已做独立供应链认证。
+
+如需更严格的自定义校验，可显式传入 `-ManifestPath`（PowerShell）或 `--manifest`（词典）。这只是高级可选模式：指定了无效/缺失清单或 synthetic 测试清单会报错，默认流程不会读取它。
 
 生成本地词典：
 
@@ -273,11 +279,15 @@ npm run tauri:build:ocr:native  # 打包 native ONNX OCR 版本
 npm run build                   # 前端构建
 npm run test                    # 前端单元测试
 npm run tauri dev               # 普通 Tauri 开发模式
-cargo check                     # Rust 编译检查
-cargo test                      # Rust 测试
+npm run check:rust -- --locked # Rust 测试环境编译检查
+npm run test:rust -- --locked  # Rust 测试（无需发布资源）
+npm run test:rust-wrapper      # 测试入口自身回归
+npm run test:dependencies      # 合成依赖兼容测试与本地浏览器 HMR
 ```
 
-当前产品仅支持原生 ONNX OCR；不再提供 Paddle/Rapid sidecar 打包路径。
+当前产品仅支持原生 ONNX OCR 的 `small` profile；旧配置中的其他 profile 在加载时统一迁移为 `small`，不再提供 Paddle/Rapid sidecar 打包路径。
+
+`test:rust`/`check:rust` 只给 Cargo 子进程合并 `TAURI_CONFIG.bundle.resources=[]`，不会修改正式打包配置，也不会生成假的资源文件。其他已有配置字段和 `CARGO_TARGET_DIR` 保持继承；磁盘空间不足时可由调用者指定构建目录。发布构建仍必须准备真实词典、模型及 DLL；测试通过不代表发布资产完整。
 
 ## 数据存储
 
@@ -298,17 +308,18 @@ cargo test                      # Rust 测试
 
 ## 已知限制
 
-- UI Automation 不能覆盖所有应用。读不到选中文字时会回退到临时复制。
-- 当前只尽量恢复文本剪贴板；如果剪贴板原来是图片或复杂富文本，暂未做完整格式级别保留。
+- UI Automation 不能覆盖所有应用。读不到选中文字时需要手动复制后触发剪贴板翻译，或改用截图 OCR。
+- 为避免覆盖用户并发复制的内容，已取消划词失败后的自动复制及剪贴板恢复。主动复制译文等明确操作仍会写入剪贴板。
 - 截图 OCR 依赖模型能力，复杂背景、小字号、低清晰度图片可能需要手动修正。
 - 句子翻译和部分在线补全能力需要外部 API Key。
-- 当前主要面向 Windows，其他平台能力尚未完整验证。
+- 当前正式支持范围为 Windows；Linux/macOS 分支保留，但未完成对应目标编译及原生行为验证，不承诺可用于生产。
 
 ## 隐私说明
 
 - 历史记录、收藏和配置默认保存在本机。
-- 单词优先查本地词典。
+- 单词优先查本地词典；词典资源缺失或读取失败会明确报错，不自动向在线服务降级。正常查无词仍按既有流程调用在线服务。
 - 句子翻译、本地未命中、截图 OCR 后的翻译会调用当前配置的在线翻译服务。
+- 运行日志不记录原文、译文、完整服务响应或敏感查询 URL；历史记录与运行日志是不同的数据存储。
 - API Key 只应保存在本机配置中，不要提交到 Git。
 
 ## 许可证

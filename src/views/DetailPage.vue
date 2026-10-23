@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch } from 'vue'
+import { useMainWindowRevalidation } from '../lib/main-window-revalidation'
 import { useRouter, useRoute } from 'vue-router'
 import { useTranslationStore } from '../stores/translation'
 import type { Translation } from '../stores/translation'
@@ -9,9 +10,15 @@ const route = useRoute()
 const store = useTranslationStore()
 const translation = ref<Translation | null>(null)
 
-onMounted(async () => {
+const refresh = useMainWindowRevalidation(async (isCurrent) => {
   const id = parseInt(route.params.id as string)
-  translation.value = await store.getTranslationById(id)
+  const record = await store.getTranslationById(id, isCurrent)
+  if (record !== null && isCurrent()) translation.value = record
+})
+
+watch(() => route.params.id, () => {
+  translation.value = null
+  void refresh()
 })
 
 function goBack() {
@@ -23,10 +30,12 @@ function formatTime(timestamp: number) {
 }
 
 async function toggleFavorite() {
-  if (translation.value && translation.value.id) {
-    const newState = !translation.value.is_favorite
-    await store.toggleFavorite(translation.value.id, newState)
-    translation.value.is_favorite = newState ? 1 : 0
+  const record = translation.value
+  if (record?.id) {
+    const newState = !record.is_favorite
+    if (await store.toggleFavorite(record.id, newState) && translation.value === record) {
+      record.is_favorite = newState ? 1 : 0
+    }
   }
 }
 
@@ -47,6 +56,8 @@ async function copyTranslation() {
       <button @click="goBack" class="btn-secondary back-btn">← 返回</button>
       <h1>翻译详情</h1>
     </div>
+
+    <div v-if="store.error" class="error-message" role="alert">{{ store.error }}</div>
 
     <div v-if="!translation" class="loading">加载中...</div>
 

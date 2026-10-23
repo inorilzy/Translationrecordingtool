@@ -108,13 +108,31 @@ const providerStatusType = computed(() => (
 
 const ocrStatusType = computed(() => {
   if (ocrStatusLoading.value) return 'info'
-  return ocrStatus.value?.running ? 'success' : 'warning'
+  switch (ocrStatus.value?.state) {
+    case 'ready':
+      return 'success'
+    case 'failed':
+      return 'error'
+    default:
+      return 'warning'
+  }
 })
 
 const ocrStatusText = computed(() => {
   if (ocrStatusLoading.value) return '检查中'
   if (!ocrStatus.value) return '未检查'
-  return ocrStatus.value.running ? '运行中' : '未运行'
+  switch (ocrStatus.value.state) {
+    case 'ready':
+      return '运行中'
+    case 'failed':
+      return '初始化失败'
+    case 'initializing':
+      return '初始化中'
+    case 'notInitialized':
+      return '未初始化'
+    default:
+      return '未运行'
+  }
 })
 
 const ocrVersionText = computed(() => {

@@ -1,10 +1,13 @@
 use crate::{
-    ocr_contracts::{normalize_engine, normalize_model_profile, OcrRuntimeConfig},
+    ocr_contracts::{
+        normalize_engine, normalize_model_profile, OcrRuntimeConfig, SUPPORTED_OCR_MODEL_PROFILE,
+    },
     translation_domain::TranslationConfig,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::{self, Write},
     path::{Path, PathBuf},
 };
 
@@ -13,7 +16,8 @@ pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Ctrl+Shift+Q";
 pub const DEFAULT_THEME: &str = "light";
 pub const DEFAULT_OCR_ENDPOINT: &str = "http://127.0.0.1:8866/ocr";
 pub const DEFAULT_OCR_ENGINE: &str = "native_onnx";
-pub const DEFAULT_OCR_MODEL_PROFILE: &str = "small";
+// 工单 21：small 是唯一正式 OCR profile，默认值与契约常量同源。
+pub const DEFAULT_OCR_MODEL_PROFILE: &str = SUPPORTED_OCR_MODEL_PROFILE;
 const SETTINGS_FILE_NAME: &str = "settings.json";
 
 /// Canonical application settings record.
@@ -85,11 +89,18 @@ impl SettingsRecord {
     }
 
     pub fn normalize_product_ocr_runtime(&mut self) {
-        self.ocr_engine = normalize_engine(&self.ocr_engine).to_string();
-        self.ocr_model_profile = normalize_model_profile(&self.ocr_model_profile);
-        if self.ocr_engine == "unknown" {
-            self.ocr_engine = DEFAULT_OCR_ENGINE.to_string();
-        }
+        normalize_product_ocr_fields(&mut self.ocr_engine, &mut self.ocr_model_profile);
+    }
+}
+
+/// 工单 21：OCR 引擎/profile 的产品归一规则唯一实现。
+/// settings 加载（`normalize_product_ocr_runtime`）与 `update_api_config` 更新共用，
+/// 保证旧空值、tiny/lite/medium/accurate 及未知 profile 在两条路径上都迁移为 small。
+pub fn normalize_product_ocr_fields(ocr_engine: &mut String, ocr_model_profile: &mut String) {
+    *ocr_engine = normalize_engine(ocr_engine).to_string();
+    *ocr_model_profile = normalize_model_profile(ocr_model_profile);
+    if *ocr_engine == "unknown" {
+        *ocr_engine = DEFAULT_OCR_ENGINE.to_string();
     }
 }
 
@@ -118,22 +129,90 @@ pub fn load_settings(config_dir: &Path) -> Result<SettingsRecord, String> {
     let content = fs::read_to_string(&settings_path)
         .map_err(|e| format!("读取设置文件失败: {} ({})", settings_path.display(), e))?;
 
-    let mut settings: SettingsRecord = serde_json::from_str(&content)
-        .map_err(|e| format!("解析设置文件失败: {} ({})", settings_path.display(), e))?;
+    let mut settings = parse_settings_content(&content, &settings_path)?;
     settings.normalize_product_ocr_runtime();
     Ok(settings)
 }
 
+fn parse_settings_content(content: &str, settings_path: &Path) -> Result<SettingsRecord, String> {
+    serde_json::from_str(content).map_err(|error| {
+        // serde's Display can quote the rejected value (including credentials).
+        // Category and coordinates provide diagnostics without source content.
+        format!(
+            "解析设置文件失败: {} (category={:?}, line={}, column={})",
+            settings_path.display(),
+            error.classify(),
+            error.line(),
+            error.column()
+        )
+    })
+}
+
 pub fn save_settings(config_dir: &Path, settings: &SettingsRecord) -> Result<(), String> {
+    save_settings_with_io(
+        config_dir,
+        settings,
+        |file, content| file.write_all(content),
+        |from, to| fs::rename(from, to),
+    )
+}
+
+/// The rename is the commit point: no fallible work follows it. The temporary
+/// file is synced first, but directory-entry durability after power loss is not
+/// guaranteed (in particular, Windows does not expose portable directory sync).
+fn save_settings_with_io<W, R>(
+    config_dir: &Path,
+    settings: &SettingsRecord,
+    write: W,
+    replace: R,
+) -> Result<(), String>
+where
+    W: FnOnce(&mut fs::File, &[u8]) -> io::Result<()>,
+    R: FnOnce(&Path, &Path) -> io::Result<()>,
+{
+    let content =
+        serde_json::to_vec_pretty(settings).map_err(|e| format!("序列化设置失败: {}", e))?;
     fs::create_dir_all(config_dir)
         .map_err(|e| format!("创建设置目录失败: {} ({})", config_dir.display(), e))?;
-
     let settings_path = settings_file_path(config_dir);
-    let content =
-        serde_json::to_string_pretty(settings).map_err(|e| format!("序列化设置失败: {}", e))?;
-
-    fs::write(&settings_path, content)
+    let temporary_path = config_dir.join(format!(".settings-{}.tmp", uuid::Uuid::new_v4()));
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&temporary_path)
+        .map_err(|e| format!("创建设置临时文件失败: {} ({})", settings_path.display(), e))?;
+    // Declare after opening: a create_new collision must never delete someone
+    // else's file. Close our handle before cleanup, including on Windows.
+    let temporary = SettingsTemporaryFile(temporary_path);
+    let result = (|| -> io::Result<()> {
+        #[cfg(unix)]
+        match fs::metadata(&settings_path) {
+            Ok(metadata) => file.set_permissions(metadata.permissions())?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        write(&mut file, &content)?;
+        file.sync_all()
+    })();
+    drop(file);
+    result
+        .and_then(|_| replace(&temporary.0, &settings_path))
         .map_err(|e| format!("写入设置文件失败: {} ({})", settings_path.display(), e))
+}
+
+struct SettingsTemporaryFile(PathBuf);
+
+impl Drop for SettingsTemporaryFile {
+    fn drop(&mut self) {
+        // After successful rename this path no longer exists. A hard process
+        // termination may leave an orphan; never treat that file as settings.
+        let _ = fs::remove_file(&self.0);
+    }
 }
 
 #[cfg(test)]
@@ -144,6 +223,32 @@ mod tests {
         path::{Path, PathBuf},
     };
     use uuid::Uuid;
+
+    #[test]
+    fn malformed_settings_diagnostics_do_not_log_source_values() {
+        let path = Path::new("synthetic-config/settings.json");
+        for (content, category) in [
+            (r#"{"enableTray":"SYNTHETIC_SECRET_MARKER"}"#, "Data"),
+            (r#"{"apiKey":"SYNTHETIC_SECRET_MARKER",!}"#, "Syntax"),
+            (r#"{"apiSecret":"SYNTHETIC_SECRET_MARKER""#, "Eof"),
+        ] {
+            let original = serde_json::from_str::<SettingsRecord>(content).unwrap_err();
+            let expected = format!(
+                "解析设置文件失败: {} (category={}, line={}, column={})",
+                path.display(), category, original.line(), original.column()
+            );
+            let logs = crate::logger::capture_logs_for_test(|| {
+                let message = parse_settings_content(content, path).unwrap_err();
+                assert_eq!(message, expected);
+                // Model the startup warn sink without touching lib or real config/logs.
+                tracing::warn!("加载设置失败: {}", message);
+            });
+            assert!(logs.contains("WARN"));
+            assert!(logs.contains(&format!("加载设置失败: {}", expected)));
+            assert!(!logs.contains("SYNTHETIC_SECRET_MARKER"));
+            assert!(!logs.contains("invalid type"));
+        }
+    }
 
     struct TempDirGuard {
         path: PathBuf,
@@ -309,6 +414,146 @@ mod tests {
         assert_eq!(loaded, settings);
     }
 
+    #[test]
+    fn repeated_atomic_saves_replace_existing_settings_and_clean_temporary_files() {
+        let temp = TempDirGuard::new("settings-atomic-overwrite");
+        for index in 0..4 {
+            let settings = SettingsRecord {
+                api_key: format!("synthetic-key-{index}"),
+                theme: format!("theme-{index}"),
+                enable_tray: index % 2 == 0,
+                ..SettingsRecord::default()
+            };
+            save_settings(temp.path(), &settings).unwrap();
+            assert_eq!(load_settings(temp.path()).unwrap(), settings);
+            assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+        }
+    }
+
+    #[test]
+    fn partial_temporary_write_failure_preserves_last_valid_settings() {
+        let temp = TempDirGuard::new("settings-atomic-write-failure");
+        let original = SettingsRecord::default();
+        save_settings(temp.path(), &original).unwrap();
+        let before = fs::read(settings_file_path(temp.path())).unwrap();
+        let changed = SettingsRecord {
+            theme: "dark".into(),
+            ..original.clone()
+        };
+        let result = save_settings_with_io(
+            temp.path(),
+            &changed,
+            |file, content| {
+                file.write_all(&content[..content.len() / 2])?;
+                Err(io::Error::other("injected partial write failure"))
+            },
+            |_, _| panic!("must not commit a failed write"),
+        );
+        assert!(result
+            .unwrap_err()
+            .contains("injected partial write failure"));
+        assert_eq!(fs::read(settings_file_path(temp.path())).unwrap(), before);
+        assert_eq!(load_settings(temp.path()).unwrap(), original);
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn failed_first_save_leaves_no_settings_or_temporary_file() {
+        let temp = TempDirGuard::new("settings-atomic-first-failure");
+        let result = save_settings_with_io(
+            temp.path(),
+            &SettingsRecord::default(),
+            |file, _| {
+                file.write_all(b"partial")?;
+                Err(io::Error::other("injected first write failure"))
+            },
+            |_, _| panic!("must not commit a failed write"),
+        );
+        assert!(result.is_err());
+        assert!(!settings_file_exists(temp.path()));
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn replacement_failure_preserves_last_valid_settings_and_cleans_temporary_file() {
+        let temp = TempDirGuard::new("settings-atomic-replace-failure");
+        let original = SettingsRecord::default();
+        save_settings(temp.path(), &original).unwrap();
+        let before = fs::read(settings_file_path(temp.path())).unwrap();
+        let changed = SettingsRecord {
+            api_key: "new-synthetic-key".into(),
+            ..original.clone()
+        };
+        let result = save_settings_with_io(
+            temp.path(),
+            &changed,
+            |file, content| file.write_all(content),
+            |from, to| {
+                assert_eq!(from.parent(), to.parent());
+                let pending: SettingsRecord = serde_json::from_slice(&fs::read(from)?).unwrap();
+                assert_eq!(pending, changed);
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "injected replacement failure",
+                ))
+            },
+        );
+        assert!(result.unwrap_err().contains("injected replacement failure"));
+        assert_eq!(fs::read(settings_file_path(temp.path())).unwrap(), before);
+        assert_eq!(load_settings(temp.path()).unwrap(), original);
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_locked_destination_is_not_truncated_on_failed_replace() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let temp = TempDirGuard::new("settings-atomic-windows-lock");
+        let original = SettingsRecord::default();
+        save_settings(temp.path(), &original).unwrap();
+        let before = fs::read(settings_file_path(temp.path())).unwrap();
+        // Allow readers but deny FILE_SHARE_DELETE so the real Win32 replace fails.
+        let handle = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(settings_file_path(temp.path()))
+            .unwrap();
+        let changed = SettingsRecord {
+            theme: "dark".into(),
+            ..original.clone()
+        };
+        assert!(save_settings(temp.path(), &changed).is_err());
+        drop(handle);
+        assert_eq!(fs::read(settings_file_path(temp.path())).unwrap(), before);
+        assert_eq!(load_settings(temp.path()).unwrap(), original);
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+
+        // Releasing the reader must make the next save succeed, not leave a
+        // permanently wedged or half-replaced settings file.
+        save_settings(temp.path(), &changed).unwrap();
+        assert_eq!(load_settings(temp.path()).unwrap(), changed);
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_save_creates_private_file_and_preserves_existing_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = TempDirGuard::new("settings-atomic-permissions");
+        let path = settings_file_path(temp.path());
+        save_settings(temp.path(), &SettingsRecord::default()).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+        save_settings(temp.path(), &SettingsRecord::default()).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+    }
+
     // ─── Field Naming Stability (camelCase serde contract) ───────────────
 
     #[test]
@@ -402,6 +647,63 @@ mod tests {
 
         assert_eq!(settings.ocr_engine, DEFAULT_OCR_ENGINE);
         assert_eq!(settings.ocr_model_profile, DEFAULT_OCR_MODEL_PROFILE);
+    }
+
+    /// 工单 21 迁移表：旧/未知 profile 原始值。
+    const LEGACY_PROFILE_CASES: &[&str] = &[
+        "", "  ", "small", " small ", "tiny", "lite", "medium", "accurate", "MEDIUM",
+        "large", "unknown-profile",
+    ];
+
+    #[test]
+    fn load_migrates_every_legacy_profile_to_small() {
+        for raw in LEGACY_PROFILE_CASES {
+            let temp_dir = TempDirGuard::new("translation-tool-settings-profile-table");
+            let json = serde_json::json!({
+                "ocrEngine": "native_onnx",
+                "ocrModelProfile": raw,
+            });
+            fs::write(settings_file_path(temp_dir.path()), json.to_string()).unwrap();
+
+            let settings = load_settings(temp_dir.path()).unwrap();
+
+            assert_eq!(settings.ocr_model_profile, "small", "load profile {raw:?}");
+            assert_eq!(settings.ocr_engine, DEFAULT_OCR_ENGINE, "load profile {raw:?}");
+        }
+    }
+
+    #[test]
+    fn load_and_update_normalization_agree_for_every_legacy_profile() {
+        // update_api_config 走 normalize_product_ocr_fields；load 走 normalize_product_ocr_runtime。
+        for raw in LEGACY_PROFILE_CASES {
+            for engine in ["", "native_onnx", "paddleocr", "rapidocr", "bogus-engine"] {
+                let mut record = SettingsRecord {
+                    ocr_engine: engine.to_string(),
+                    ocr_model_profile: raw.to_string(),
+                    ..SettingsRecord::default()
+                };
+                record.normalize_product_ocr_runtime();
+
+                let mut update_engine = engine.to_string();
+                let mut update_profile = raw.to_string();
+                normalize_product_ocr_fields(&mut update_engine, &mut update_profile);
+
+                assert_eq!(record.ocr_engine, update_engine, "engine {engine:?}/{raw:?}");
+                assert_eq!(record.ocr_model_profile, update_profile, "profile {raw:?}");
+                assert_eq!(update_engine, "native_onnx");
+                assert_eq!(update_profile, "small");
+            }
+        }
+    }
+
+    #[test]
+    fn missing_profile_field_loads_as_small() {
+        let temp_dir = TempDirGuard::new("translation-tool-settings-profile-missing");
+        fs::write(settings_file_path(temp_dir.path()), r#"{"ocrEngine":"native_onnx"}"#).unwrap();
+
+        let settings = load_settings(temp_dir.path()).unwrap();
+
+        assert_eq!(settings.ocr_model_profile, "small");
     }
 
     // ─── Malformed / Error Paths ─────────────────────────────────────────
