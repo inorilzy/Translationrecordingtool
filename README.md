@@ -2,11 +2,11 @@
 
 一个基于 `Tauri 2 + Vue 3 + Rust + SQLite` 的 Windows 桌面翻译工具，面向日常划词翻译、截图 OCR 翻译、历史记录和本地词典查询。
 
-当前发布版本：`v0.2.3`
+当前发布版本：`v0.3.0`
 
-- Release: <https://github.com/inorilzy/Translationrecordingtool/releases/tag/v0.2.3>
-- 推荐安装包：`translation-tool_0.2.3_x64-setup.exe`
-- MSI 安装包：`translation-tool_0.2.3_x64_en-US.msi`
+- Release: <https://github.com/inorilzy/Translationrecordingtool/releases/tag/v0.3.0>
+- 推荐安装包：`translation-tool_0.3.0_x64-setup.exe`
+- MSI 安装包：`translation-tool_0.3.0_x64_en-US.msi`
 
 ## 产品预览
 
@@ -16,13 +16,23 @@
 
 - 划词翻译：默认快捷键 `Ctrl+Q`。
 - 无剪贴板优先：Windows 下优先使用 UI Automation 直接读取当前选中文本。
-- 安全取词：如果目标应用不支持 UI Automation，不自动模拟 `Ctrl+C` 或恢复剪贴板；请手动复制后使用剪贴板翻译，或使用截图 OCR。
+- 安全取词：如果目标应用不支持 UI Automation，默认不自动模拟 `Ctrl+C`；可在设置中显式开启“读取失败时自动复制并翻译”（会覆盖当前剪贴板内容，不恢复）。
 - 截图 OCR 翻译：默认快捷键 `Ctrl+Shift+Q`，截图后 OCR、翻译并弹出结果卡片。
 - OCR 原文回填：截图 OCR 识别出的文本会同步到主界面输入框，方便手动修正。
 - 本地词典优先：单词优先查本地 `ECDICT + WordNet`，再用 Free Dictionary 补全音标、例句等信息。
 - 在线翻译：支持有道、Microsoft Translator、Google Translate，以及无需 Key 的 Google / 微软免费通道。
 - 历史与收藏：翻译记录、收藏、配置保存在本地。
 - 系统托盘：支持关闭时最小化到托盘。
+
+## v0.3.0 亮点
+
+- 新增 Google / 微软免费翻译通道，无需 API Key 即可直接使用。
+- Chrome / Edge 划词读取兼容焦点落在容器上的场景，减少“未能读取选中文本”。
+- 新增可选“读取失败时自动复制并翻译”，开启后通过 `Ctrl+C` 读取选区。
+- Google 官方翻译配额/速率错误会区分每分钟限制与每日配额，并给出处理方向。
+- 句子翻译弹窗改为内容自适应高度，重做句子、错误和单词模式的间距与排版。
+- 旧版 `settings.json` 会随应用标识变更一起迁移，避免配置和 Key 丢失。
+- 有道控制台字段按官方术语调整，并明确「API Key」不参与文本翻译 v3 签名。
 
 ## v0.2.1 亮点
 
@@ -112,7 +122,7 @@ flowchart TB
 从 Release 页面下载：
 
 ```text
-translation-tool_0.2.1_x64-setup.exe
+translation-tool_0.3.0_x64-setup.exe
 ```
 
 普通用户推荐使用 `.exe` 安装包。`.msi` 更适合系统管理、批量部署或自动化安装。
@@ -133,8 +143,8 @@ translation-tool_0.2.1_x64-setup.exe
 1. 在任意应用中选中文字。
 2. 按 `Ctrl+Q`。
 3. 应用优先尝试通过 Windows UI Automation 读取选中文本。
-4. 如果读取失败，提示手动复制后使用剪贴板翻译；应用不会自动注入复制按键或回滚剪贴板。
-5. 翻译结果会以弹窗卡片展示。
+4. 如果读取失败，默认提示手动复制后使用剪贴板翻译；在设置中开启“读取失败时自动复制并翻译”后，应用会显式发送 `Ctrl+C` 并读取剪贴板。
+5. 翻译结果会以自适应高度的弹窗卡片展示。
 
 ```mermaid
 flowchart TD
@@ -267,8 +277,8 @@ npm run tauri:build:ocr:native
 产物位置：
 
 ```text
-src-tauri/target/release/bundle/nsis/translation-tool_0.2.3_x64-setup.exe
-src-tauri/target/release/bundle/msi/translation-tool_0.2.3_x64_en-US.msi
+src-tauri/target/release/bundle/nsis/translation-tool_0.3.0_x64-setup.exe
+src-tauri/target/release/bundle/msi/translation-tool_0.3.0_x64_en-US.msi
 ```
 
 ## 常用命令

@@ -1,6 +1,7 @@
 {
   "bundle": {
     "resources": [
+      "resources/dictionary.db",
       "resources/ocr-models/small/**/*",
       "binaries/onnxruntime.dll"
     ]
