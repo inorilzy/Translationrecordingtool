@@ -288,12 +288,57 @@ struct GoogleTranslationItem {
     translated_text: Option<String>,
 }
 
-// Do not retain provider error details: they may echo credentials or user input.
+// Ignore provider messages and metadata: they can echo credentials or input.
+// Only recognized reason enums may affect the fixed, local error text.
 #[derive(Debug, Deserialize)]
-struct GoogleApiError {}
+struct GoogleApiError {
+    #[serde(default)]
+    errors: Vec<GoogleErrorReason>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleErrorReason {
+    reason: GoogleReason,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+enum GoogleReason {
+    UserRateLimitExceeded,
+    RateLimitExceeded,
+    DailyLimitExceeded,
+    #[serde(other)]
+    Unknown,
+}
 
 impl GoogleTranslateResponse {
     fn service_error(&self, status: reqwest::StatusCode) -> Option<String> {
+        if matches!(status.as_u16(), 403 | 429) {
+            if let Some(error) = &self.error {
+                let daily_limited = error
+                    .errors
+                    .iter()
+                    .any(|error| error.reason == GoogleReason::DailyLimitExceeded);
+                let per_minute_limited = error.errors.iter().any(|error| {
+                    matches!(
+                        error.reason,
+                        GoogleReason::UserRateLimitExceeded | GoogleReason::RateLimitExceeded
+                    )
+                });
+                if daily_limited || per_minute_limited {
+                    let detail = if daily_limited {
+                        "每日配额已用完（Daily Limit Exceeded）"
+                    } else {
+                        "触发了每分钟速率限制（User Rate Limit Exceeded），不是每月字符额度"
+                    };
+                    return Some(format!(
+                        "Google 官方翻译{}（HTTP {}）。请检查 Google Cloud 结算状态和 Cloud Translation 配额；也可在设置中手动选择 Google 翻译（免费）或微软翻译。应用不会自动切换服务或启用付费。",
+                        detail,
+                        status.as_u16()
+                    ));
+                }
+            }
+        }
         if self.error.is_some() || !status.is_success() {
             Some(format!(
                 "Google 翻译 API 返回错误: HTTP {}",
@@ -781,6 +826,39 @@ mod google_error_tests {
                 format!("Google 翻译 API 返回错误: HTTP {}", status.as_u16())
             );
         }
+    }
+
+    #[test]
+    fn google_quota_errors_give_safe_actionable_guidance() {
+        for reason in ["userRateLimitExceeded", "rateLimitExceeded"] {
+            let response: GoogleTranslateResponse = serde_json::from_value(serde_json::json!({
+                "error": {
+                    "message": FAKE_KEY,
+                    "errors": [{"reason": reason, "message": FAKE_KEY}]
+                }
+            })).unwrap();
+            for status in [reqwest::StatusCode::FORBIDDEN, reqwest::StatusCode::TOO_MANY_REQUESTS] {
+                let message = response.service_error(status).unwrap();
+                assert!(message.contains("每分钟速率限制"));
+                assert!(message.contains("不是每月字符额度"));
+                assert!(message.contains("不会自动切换服务或启用付费"));
+                assert_no_credential(&message);
+            }
+        }
+        let daily: GoogleTranslateResponse = serde_json::from_value(serde_json::json!({
+            "error": {"errors": [{"reason": "dailyLimitExceeded"}]}
+        })).unwrap();
+        assert!(daily
+            .service_error(reqwest::StatusCode::FORBIDDEN)
+            .unwrap()
+            .contains("每日配额已用完"));
+
+        let response: GoogleTranslateResponse = serde_json::from_value(serde_json::json!({
+            "error": {"errors": [{"reason": FAKE_KEY}]}
+        })).unwrap();
+        let message = response.service_error(reqwest::StatusCode::FORBIDDEN).unwrap();
+        assert_eq!(message, "Google 翻译 API 返回错误: HTTP 403");
+        assert_no_credential(&message);
     }
 
     #[test]
