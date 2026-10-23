@@ -17,7 +17,11 @@ use crate::{
 /// UI Automation 无法给出选文时的弹窗提示。
 /// 工单09：不再自动模拟 Ctrl+C 读取/恢复剪贴板，改由用户手动复制后走现有剪贴板翻译。
 const MANUAL_COPY_HINT: &str = "未能直接读取选中文本（当前应用可能不支持 UI Automation）。\
-为保护剪贴板内容，已不再自动模拟复制，请手动复制后在主窗口使用“剪贴板翻译”。";
+请手动复制后在主窗口使用“剪贴板翻译”，或在设置中开启“UI Automation 读取失败时，自动复制并翻译”。";
+
+/// 已开启剪贴板回退但模拟复制本身出错时的提示。
+const FALLBACK_FAILED_HINT: &str = "未能读取选中文本：UI Automation 不可用，且自动复制失败。\
+请手动复制后在主窗口使用“剪贴板翻译”。";
 
 pub fn register_shortcut_handler(
     app: &tauri::AppHandle,
@@ -62,7 +66,6 @@ pub fn register_screenshot_shortcut_handler(
 pub fn handle_shortcut(app: tauri::AppHandle, popup_state: Arc<RwLock<PopupRuntimeState>>) {
     tauri::async_runtime::spawn(async move {
         info!("开始执行选中文本翻译流程");
-        let request_id = next_popup_request_id(&popup_state);
         let anchor = point_anchor(get_cursor_position());
         // UI Automation remains the default path. The clipboard fallback is an
         // explicit opt-in and is the only path that injects Ctrl+C or touches
@@ -71,31 +74,35 @@ pub fn handle_shortcut(app: tauri::AppHandle, popup_state: Arc<RwLock<PopupRunti
             .state::<Arc<RwLock<SettingsRecord>>>()
             .read()
             .clipboard_fallback_enabled;
-        let text = match read_selection_for_popup(crate::selection_reader::read_selected_text) {
-            Ok(text) => text,
+        let uia_result = read_selection_for_popup(crate::selection_reader::read_selected_text);
+        let outcome = match uia_result {
+            Ok(Some(text)) => Ok(Some(text)),
+            // UIA 读不到或选区为空时，若用户开启了回退，则尝试复制。
+            // 部分应用（如 Chrome PDF）支持 TextPattern 却报告空选区，所以空选区也要走回退。
+            _ if fallback_enabled => {
+                info!("UI Automation 未读到选区，尝试剪贴板回退");
+                crate::selection_fallback::copy_selection_and_read(&app).map_err(|error| {
+                    warn!("剪贴板回退失败: {}", error);
+                    FALLBACK_FAILED_HINT
+                })
+            }
+            other => other,
+        };
+
+        let text = match outcome {
+            Ok(Some(text)) => text,
+            Ok(None) => {
+                // 什么都没选中：静默忽略，不弹出翻译窗口。
+                info!("未检测到选中文本，忽略本次划词快捷键");
+                return;
+            }
             Err(message) => {
-                if fallback_enabled {
-                    info!("UI Automation 未读到选区，尝试剪贴板回退");
-                    match crate::selection_fallback::copy_selection_and_read(&app) {
-                        Ok(text) => text,
-                        Err(error) => {
-                            warn!("剪贴板回退失败，提示用户手动复制: {}", error);
-                            let _ = show_popup_failure(
-                                &app,
-                                &popup_state,
-                                request_id,
-                                anchor,
-                                message,
-                            );
-                            return;
-                        }
-                    }
-                } else {
-                    let _ = show_popup_failure(&app, &popup_state, request_id, anchor, message);
-                    return;
-                }
+                let request_id = next_popup_request_id(&popup_state);
+                let _ = show_popup_failure(&app, &popup_state, request_id, anchor, message);
+                return;
             }
         };
+        let request_id = next_popup_request_id(&popup_state);
 
         let workflow = app.state::<AppTranslationWorkflow>();
         let mut visible_result = false;
@@ -270,10 +277,11 @@ fn present_popup_stage(
     }
 }
 
-/// 划词入口唯一的选文来源：只消费 UI Automation 读取结果。
-/// 成功返回去空白文本；空值或失败统一返回手动复制提示，绝不回退到模拟按键或剪贴板。
+/// 划词入口的 UI Automation 读取：本函数自身绝不回退到模拟按键或剪贴板。
+/// 成功返回去空白文本；控件支持读取但选区为空返回 `Ok(None)`（视为未选中，静默忽略）；
+/// 控件不支持读取返回手动复制提示。
 /// 日志只记录字符数与 UIA 错误（UIA 错误为系统/控件诊断，不含选中内容）。
-fn read_selection_for_popup<R>(read_ui_automation: R) -> Result<String, &'static str>
+fn read_selection_for_popup<R>(read_ui_automation: R) -> Result<Option<String>, &'static str>
 where
     R: FnOnce() -> Result<String, String>,
 {
@@ -284,11 +292,11 @@ where
                 "UI Automation 读取到选中文本，字符数: {}",
                 text.chars().count()
             );
-            Ok(text)
+            Ok(Some(text))
         }
         Ok(_) => {
-            warn!("UI Automation 未读取到选中文本，提示用户手动复制");
-            Err(MANUAL_COPY_HINT)
+            info!("UI Automation 未读取到选中文本，视为未选中");
+            Ok(None)
         }
         Err(error) => {
             warn!("UI Automation 读取选中文本失败，提示用户手动复制: {}", error);
@@ -332,17 +340,14 @@ mod tests {
             calls.set(calls.get() + 1);
             Ok("  direct text  ".to_string())
         });
-        assert_eq!(result, Ok("direct text".to_string()));
+        assert_eq!(result, Ok(Some("direct text".to_string())));
         assert_eq!(calls.get(), 1);
     }
 
     #[test]
-    fn empty_ui_automation_result_asks_for_manual_copy() {
+    fn empty_ui_automation_result_means_nothing_selected() {
         for empty in ["", "   ", "\r\n\t"] {
-            assert_eq!(
-                read_selection_for_popup(|| Ok(empty.to_string())),
-                Err(MANUAL_COPY_HINT)
-            );
+            assert_eq!(read_selection_for_popup(|| Ok(empty.to_string())), Ok(None));
         }
     }
 
@@ -358,6 +363,7 @@ mod tests {
     fn manual_copy_hint_points_to_existing_clipboard_translation() {
         assert!(MANUAL_COPY_HINT.contains("手动复制"));
         assert!(MANUAL_COPY_HINT.contains("剪贴板翻译"));
+        assert!(FALLBACK_FAILED_HINT.contains("剪贴板翻译"));
     }
 
     /// 默认划词路径静态守卫：不得出现模拟按键或剪贴板备份/恢复实现。
@@ -419,7 +425,7 @@ mod tests {
         let logs = capture_logs_for_test(|| {
             let text = format!("  {SELECTION_MARKER} private text  ");
             assert!(read_selection_for_popup(|| Ok(text)).is_ok());
-            assert!(read_selection_for_popup(|| Ok(String::new())).is_err());
+            assert_eq!(read_selection_for_popup(|| Ok(String::new())), Ok(None));
             assert!(read_selection_for_popup(|| Err("uia failed".into())).is_err());
             log_translation_failure(
                 "选中文本",
@@ -428,6 +434,7 @@ mod tests {
         });
         // 确认日志确实被捕获，避免“空日志”导致假通过。
         assert!(logs.contains("字符数"));
+        assert!(logs.contains("视为未选中"));
         assert!(logs.contains("提示用户手动复制"));
         assert!(!logs.contains(SELECTION_MARKER), "{logs}");
     }

@@ -90,10 +90,8 @@ mod platform {
             }
         }
 
-        if selected_text.trim().is_empty() {
-            return Err("未读取到选中文本".to_string());
-        }
-
+        // 控件支持 TextPattern 但选区为空：明确表示“没有选中任何文本”，
+        // 返回空串交由调用方静默处理，而不是当作读取失败。
         Ok(selected_text.trim().to_string())
     }
 
