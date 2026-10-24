@@ -1,0 +1,52 @@
+name: Release notes
+
+# Keep GitHub Release descriptions in sync with docs/releases/<tag>.md and make
+# sure every existing release carries a SHA256SUMS-<tag>.txt for its installers.
+# Runs when release notes change on main; does not rebuild any packages.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/releases/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync notes and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for notes in docs/releases/v*.md; do
+            tag="$(basename "$notes" .md)"
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              echo "::notice::No release for $tag yet, skipping"
+              continue
+            fi
+
+            echo "Updating notes for $tag from $notes"
+            gh release edit "$tag" --notes-file "$notes"
+
+            sums="SHA256SUMS-$tag.txt"
+            if gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx "$sums"; then
+              echo "$sums already attached to $tag"
+              continue
+            fi
+
+            work="$(mktemp -d)"
+            gh release download "$tag" --dir "$work" \
+              --pattern '*.exe' --pattern '*.msi' --pattern '*.dmg' --pattern '*-portable.zip'
+            (cd "$work" && sha256sum -- * | sort -k2 > "$sums" && cat "$sums")
+            gh release upload "$tag" "$work/$sums"
+          done

@@ -321,7 +321,9 @@ src-tauri/target/release/bundle/dmg/translation-tool_0.4.0_aarch64-portable.zip
 
 ### GitHub Actions 自动发布（Windows + macOS）
 
-推送 `v*` 格式的 tag（例如 `v0.4.0`）会触发 `.github/workflows/release.yml`：Windows 和 macOS 两台 runner 并行准备模型、ONNX Runtime 与词典并打包，然后把 `.exe`、`.msi`、`.dmg`、便携 `.zip` 一起上传到同名 GitHub Release。也可以在 Actions 页面手动运行做试打包（只上传构建产物，不创建 Release）。
+推送 `v*` 格式的 tag（例如 `v0.4.0`）会触发 `.github/workflows/release.yml`：Windows 和 macOS 两台 runner 并行准备模型、ONNX Runtime 与词典并打包，然后把 `.exe`、`.msi`、`.dmg`、便携 `.zip` 和 `SHA256SUMS-<tag>.txt` 一起上传到同名 GitHub Release。也可以在 Actions 页面手动运行做试打包（只上传构建产物，不创建 Release）。
+
+Release 说明取自 `docs/releases/<tag>.md`（例如 [docs/releases/v0.4.0.md](docs/releases/v0.4.0.md)），没有该文件时使用 GitHub 自动生成的提交列表。发布后修改说明文件并推送到 `main`，`.github/workflows/release-notes.yml` 会同步更新对应 Release，并在缺少时补上 `SHA256SUMS` 校验文件。
 
 ```bash
 git tag v0.4.0

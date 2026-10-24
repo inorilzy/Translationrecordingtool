@@ -92,12 +92,33 @@ jobs:
         run: |
           mkdir -p release-files
           find dist-release -type f \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' -o -name '*-portable.zip' \) -exec cp {} release-files/ \;
-          ls -lh release-files
           test "$(ls release-files | wc -l)" -ge 4
+          (cd release-files && sha256sum -- * | sort -k2 > "SHA256SUMS-${GITHUB_REF_NAME}.txt" && cat "SHA256SUMS-${GITHUB_REF_NAME}.txt")
+          ls -lh release-files
+
+      - uses: actions/checkout@v4
+        with:
+          path: source
+          sparse-checkout: docs/releases
+
+      # Prefer the hand-written notes in docs/releases/<tag>.md; fall back to
+      # GitHub's generated commit list when no notes file exists for the tag.
+      - name: Resolve release notes
+        id: notes
+        run: |
+          file="source/docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$file" ]; then
+            echo "file=$file" >> "$GITHUB_OUTPUT"
+            echo "generate=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "file=" >> "$GITHUB_OUTPUT"
+            echo "generate=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.file }}
+          generate_release_notes: ${{ steps.notes.outputs.generate == 'true' }}
           files: release-files/*
