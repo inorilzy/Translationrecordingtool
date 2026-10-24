@@ -47,7 +47,9 @@ run('ln', ['-s', '/Applications', join(staging, 'Applications')])
 
 const dmgPath = join(OUT_DIR, `${baseName}.dmg`)
 await rm(dmgPath, { force: true })
-run('hdiutil', [
+// hdiutil intermittently fails with "Resource busy" on CI runners (Spotlight /
+// XProtect still scanning the staged bundle); retry a few times before giving up.
+const hdiutilArgs = [
   'create',
   '-volname',
   'translation-tool',
@@ -57,7 +59,18 @@ run('hdiutil', [
   '-format',
   'UDZO',
   dmgPath,
-])
+]
+for (let attempt = 1; ; attempt += 1) {
+  try {
+    run('hdiutil', hdiutilArgs)
+    break
+  } catch (error) {
+    if (attempt >= 5) throw error
+    console.warn(`[macos] hdiutil create failed (attempt ${attempt}), retrying in 10s`)
+    await rm(dmgPath, { force: true })
+    await new Promise((resolve) => setTimeout(resolve, 10_000))
+  }
+}
 await rm(staging, { recursive: true, force: true })
 
 console.log(`[macos] app:  ${APP}`)
