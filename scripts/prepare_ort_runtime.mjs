@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Cross-platform preparation of the bundled ONNX Runtime dynamic library.
 //
-// Windows keeps using scripts/prepare_ort_runtime.ps1 (pinned x64 1.20.1 DLL).
-// macOS downloads the official arm64 1.20.1 archive and publishes an ad-hoc
-// signed `onnxruntime.dylib` next to the Tauri binary resources.
+// Downloads the official, SHA-256 pinned ONNX Runtime 1.20.1 archive for the
+// current platform (Windows x64 DLL / macOS arm64 dylib) into src-tauri/binaries.
+// macOS dylibs are ad-hoc signed. scripts/prepare_ort_runtime.ps1 stays available
+// on Windows for the stricter manifest mode.
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
@@ -19,8 +20,16 @@ const ARCHIVES = {
   'darwin-arm64': {
     url: `https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-osx-arm64-${ORT_VERSION}.tgz`,
     sha256: 'b678fc3c2354c771fea4fba420edeccfba205140088334df801e7fc40e83a57a',
-    library: `libonnxruntime.${ORT_VERSION}.dylib`,
+    archiveName: 'onnxruntime.tgz',
+    libraryPath: `onnxruntime-osx-arm64-${ORT_VERSION}/lib/libonnxruntime.${ORT_VERSION}.dylib`,
     target: 'onnxruntime.dylib',
+  },
+  'win32-x64': {
+    url: `https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-win-x64-${ORT_VERSION}.zip`,
+    sha256: '78d447051e48bd2e1e778bba378bec4ece11191c9e538cf7b2c4a4565e8f5581',
+    archiveName: 'onnxruntime.zip',
+    libraryPath: `onnxruntime-win-x64-${ORT_VERSION}/lib/onnxruntime.dll`,
+    target: 'onnxruntime.dll',
   },
 }
 
@@ -69,7 +78,8 @@ async function download(url, target) {
 }
 
 function extract(archive, destination) {
-  execFileSync('tar', ['-xzf', archive, '-C', destination], { stdio: 'inherit' })
+  // bsdtar (macOS, Windows 10+) extracts both .tgz and .zip archives.
+  execFileSync('tar', ['-xf', archive, '-C', destination], { stdio: 'inherit' })
 }
 
 function signMacLibrary(path) {
@@ -82,16 +92,11 @@ function signMacLibrary(path) {
 }
 
 async function prepare(options) {
-  if (options.platform === 'win32-x64') {
-    console.log('[ort] Windows uses scripts/prepare_ort_runtime.ps1; run npm run ocr:ort:win')
-    return
-  }
-
   const source = ARCHIVES[options.platform]
   if (!source) {
     throw new Error(
       `no pinned ONNX Runtime ${ORT_VERSION} archive for ${options.platform}; ` +
-        'supported: win32-x64 (PowerShell), darwin-arm64',
+        `supported: ${Object.keys(ARCHIVES).join(', ')}`,
     )
   }
 
@@ -103,7 +108,7 @@ async function prepare(options) {
 
   const work = await mkdtemp(join(tmpdir(), 'ort-'))
   try {
-    const archive = join(work, 'onnxruntime.tgz')
+    const archive = join(work, source.archiveName)
     console.log(`[download] ${source.url}`)
     await download(source.url, archive)
     const actual = await sha256(archive)
@@ -112,9 +117,9 @@ async function prepare(options) {
     }
 
     extract(archive, work)
-    const extracted = join(work, `onnxruntime-osx-arm64-${ORT_VERSION}`, 'lib', source.library)
+    const extracted = join(work, ...source.libraryPath.split('/'))
     if (!(await exists(extracted))) {
-      throw new Error(`archive does not contain ${source.library}`)
+      throw new Error(`archive does not contain ${source.libraryPath}`)
     }
 
     await mkdir(BINARIES, { recursive: true })

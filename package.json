@@ -27,7 +27,8 @@
     "test:dependencies": "node --test scripts/dependency-smoke.test.mjs",
     "verify:final": "node scripts/verify-s06.mjs",
     "tauri": "tauri",
-    "tauri:build:ocr:mac": "npm run ocr:models && npm run ocr:ort && tauri build --config src-tauri/tauri.ocr-native.macos.conf.json && node scripts/package_macos.mjs"
+    "tauri:build:ocr:mac": "npm run ocr:models && npm run ocr:ort && tauri build --config src-tauri/tauri.ocr-native.macos.conf.json && node scripts/package_macos.mjs",
+    "tauri:build:ocr:win": "npm run ocr:models && npm run ocr:ort && tauri build --config src-tauri/tauri.ocr-native.conf.json"
   },
   "dependencies": {
     "@lucide/vue": "^1.21.0",

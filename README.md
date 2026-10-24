@@ -258,7 +258,7 @@ npm run build:dictionary
 
 ```bash
 npm run ocr:models          # 模型，校验每个文件的 SHA-256
-npm run ocr:ort             # macOS arm64 下载 dylib；Windows 会提示改用 ocr:ort:win
+npm run ocr:ort             # Windows x64 下载 DLL / macOS arm64 下载 dylib（固定 1.20.1，校验 SHA-256）
 ```
 
 Windows 仍可使用原有 PowerShell 流程：
@@ -343,10 +343,11 @@ git push origin v0.4.0
 ```bash
 npm run build:dictionary        # 生成离线 dictionary.db
 npm run ocr:models              # 准备 OCR 模型（跨平台）
-npm run ocr:ort                 # 准备 ONNX Runtime（macOS；Windows 用 ocr:ort:win）
+npm run ocr:ort                 # 准备 ONNX Runtime（Windows / macOS，跨平台）
 npm run ocr:models:win          # 准备 OCR 模型（PowerShell）
 npm run ocr:ort:win             # 准备 ONNX Runtime DLL（Windows）
-npm run tauri:build:ocr:native  # 打包 Windows native ONNX OCR 版本
+npm run tauri:build:ocr:native  # 打包 Windows 版本（PowerShell 准备脚本）
+npm run tauri:build:ocr:win     # 打包 Windows 版本（Node 准备脚本，CI 使用）
 npm run tauri:build:ocr:mac     # 打包 macOS .app/.dmg/便携 zip
 npm run build                   # 前端构建
 npm run test                    # 前端单元测试
