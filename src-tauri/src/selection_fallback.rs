@@ -26,13 +26,19 @@ pub fn copy_selection_and_read(app: &tauri::AppHandle) -> Result<Option<String>,
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|error| format!("初始化键盘模拟失败: {}", error))?;
 
+    // macOS uses Command+C for copying; other platforms use Control+C.
+    #[cfg(target_os = "macos")]
+    let (copy_modifier, copy_label) = (Key::Meta, "Command+C");
+    #[cfg(not(target_os = "macos"))]
+    let (copy_modifier, copy_label) = (Key::Control, "Ctrl+C");
+
     enigo
-        .key(Key::Control, Press)
-        .map_err(|error| format!("模拟 Ctrl+C 失败: {}", error))?;
+        .key(copy_modifier, Press)
+        .map_err(|error| format!("模拟 {} 失败: {}", copy_label, error))?;
     let click_result = enigo.key(Key::Unicode('c'), Click);
-    let release_result = enigo.key(Key::Control, Release);
-    click_result.map_err(|error| format!("模拟 Ctrl+C 失败: {}", error))?;
-    release_result.map_err(|error| format!("释放 Ctrl 键失败: {}", error))?;
+    let release_result = enigo.key(copy_modifier, Release);
+    click_result.map_err(|error| format!("模拟 {} 失败: {}", copy_label, error))?;
+    release_result.map_err(|error| format!("释放复制组合键失败: {}", error))?;
 
     let text = match crate::clipboard::read_clipboard_after_update(
         app,

@@ -2,10 +2,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        LazyLock, Mutex,
-    },
+    sync::{LazyLock, Mutex},
     time::Instant,
 };
 
@@ -22,6 +19,13 @@ const OCR_MODEL_RESOURCE_DIR: &str = "ocr-models";
 // 工单 21：打包默认 profile 与产品唯一正式 profile 同源，避免两处常量漂移。
 const DEFAULT_PACKAGED_MODEL_PROFILE: &str = SUPPORTED_OCR_MODEL_PROFILE;
 const NATIVE_ONNX_VERSION: &str = "1.20.1";
+
+#[cfg(target_os = "windows")]
+const ORT_LIBRARY_FILE_NAME: &str = "onnxruntime.dll";
+#[cfg(target_os = "macos")]
+const ORT_LIBRARY_FILE_NAME: &str = "onnxruntime.dylib";
+#[cfg(all(unix, not(target_os = "macos")))]
+const ORT_LIBRARY_FILE_NAME: &str = "libonnxruntime.so";
 
 struct NativeOcrRuntime {
     profile: String,
@@ -145,7 +149,7 @@ pub fn ensure_initialized(app: &AppHandle, config: &OcrRuntimeConfig) -> Result<
     let profile = normalize_model_profile(&config.model_profile);
     let model_dir = packaged_model_dir(app, &profile).ok_or_else(|| {
         format!(
-            "未找到原生 OCR profile={} 的本地模型。请先运行 npm run ocr:models:win -- -Profile {}",
+            "未找到原生 OCR profile={} 的本地模型。请先运行 npm run ocr:models -- --profile {}",
             profile, profile
         )
     })?;
@@ -468,27 +472,31 @@ fn set_ort_library_path(app: &AppHandle) {
     for candidate in ort_dll_candidates(app) {
         if candidate.is_file() {
             std::env::set_var("ORT_DYLIB_PATH", &candidate);
-            info!("使用 ONNX Runtime DLL: {}", candidate.display());
+            info!("使用 ONNX Runtime 动态库: {}", candidate.display());
             return;
         }
     }
 
-    warn!("未找到内置 onnxruntime.dll，将依赖系统 PATH 或 ort 默认加载逻辑");
+    warn!(
+        "未找到内置 {}，将依赖系统 PATH 或 ort 默认加载逻辑",
+        ORT_LIBRARY_FILE_NAME
+    );
 }
 
 fn ort_dll_candidates(app: &AppHandle) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
+    let library_name = ORT_LIBRARY_FILE_NAME;
     if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("onnxruntime.dll"));
-        candidates.push(resource_dir.join("binaries").join("onnxruntime.dll"));
+        candidates.push(resource_dir.join(library_name));
+        candidates.push(resource_dir.join("binaries").join(library_name));
         if let Some(parent) = resource_dir.parent() {
-            candidates.push(parent.join("onnxruntime.dll"));
+            candidates.push(parent.join(library_name));
         }
     }
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(dir) = current_exe.parent() {
-            candidates.push(dir.join("onnxruntime.dll"));
-            candidates.push(dir.join("binaries").join("onnxruntime.dll"));
+            candidates.push(dir.join(library_name));
+            candidates.push(dir.join("binaries").join(library_name));
         }
     }
     if let Ok(current_dir) = std::env::current_dir() {
@@ -496,16 +504,16 @@ fn ort_dll_candidates(app: &AppHandle) -> Vec<PathBuf> {
             current_dir
                 .join("src-tauri")
                 .join("binaries")
-                .join("onnxruntime.dll"),
+                .join(library_name),
         );
-        candidates.push(current_dir.join("binaries").join("onnxruntime.dll"));
+        candidates.push(current_dir.join("binaries").join(library_name));
     }
     if let Some(workspace_root) = workspace_root_from_current_dir() {
         candidates.push(
             workspace_root
                 .join("src-tauri")
                 .join("binaries")
-                .join("onnxruntime.dll"),
+                .join(library_name),
         );
     }
     candidates
@@ -630,7 +638,17 @@ fn packaged_model_dir(app: &AppHandle, model_profile: &str) -> Option<PathBuf> {
     let mut candidates = Vec::new();
 
     if let Ok(resource_dir) = app.path().resource_dir() {
+        // Tauri preserves the source-relative path for `bundle.resources`, so
+        // packaged builds normally place models under `Resources/resources/`.
+        // Older layouts (and the dev tree) use `Resources/ocr-models`; accept
+        // both instead of depending on one packaging convention.
         candidates.push(resource_dir.join(OCR_MODEL_RESOURCE_DIR).join(&profile));
+        candidates.push(
+            resource_dir
+                .join("resources")
+                .join(OCR_MODEL_RESOURCE_DIR)
+                .join(&profile),
+        );
     }
     if let Ok(current_dir) = std::env::current_dir() {
         candidates.push(

@@ -1,7 +1,7 @@
 {
   "name": "translation-tool",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "engines": {
     "node": ">=24.0.0"
@@ -10,8 +10,10 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "build:dictionary": "python scripts/build_dictionary.py",
+    "ocr:models": "node scripts/prepare_ocr_models.mjs",
     "ocr:models:win": "powershell -ExecutionPolicy Bypass -File scripts/prepare_ocr_models.ps1",
     "ocr:ort:win": "powershell -ExecutionPolicy Bypass -File scripts/prepare_ort_runtime.ps1",
+    "ocr:ort": "node scripts/prepare_ort_runtime.mjs",
     "tauri:build:ocr": "npm run tauri:build:ocr:native",
     "tauri:build:ocr:native": "npm run ocr:models:win -- -Profile small && npm run ocr:ort:win && tauri build --config src-tauri/tauri.ocr-native.conf.json",
     "preview": "vite preview",
@@ -24,7 +26,8 @@
     "test:rust-wrapper": "node --test scripts/rust-test.test.mjs",
     "test:dependencies": "node --test scripts/dependency-smoke.test.mjs",
     "verify:final": "node scripts/verify-s06.mjs",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build:ocr:mac": "npm run ocr:models && npm run ocr:ort && tauri build --config src-tauri/tauri.ocr-native.macos.conf.json && node scripts/package_macos.mjs"
   },
   "dependencies": {
     "@lucide/vue": "^1.21.0",

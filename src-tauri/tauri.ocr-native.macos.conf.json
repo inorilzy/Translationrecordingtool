@@ -1,0 +1,15 @@
+{
+  "bundle": {
+    "resources": [
+      "resources/dictionary.db",
+      "resources/ocr-models/small/**/*",
+      "binaries/onnxruntime.dylib"
+    ],
+    "targets": [
+      "app"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

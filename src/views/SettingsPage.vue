@@ -198,13 +198,17 @@ onMounted(async () => {
   await refreshOcrStatus()
 })
 
+function isMacPlatform() {
+  return typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent)
+}
+
 function captureShortcut(event: KeyboardEvent, target: 'global' | 'screenshot') {
   const keys: string[] = []
 
   if (event.ctrlKey) keys.push('Ctrl')
   if (event.altKey) keys.push('Alt')
   if (event.shiftKey) keys.push('Shift')
-  if (event.metaKey) keys.push('Meta')
+  if (event.metaKey) keys.push(isMacPlatform() ? 'Command' : 'Super')
 
   const mainKey = event.key
   if (!['Control', 'Alt', 'Shift', 'Meta'].includes(mainKey)) {
@@ -728,8 +732,8 @@ async function changeTheme() {
       </div>
       <div class="switch-row">
         <div>
-          <strong>UI Automation 读取失败时，自动复制并翻译</strong>
-          <p>会向当前窗口发送 Ctrl+C，并用复制到的文本翻译；会覆盖当前剪贴板内容且不恢复。终端类应用可能把 Ctrl+C 当作中断，请谨慎开启。</p>
+          <strong>选区读取失败时，自动复制并翻译</strong>
+          <p>会向当前窗口发送 Ctrl+C（macOS 为 Command+C），并用复制到的文本翻译；会覆盖当前剪贴板内容且不恢复。终端类应用可能把 Ctrl+C 当作中断，请谨慎开启。</p>
         </div>
         <n-switch
           v-model:value="config.clipboardFallbackEnabled"

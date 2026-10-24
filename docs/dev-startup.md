@@ -53,3 +53,25 @@ Node 脚本里等价写法是 `spawn('npm', args, { shell: true })`，或直接 
 | `spawn npm ENOENT`（Node） | 同上 | `shell: true` 或指 `npm.cmd` 完整路径 |
 | `'"cmd.exe"' 不是内部或外部命令` | 上层工具把命令名带引号整体传下去（常见于 PTY 包装） | 关闭 PTY / 换直接 spawn 模式 |
 | 启动后长时间无输出 | cargo 全量编译中 | 等待；用端口 1420 或 `translation-tool` 进程判断就绪 |
+
+## macOS 启动
+
+macOS 不需要 PowerShell。先安装 Xcode Command Line Tools（`xcode-select --install`）与 Rust stable，然后：
+
+```bash
+npm install
+npm run build:dictionary     # 可选：生成 resources/dictionary.db
+npm run ocr:models           # 下载并校验 PP-OCRv6 small
+npm run ocr:ort              # 下载并校验 onnxruntime.dylib（Apple Silicon）
+npm run tauri -- dev --config src-tauri/tauri.ocr-native.macos.conf.json
+```
+
+首次使用划词翻译时，macOS 会要求“辅助功能”权限；首次截图 OCR 需要“屏幕与系统音频录制”权限；ad-hoc 签名的构建不会被系统自动加入列表，需要在该设置页点“+”手动添加应用，授权后退出并重新启动应用。若截图预览全黑，通常是屏幕录制权限未生效，而不是模型或截图区域问题。
+
+打包：
+
+```bash
+npm run tauri:build:ocr:mac
+```
+
+Tauri 自带的 DMG 打包会调用 Finder AppleScript，在无 GUI 自动化权限的终端里可能超时；因此该命令只构建 `.app`，再由 `scripts/package_macos.mjs` 用 `hdiutil`/`ditto` 生成 `.dmg` 与便携 `.zip`。

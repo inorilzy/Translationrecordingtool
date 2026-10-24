@@ -257,12 +257,25 @@ fn set_popup_position(window: &tauri::WebviewWindow, anchor: PopupAnchor) -> Res
         info!("弹窗位置: 锚点{:?} -> 窗口({}, {})", anchor, pos.x, pos.y);
     }
 
-    window
-        .set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-            x: pos.x,
-            y: pos.y,
-        }))
-        .map_err(|e: tauri::Error| e.to_string())
+    #[cfg(target_os = "macos")]
+    {
+        window
+            .set_position(tauri::Position::Logical(tauri::LogicalPosition {
+                x: pos.x as f64,
+                y: pos.y as f64,
+            }))
+            .map_err(|e: tauri::Error| e.to_string())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        window
+            .set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                x: pos.x,
+                y: pos.y,
+            }))
+            .map_err(|e: tauri::Error| e.to_string())
+    }
 }
 
 fn monitor_for_anchor(window: &tauri::WebviewWindow, anchor: PopupAnchor) -> Option<MonitorInfo> {
@@ -280,11 +293,27 @@ fn monitor_for_anchor(window: &tauri::WebviewWindow, anchor: PopupAnchor) -> Opt
         .map(|monitor| {
             let size = monitor.size();
             let pos = monitor.position();
-            MonitorInfo {
-                width: size.width as i32,
-                height: size.height as i32,
-                x: pos.x,
-                y: pos.y,
+            #[cfg(target_os = "macos")]
+            {
+                // CoreGraphics/mouse_position report points, while Tauri
+                // Monitor* is physical pixels. Keep both sides of the
+                // calculation in points on Retina displays.
+                let scale = monitor.scale_factor();
+                MonitorInfo {
+                    width: (size.width as f64 / scale).round() as i32,
+                    height: (size.height as f64 / scale).round() as i32,
+                    x: (pos.x as f64 / scale).round() as i32,
+                    y: (pos.y as f64 / scale).round() as i32,
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                MonitorInfo {
+                    width: size.width as i32,
+                    height: size.height as i32,
+                    x: pos.x,
+                    y: pos.y,
+                }
             }
         })
         .min_by_key(|monitor| monitor_distance_score(*monitor, anchor_x, anchor_y))

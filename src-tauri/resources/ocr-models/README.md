@@ -1,22 +1,35 @@
 # OCR Models
 
-Put bundled PP-OCRv6 ONNX model profiles here when building a fully offline OCR package.
+Bundled PP-OCRv6 ONNX model files live here. Only the `small` profile is
+supported by the product; this directory is generated and mostly ignored by Git.
 
 Expected layout:
 
 ```text
 ocr-models/
-  tiny/
-    det/
-    rec/
   small/
     det/
+      inference.onnx
+      inference.json
+      inference.yml
     rec/
-  medium/
-    det/
-    rec/
+      inference.onnx
+      inference.json
+      inference.yml
 ```
 
-The app uses `det` and `rec` when both directories contain `inference.onnx`. Use
-`npm run ocr:models:win -- -Profile small` to download the recommended profile
-from the official PaddlePaddle Hugging Face PP-OCRv6 collection.
+Prepare it on any platform (pinned upstream revisions and SHA-256 checks):
+
+```bash
+npm run ocr:models
+```
+
+Windows can also use the original PowerShell path:
+
+```bash
+npm run ocr:models:win -- -Profile small
+```
+
+The app locates `det/inference.onnx`, `rec/inference.onnx` and
+`rec/inference.yml` at runtime. Models are bundled into the installed app;
+developers must run the preparation command before a release build.

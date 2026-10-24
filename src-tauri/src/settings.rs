@@ -11,7 +11,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
+// macOS reserves Command+Q for quitting, so the default selection shortcut
+// uses Option+Command+T and screenshot OCR uses Option+Command+O there.
+#[cfg(target_os = "macos")]
+pub const DEFAULT_GLOBAL_SHORTCUT: &str = "Command+Option+T";
+#[cfg(not(target_os = "macos"))]
 pub const DEFAULT_GLOBAL_SHORTCUT: &str = "Ctrl+Q";
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Command+Option+O";
+#[cfg(not(target_os = "macos"))]
 pub const DEFAULT_SCREENSHOT_SHORTCUT: &str = "Ctrl+Shift+Q";
 pub const DEFAULT_THEME: &str = "light";
 pub const DEFAULT_OCR_ENDPOINT: &str = "http://127.0.0.1:8866/ocr";

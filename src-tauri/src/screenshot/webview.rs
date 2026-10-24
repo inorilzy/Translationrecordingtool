@@ -10,13 +10,17 @@ use std::{
 use base64::{engine::general_purpose, Engine as _};
 use screenshots::image::{DynamicImage, ImageOutputFormat};
 use screenshots::Screen;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::io::Cursor;
-use tauri::{Emitter, Listener, Manager, PhysicalPosition, PhysicalSize, Position, Size};
+use tauri::{Emitter, Listener, Manager, Position, Size};
+#[cfg(target_os = "macos")]
+use tauri::{LogicalPosition, LogicalSize};
+#[cfg(not(target_os = "macos"))]
+use tauri::{PhysicalPosition, PhysicalSize};
 
 use super::{
-    encode_png_data_url, normalize_area, selection_payload_slot, CaptureArea, CaptureResult,
-    SelectionScreenPreview, SelectionStartPayload, MIN_SELECTION_SIZE,
+    normalize_area, selection_payload_slot, CaptureArea, CaptureResult, SelectionScreenPreview,
+    SelectionStartPayload,
 };
 
 const SELECTION_WINDOW_LABEL: &str = "screenshot-selection";
@@ -44,7 +48,54 @@ struct SelectionWindow {
     is_new: bool,
 }
 
+#[cfg(target_os = "macos")]
+fn ensure_screen_capture_permission() -> Result<(), String> {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+        fn CGRequestScreenCaptureAccess() -> bool;
+    }
+
+    // Without Screen Recording permission CGWindowListCreateImage still
+    // succeeds, but every pixel is black. Preflight turns that silent failure
+    // into an actionable prompt instead of showing an empty selection overlay.
+    if unsafe { CGPreflightScreenCaptureAccess() } {
+        return Ok(());
+    }
+    if unsafe { CGRequestScreenCaptureAccess() } {
+        return Ok(());
+    }
+
+    // tccd refuses to prompt for ad-hoc signed apps ("does not allow
+    // prompting"), so the app never shows up in the list by itself. Open the
+    // exact settings pane and reveal this bundle in Finder so the user can add
+    // it with "+" or by dragging it into the list.
+    open_screen_recording_settings();
+    Err("未获得屏幕录制权限。已为你打开“系统设置 → 隐私与安全性 → 屏幕与系统音频录制”：请点击列表下方的“+”选择 translation-tool（或把 Finder 中已选中的 translation-tool 拖进列表），打开开关后退出并重新打开本应用".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn open_screen_recording_settings() {
+    use std::process::Command;
+
+    let _ = Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        .spawn();
+
+    let bundle = std::env::current_exe().ok().and_then(|exe| {
+        exe.ancestors()
+            .find(|path| path.extension().is_some_and(|ext| ext == "app"))
+            .map(std::path::Path::to_path_buf)
+    });
+    if let Some(bundle) = bundle {
+        let _ = Command::new("open").arg("-R").arg(bundle).spawn();
+    }
+}
+
 pub fn select_and_capture_with_area(app: tauri::AppHandle) -> Result<CaptureResult, String> {
+    #[cfg(target_os = "macos")]
+    ensure_screen_capture_permission()?;
+
     let area = match wait_for_selection(&app) {
         Ok(area) => area,
         Err(error) => return Err(error),
@@ -169,18 +220,40 @@ fn position_selection_window(
     window: &tauri::WebviewWindow,
     bounds: VirtualDesktopBounds,
 ) -> Result<(), String> {
-    window
-        .set_position(Position::Physical(PhysicalPosition {
-            x: bounds.x,
-            y: bounds.y,
-        }))
-        .map_err(|e| e.to_string())?;
-    window
-        .set_size(Size::Physical(PhysicalSize {
-            width: bounds.width,
-            height: bounds.height,
-        }))
-        .map_err(|e| e.to_string())
+    // CoreGraphics reports display bounds in points on macOS, while Tauri's
+    // Physical* units are pixels. Using Physical here on a Retina display would
+    // cover only the top-left quarter of the screen (2x scale factor).
+    #[cfg(target_os = "macos")]
+    {
+        window
+            .set_position(Position::Logical(LogicalPosition {
+                x: bounds.x as f64,
+                y: bounds.y as f64,
+            }))
+            .map_err(|e| e.to_string())?;
+        window
+            .set_size(Size::Logical(LogicalSize {
+                width: bounds.width as f64,
+                height: bounds.height as f64,
+            }))
+            .map_err(|e| e.to_string())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        window
+            .set_position(Position::Physical(PhysicalPosition {
+                x: bounds.x,
+                y: bounds.y,
+            }))
+            .map_err(|e| e.to_string())?;
+        window
+            .set_size(Size::Physical(PhysicalSize {
+                width: bounds.width,
+                height: bounds.height,
+            }))
+            .map_err(|e| e.to_string())
+    }
 }
 
 fn wait_for_selection_window_ready(window: &tauri::WebviewWindow) -> Result<(), String> {

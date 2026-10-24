@@ -24,7 +24,14 @@ pub fn clipboard_sequence_number() -> Option<u32> {
         Some(unsafe { windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber() })
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        // NSPasteboard.changeCount is the macOS analogue of the Win32
+        // clipboard sequence number: it increments on every content change.
+        Some(objc2_app_kit::NSPasteboard::generalPasteboard().changeCount() as u32)
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     {
         None
     }
